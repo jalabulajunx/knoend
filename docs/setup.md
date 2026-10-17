@@ -22,17 +22,26 @@ been run on a Mac yet**. Windows is not supported yet.
 
 ### 1. Get the `openpager` service
 
-There is no published release yet, so build the service from source:
+Download it from the [latest release](https://github.com/jalabulajunx/openpager/releases/latest):
+`openpager-x86_64-unknown-linux-gnu.tar.gz` (Linux), `openpager-aarch64-apple-darwin.tar.gz` (Apple
+silicon Mac) or `openpager-x86_64-apple-darwin.tar.gz` (Intel Mac), and unpack it:
+
+```bash
+tar xzf openpager-*.tar.gz
+./openpager --version
+```
+
+On a Mac the binary is not signed yet: the first time, right-click > Open, or run
+`xattr -d com.apple.quarantine openpager`.
+
+Or build it from source (stable Rust from [rustup](https://rustup.rs); on Linux also `pkg-config`
+and the libudev headers: `libudev-dev` on Debian and Ubuntu, already in `systemd-libs` on Arch):
 
 ```bash
 git clone https://github.com/jalabulajunx/openpager.git
 cd openpager/companion
 cargo build --release
 ```
-
-You need stable Rust from [rustup](https://rustup.rs). On Linux you also need `pkg-config` and the
-libudev headers: Debian and Ubuntu need `libudev-dev`, and Arch already has them in
-`systemd-libs`. On macOS you need nothing else.
 
 **Linux serial access.** Your user must be in the group that owns the serial port: `uucp` on Arch,
 `dialout` on Debian and Ubuntu. After adding yourself, log out and back in.
@@ -41,10 +50,11 @@ libudev headers: Debian and Ubuntu need `libudev-dev`, and Arch already has them
 sudo usermod -aG uucp $USER
 ```
 
-### 2. Get the firmware
+### 2. Firmware (nothing to do)
 
-Until there is a release, build the firmware once and package it. This needs ESP-IDF v5.4.4; see
-[Part 2](#esp-idf).
+The service downloads the firmware from the latest release, checks every part against the
+manifest's SHA-256, and installs it. To install a firmware you built yourself instead (needs ESP-IDF
+v5.4.4; see [Part 2](#esp-idf)), package it and pass the folder with `--firmware`:
 
 ```bash
 . ~/esp/esp-idf/export.sh
@@ -52,21 +62,17 @@ cd firmware && idf.py -B build/universal build && cd ..
 python3 tools/release_firmware.py --version 0.3.0-dev
 ```
 
-This writes `dist/firmware/`, which holds:
-
-- `manifest.json`;
-- the universal image (bootloader, partition table, app);
-- one small definition file per board.
-
-Every board runs the same image; only the definition differs. Once a release exists, the service
-downloads firmware from the latest GitHub release by default, and this step goes away.
+This writes `dist/firmware/`, which holds `manifest.json`, the universal image (bootloader,
+partition table, app) and one small definition file per board. Every board runs the same image;
+only the definition differs.
 
 ### 3. Start the service and follow the web app
 
 ```bash
-cd companion
-target/release/openpager serve --firmware ../dist/firmware
+./openpager serve
 ```
+
+(Add `--firmware ../dist/firmware` for a firmware you built yourself.)
 
 The browser opens at `http://127.0.0.1:7342/`. (Use `--no-open` to stop it opening.) The wizard
 then walks you through the setup:

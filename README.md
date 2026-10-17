@@ -116,14 +116,14 @@ Not built yet: Windows, per-website layouts (Chrome extension), coding-agent app
 
 ## Getting started
 
-[docs/setup.md](docs/setup.md) covers both setting up a board and working on the code. In short:
+[docs/setup.md](docs/setup.md) covers both setting up a board and working on the code. In short: download `openpager` for Linux or macOS from the
+[latest release](https://github.com/jalabulajunx/openpager/releases/latest), plug in the board, and run
 
 ```bash
-cd companion && cargo build --release
-target/release/openpager serve --firmware ../dist/firmware   # opens the web app
+./openpager serve     # opens the web app; firmware comes from the same release
 ```
 
-(Until the first release, build the firmware once first; the guide shows how.) Problems:
+Problems:
 [docs/knowledge/setup.md](docs/knowledge/setup.md). What is on main: [docs/status.md](docs/status.md).
 
 ## Repository layout
