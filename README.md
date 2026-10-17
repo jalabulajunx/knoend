@@ -7,8 +7,9 @@ website you are using. It connects to your computer by wire, Bluetooth or home W
 becomes a pager: carry it around the house, see status from your computer on the board, and answer a
 prompt (for example, approve a coding agent's command) from another room.
 
-> **Status: early development.** Most of what is described below is planned, not built. See
-> [What works today](#what-works-today) for what has been tested on hardware.
+> **Status: early development.** The keypad, Wi-Fi pager link, app-following layouts, web setup and
+> flashing work on Linux; much of the feature list is still planned. See
+> [What works today](#what-works-today). **To set one up, follow [docs/setup.md](docs/setup.md).**
 
 ## Why
 
@@ -85,55 +86,61 @@ action = { kind = "open", url = "/gp/your-account/order-history" }
 
 ## Supported boards
 
-| | ONX2432G028 | Freenove FNK0104B |
-| --- | --- | --- |
-| Chip | ESP32-S3, 16 MB flash, 8 MB PSRAM | ESP32-S3R8, 8 MB PSRAM |
-| Display | 2.8" 320×240 ST7789 | 2.8" 320×240 ILI9341 IPS |
-| Touch | CST826 | FT6336 |
-| Audio | NS4168 amplifier | ES8311 codec + amplifier |
-| Storage | microSD | microSD |
-| Wired keyboard | Not via USB-C (serial chip only) | Native USB (to be confirmed) |
+All boards run one universal firmware image; a small JSON definition per board describes its display,
+touch controller and pins, so adding a board is usually a definition, not new code.
 
-Other ESP32-S3 boards can be added as a board profile (display, touch, pins, audio).
+| Board | Status | Display | Touch |
+| --- | --- | --- | --- |
+| ONX2432G028 | **supported** (tested) | 2.8" 320×240 ST7789 | CST826 |
+| Espressif ESP32-S3-BOX-3 | unverified | 2.4" 320×240 ILI9342C | GT911 |
+| Waveshare ESP32-S3-Touch-LCD-2 | unverified | 2" 240×320 ST7789T3 | CST816D |
+| Freenove FNK0104B | coming | 2.8" 320×240 ILI9341 | FT6336 |
+
+"Unverified" means written from the maker's documentation and not yet run on the board. Any
+ESP32-S3 board with octal PSRAM, an ST7789 or ILI9341 SPI display and CST816, CST826, FT6336 or
+GT911 touch can be added; see [docs/boards/research.md](docs/boards/research.md).
 
 ## What works today
 
-Tested on an ONX2432G028 with Arch Linux, using an early bench prototype:
+Tested on an ONX2432G028 with Arch Linux (X11):
 
-| Test | Result |
-| --- | --- |
-| Button press over USB-C serial | 52 of 52 taps received, numbered with no gaps |
-| Bluetooth LE keyboard | Pairs with LE Secure Connections; Linux registers it as a keyboard |
-| Typing | 5 taps typed 5 characters |
+- Setting up an erased board from the web app: identify, install, pair, Wi-Fi from a scanned list
+- Bluetooth LE keyboard (no software needed), and keys typed through the service when Bluetooth is off
+- Authenticated Wi-Fi link found by mDNS; the board keeps working away from the computer
+- Layout follows the focused app (built-in VS Code layout); "Unsupported app" with Configure, which
+  asks an AI model (Gemini, OpenAI, Anthropic, OpenRouter or local Ollama) to draft a layout
+- An AI setup assistant in the web app that knows the failures we have hit
 
-Not yet tested: macOS, Windows, Wi-Fi, the companion app, layout switching, and the FNK0104B board.
-Known issue: opening the USB-C serial port resets the ONX2432G028.
+Builds but untested: macOS (focus watcher, typing), the unverified boards, the release workflow.
+Not built yet: Windows, per-website layouts (Chrome extension), coding-agent approvals, speech.
+
+## Getting started
+
+[docs/setup.md](docs/setup.md) covers both setting up a board and working on the code. In short:
+
+```bash
+cd companion && cargo build --release
+target/release/openpager serve --firmware ../dist/firmware   # opens the web app
+```
+
+(Until the first release, build the firmware once first; the guide shows how.) Problems:
+[docs/knowledge/setup.md](docs/knowledge/setup.md). What is on main: [docs/status.md](docs/status.md).
 
 ## Repository layout
 
 ```
-spec/                 shared contracts: packet protocol, JSON schemas, example packets and libraries
-firmware/             ESP-IDF project (C)
-  main/               grid UI, keys, protocol, transports, storage, web server
-  components/         board_api plus one component per board profile
-  boards/             sdkconfig defaults per board
-companion/            Rust workspace
-  crates/             core, transport, focus, agents, sim, flash, server, cli (the `openpager` binary)
-web/                  web app: served by the local service, and hosted for flashing and the simulator
-extension/            Chrome extension (reports the active tab)
+spec/                 shared contracts: packet protocol, JSON schemas (incl. board definitions), examples
+firmware/             ESP-IDF project (C): one universal image
+  main/               grid UI, keys, protocol, Bluetooth / Wi-Fi / serial links
+  components/         board_generic (drivers from the board definition), board_api, esp_hid_gap
+  boards/             catalog.json and definitions/*.json, one per board
+companion/            Rust workspace; the `openpager` binary (service + CLI)
+  crates/             core, transport, focus, input, flash, agents, cli
+web/                  web app served by the service (setup wizard, assistant, dashboard)
 libraries/builtin/    built-in layout libraries (*.toml)
-hardware/             grid overlay CAD, battery and wiring notes
-docs/                 decisions/ (short ADRs)
-tools/                flashing scripts, host listener, test helpers
+docs/                 setup guide, knowledge base, board research, log, decisions/
+tools/                spec validator, firmware release packager, bench tools
 ```
-
-## Building
-
-Nothing to build yet. The toolchains will be:
-
-- **Firmware:** ESP-IDF v5.4.4 (`. ~/esp/esp-idf/export.sh`, then `idf.py` in `firmware/`)
-- **Companion:** stable Rust (`cargo build` in `companion/`)
-- **Web app:** in `web/`; also served by the companion
 
 ## Prior art and credits
 

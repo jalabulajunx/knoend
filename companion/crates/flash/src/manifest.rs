@@ -59,7 +59,8 @@ pub struct Board {
     /// USB bridges this board is known to use ("ch340", "espressif-native", ...).
     #[serde(default)]
     pub bridges: Vec<String>,
-    /// "supported", or "coming" for a board listed before its firmware exists.
+    /// "supported" (run and confirmed), "unverified" (definition from documentation, not yet run on
+    /// the board), or "coming" (no firmware or definition yet).
     pub status: String,
     #[serde(default)]
     pub note: Option<String>,
@@ -135,7 +136,9 @@ impl Manifest {
                 out.push(Candidate { board: id.clone(), name: board.name.clone(), score, reasons, status: board.status.clone() });
             }
         }
-        out.sort_by(|a, b| b.score.cmp(&a.score).then(a.board.cmp(&b.board)));
+        // Best match first; on equal evidence, a board someone has run beats an unverified one.
+        let rank = |status: &str| match status { "supported" => 0, "unverified" => 1, _ => 2 };
+        out.sort_by(|a, b| b.score.cmp(&a.score).then(rank(&a.status).cmp(&rank(&b.status))).then(a.board.cmp(&b.board)));
         out
     }
 }

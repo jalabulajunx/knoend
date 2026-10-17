@@ -4,4 +4,8 @@
   `invalid/` ones must fail), plus packet size, duplicate slots, risky keys without confirm, and the
   Wi-Fi frame test vector. Needs Python 3.11+ and `jsonschema`.
 
-Planned: flashing scripts, host listener, test helpers.
+- `release_firmware.py --version X`: packages a firmware build and the board definitions into
+  `dist/firmware/` (manifest with SHA-256 per part); `openpager serve --firmware ../dist/firmware`
+  installs from it.
+- `serial_probe.py`, `dummy_companion.py`: bench tools (protocol probe; Python stand-in companion
+  with attack tests).

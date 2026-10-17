@@ -4,8 +4,9 @@
 Reads firmware/boards/catalog.json. For each image, copies the parts IDF lists in the build's
 flasher_args.json (offset, size, SHA-256) and records where the "board" partition lives. For each
 board with a definition (firmware/boards/definitions/<board>.json) that passes
-spec/schemas/board.schema.json, adds the definition as its own file. Boards without a definition
-or without a built image are listed with status "coming".
+spec/schemas/board.schema.json, adds the definition as its own file. A board is "supported" (run and
+confirmed), "unverified" (definition from documentation, not yet run), or "coming" (no
+definition or no image yet).
 
 Usage: python3 tools/release_firmware.py --version 0.2.0 [--out dist/firmware]
 Build first:  . ~/esp/esp-idf/export.sh && cd firmware && idf.py -B build/universal build
@@ -71,7 +72,8 @@ def main():
     for board, entry in catalog["boards"].items():
         rec = {k: entry[k] for k in ("name", "image", "flash_size", "bridges", "note") if k in entry}
         definition_path = FIRMWARE / "boards" / "definitions" / f"{board}.json"
-        ready = entry.get("status") == "supported" and entry["image"] in manifest["images"] and definition_path.exists()
+        status = entry.get("status")
+        ready = status in ("supported", "unverified") and entry["image"] in manifest["images"] and definition_path.exists()
         if ready:
             definition = json.loads(definition_path.read_text())
             errors = [e.message for e in validator.iter_errors(definition)]
@@ -84,7 +86,7 @@ def main():
             (out / name).write_bytes(data)
             rec["definition"] = record(data, name)
             print(f"{board}: definition {len(data)} bytes")
-        rec["status"] = "supported" if ready else "coming"
+        rec["status"] = status if ready else "coming"
         manifest["boards"][board] = rec
 
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

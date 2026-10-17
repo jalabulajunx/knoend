@@ -1,58 +1,41 @@
 # What's on main
 
-As of 2026-10-17. A one-page map for anyone (person or coding agent) picking the project up.
-The day-by-day detail, including what was tested and how, is in [`log.md`](log.md); working
-rules are in [`../AGENTS.md`](../AGENTS.md).
+As of 2026-10-18. A one-page map for anyone (person or coding agent) picking the project up.
+How to set it up: [`setup.md`](setup.md). Day-by-day detail, including what was tested and how:
+[`log.md`](log.md). Working rules: [`../AGENTS.md`](../AGENTS.md).
 
-## Works today (tested on an ONX2432G028 with Arch Linux, i3)
+## Works today (tested on an ONX2432G028 with Arch Linux, i3/X11)
 
 | Piece | Where | Try it |
 | --- | --- | --- |
-| Board profile ONX2432G028, written from the schematic | `firmware/components/board_onx2432g028` | `idf.py -B build/onx2432g028 -p /dev/ttyUSB0 flash` |
-| 3x3 key grid, status bar, confirm-tap for risky keys | `firmware/main/ui.c` | tap a key; console prints `KEY n ...` |
-| Bluetooth LE keyboard ("Just Works" pairing) | `firmware/main/ble_keyboard.c`, `components/esp_hid_gap` | pair "OpenPager"; keys type |
-| Protocol v0 over USB serial | `firmware/main/protocol.c`, `link_serial.c` | `tools/serial_probe.py` |
-| Wi-Fi: key and network over USB, mDNS, authenticated WebSocket | `firmware/main/link_wifi.c` | `openpager pair`, then `openpager run` |
-| Shared contracts: packets, schemas, examples, validator | `spec/`, `tools/validate_spec.py` | `python3 tools/validate_spec.py` |
-| Companion core: libraries, validation, matching, layouts | `companion/crates/core` | `cargo test` in `companion/` |
-| Wi-Fi link, discovery, serial pairing (Rust) | `companion/crates/transport` | reproduces `spec/examples/wifi-session.json` |
-| Focus watcher, Linux/X11 | `companion/crates/focus` | `cargo run --example print_focus` |
-| `openpager` service: layout follows the focused app | `companion/crates/cli` | switch apps; the board follows |
-| Configure agent: drafts a library for an unsupported app | `companion/crates/agents` | tap Configure; or `openpager draft --class ... --instance ...` |
-| Built-in library: VS Code | `libraries/builtin/vscode.toml` | focus VS Code |
-| Bench tools: serial probe, Python stand-in companion with attack tests | `tools/` | `tools/dummy_companion.py attacks` |
+| Universal firmware image + board definitions | `firmware/components/board_generic`, `firmware/boards/` | `idf.py -B build/universal build` |
+| Web app: AI or manual setup, find, identify, install, pair, Wi-Fi from a scan, dashboard | `web/`, `companion/crates/cli/src/web.rs` | `openpager serve --firmware ../dist/firmware` |
+| Identify and flash boards, manifest with SHA-256 per part | `companion/crates/flash`, `tools/release_firmware.py` | `openpager devices`, `openpager flash` |
+| Setup assistant grounded in the knowledge base | `companion/crates/agents/src/assistant.rs`, `docs/knowledge/setup.md` | "Ask the assistant" in the web app |
+| Key grid, status bar, confirm-tap for risky keys | `firmware/main/ui.c` | tap a key; console prints `KEY n ...` |
+| Bluetooth LE keyboard ("Just Works") | `firmware/main/ble_keyboard.c` | pair "OpenPager"; keys type |
+| Keys typed by the service when no Bluetooth host is connected | `companion/crates/input` | turn Bluetooth off; keys still type |
+| Protocol v0 over USB serial and authenticated Wi-Fi WebSocket, mDNS | `firmware/main/`, `companion/crates/transport` | `openpager pair`, then `openpager run` |
+| Layout follows the focused app (Linux X11) | `companion/crates/focus`, `cli/src/service.rs` | switch to VS Code |
+| Configure agent: drafts a library for an unsupported app (any provider) | `companion/crates/agents` | tap Configure, or `openpager draft` |
+| Shared contracts and validator | `spec/`, `tools/validate_spec.py` | `python3 tools/validate_spec.py` |
+| CI: spec, companion on Linux + macOS, firmware build | `.github/workflows/ci.yml` | every push and PR |
+
+## Built, not yet tested
+
+- macOS focus watcher and typing (`focus/src/macos.rs`, `input/src/macos.rs`); compiles in CI.
+- GT911 touch, display start-up commands, active-high reset; the ESP32-S3-BOX-3 and Waveshare
+  ESP32-S3-Touch-LCD-2 definitions (status "unverified").
+- USB-Serial-JTAG serial line (native-USB boards).
+- Release workflow (`.github/workflows/release.yml`); no release published yet.
 
 ## Not started
 
 | Piece | Where it goes |
 | --- | --- |
-| Freenove FNK0104B board profile (native USB keyboard) | `firmware/components/board_fnk0104b` (placeholder; build with `-DOPENPAGER_BOARD=fnk0104b`) |
-| macOS and Windows focus backends | `companion/crates/focus` |
-| Web app (onboarding, settings, review of AI drafts, flashing) and the local API it talks to | `web/`, `companion/crates/server` |
-| Board identification and flashing from the service | `companion/crates/flash` |
+| Freenove FNK0104B definition (and native USB keyboard) | `firmware/boards/definitions/` |
+| Board UI: dynamic tiles, 6 per page with paging, unsupported-app card | `firmware/main/ui.c` |
+| Windows focus and typing | `companion/crates/focus`, `input` |
 | Chrome extension for per-website layouts | `extension/` |
-| Board simulator | `companion/crates/sim` |
 | Agent-CLI hooks (Claude Code, Codex) and approvals on the board | `companion/crates/agents`, firmware |
-
-## Next on the ONX
-
-- A full-screen "Unsupported app: <name>" card with a Configure button (today: a one-key layout).
-- Keep the last layout across reboots.
-- Show the Bluetooth pairing code on the board, then move back from "Just Works" to numeric
-  comparison.
-
-## Running it
-
-```bash
-# firmware (ESP-IDF v5.4.4)
-. ~/esp/esp-idf/export.sh && cd firmware && idf.py -B build/onx2432g028 -p /dev/ttyUSB0 flash
-
-# companion (Rust)
-cd companion && cargo build
-target/debug/openpager pair          # board on USB: key + Wi-Fi settings
-target/debug/openpager run           # follows the focused app over Wi-Fi
-```
-
-The configure agent reads `~/.config/openpager/agent.toml` (`provider = "gemini"`, `"openai"`,
-`"openrouter"`, `"anthropic"`, `"ollama"` or `"openai-compatible"`); API keys come from environment
-variables such as `GEMINI_API_KEY`, and the model from `agent.toml` or `<PROVIDER>_MODEL`.
+| RGB-panel boards (4.3-7"), Hynitron CST3xx touch, quad-PSRAM image | see `boards/research.md` |

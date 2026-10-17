@@ -4,77 +4,316 @@
   "title": "OpenPager board definition (v0, draft)",
   "description": "What one universal ESP32-S3 image needs to drive a board: display, touch, expander, backlight, serial line. Stored as JSON in the 'board' flash partition. Pins are GPIO numbers; -1 = not connected. See spec/boards.md.",
   "type": "object",
-  "required": ["id", "name", "chip", "serial", "display", "touch"],
+  "required": [
+    "id",
+    "name",
+    "chip",
+    "serial",
+    "display",
+    "touch"
+  ],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string", "pattern": "^[a-z0-9_]{3,32}$" },
-    "name": { "type": "string", "minLength": 1, "maxLength": 64 },
-    "chip": { "const": "esp32s3" },
-    "serial": { "enum": ["uart0", "usb-serial-jtag"], "description": "The line the companion talks to over USB." },
-    "native_usb": { "type": "boolean", "description": "USB-C reaches the S3's own USB (can become a USB keyboard)." },
-    "speaker": { "type": "boolean" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]{3,32}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "chip": {
+      "const": "esp32s3"
+    },
+    "serial": {
+      "enum": [
+        "uart0",
+        "usb-serial-jtag"
+      ],
+      "description": "The line the companion talks to over USB."
+    },
+    "native_usb": {
+      "type": "boolean",
+      "description": "USB-C reaches the S3's own USB (can become a USB keyboard)."
+    },
+    "speaker": {
+      "type": "boolean"
+    },
     "i2c": {
-      "type": "object", "additionalProperties": false, "required": ["sda", "scl"],
-      "properties": { "sda": { "$ref": "#/$defs/pin" }, "scl": { "$ref": "#/$defs/pin" }, "pullup": { "type": "boolean" } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sda",
+        "scl"
+      ],
+      "properties": {
+        "sda": {
+          "$ref": "#/$defs/pin"
+        },
+        "scl": {
+          "$ref": "#/$defs/pin"
+        },
+        "pullup": {
+          "type": "boolean"
+        }
+      }
     },
     "expander": {
-      "type": "object", "additionalProperties": false, "required": ["driver", "address", "initial"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "driver",
+        "address",
+        "initial"
+      ],
       "properties": {
-        "driver": { "const": "pcf8574" },
-        "address": { "type": "integer", "minimum": 8, "maximum": 119 },
-        "initial": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Output byte written at start-up." }
+        "driver": {
+          "const": "pcf8574"
+        },
+        "address": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 119
+        },
+        "initial": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Output byte written at start-up."
+        }
       }
     },
     "display": {
-      "type": "object", "additionalProperties": false,
-      "required": ["driver", "sclk", "mosi", "dc", "cs", "width", "height", "pclk_hz", "backlight"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "driver",
+        "sclk",
+        "mosi",
+        "dc",
+        "cs",
+        "width",
+        "height",
+        "pclk_hz",
+        "backlight"
+      ],
       "properties": {
-        "driver": { "enum": ["st7789", "ili9341"] },
-        "sclk": { "$ref": "#/$defs/pin" },
-        "mosi": { "$ref": "#/$defs/pin" },
-        "dc": { "$ref": "#/$defs/pin" },
-        "cs": { "$ref": "#/$defs/pin" },
-        "reset": { "$ref": "#/$defs/line", "description": "GPIO, or an expander bit; active low." },
-        "width": { "type": "integer", "minimum": 64, "maximum": 1024, "description": "Native (unrotated) width." },
-        "height": { "type": "integer", "minimum": 64, "maximum": 1024 },
-        "pclk_hz": { "type": "integer", "minimum": 1000000, "maximum": 80000000 },
-        "bgr": { "type": "boolean" },
-        "invert": { "type": "boolean" },
-        "mirror_x": { "type": "boolean" },
-        "mirror_y": { "type": "boolean" },
-        "swap_xy": { "type": "boolean" },
-        "rotation": { "enum": [0, 90, 180, 270], "description": "Software rotation applied by LVGL; the UI is landscape." },
+        "driver": {
+          "enum": [
+            "st7789",
+            "ili9341"
+          ]
+        },
+        "sclk": {
+          "$ref": "#/$defs/pin"
+        },
+        "mosi": {
+          "$ref": "#/$defs/pin"
+        },
+        "dc": {
+          "$ref": "#/$defs/pin"
+        },
+        "cs": {
+          "$ref": "#/$defs/pin"
+        },
+        "reset": {
+          "$ref": "#/$defs/line",
+          "description": "GPIO, or an expander bit; active low."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1024,
+          "description": "Native (unrotated) width."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1024
+        },
+        "pclk_hz": {
+          "type": "integer",
+          "minimum": 1000000,
+          "maximum": 80000000
+        },
+        "bgr": {
+          "type": "boolean"
+        },
+        "invert": {
+          "type": "boolean"
+        },
+        "mirror_x": {
+          "type": "boolean"
+        },
+        "mirror_y": {
+          "type": "boolean"
+        },
+        "swap_xy": {
+          "type": "boolean"
+        },
+        "rotation": {
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "description": "Software rotation applied by LVGL; the UI is landscape."
+        },
         "backlight": {
-          "type": "object", "additionalProperties": false, "required": ["gpio"],
-          "properties": { "gpio": { "$ref": "#/$defs/pin" }, "active_low": { "type": "boolean" } }
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gpio"
+          ],
+          "properties": {
+            "gpio": {
+              "$ref": "#/$defs/pin"
+            },
+            "active_low": {
+              "type": "boolean"
+            }
+          }
+        },
+        "reset_active_high": {
+          "type": "boolean",
+          "description": "Reset line is active high (default active low)."
+        },
+        "init_cmds": {
+          "type": "array",
+          "maxItems": 32,
+          "description": "Extra start-up commands sent after the driver's own init, before orientation.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "data": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                }
+              },
+              "delay_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000
+              }
+            }
+          }
         }
       }
     },
     "touch": {
-      "type": "object", "additionalProperties": false, "required": ["driver", "address"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "driver",
+        "address"
+      ],
       "properties": {
-        "driver": { "enum": ["cst826", "ft6336"], "description": "Both use the FocalTech register layout (points from register 0x02)." },
-        "address": { "type": "integer", "minimum": 8, "maximum": 119 },
-        "reset": { "$ref": "#/$defs/line" },
-        "max_x": { "type": "integer", "minimum": 1 },
-        "max_y": { "type": "integer", "minimum": 1 },
-        "swap_xy": { "type": "boolean" },
-        "mirror_x": { "type": "boolean" },
-        "mirror_y": { "type": "boolean" }
+        "driver": {
+          "enum": [
+            "cst816",
+            "cst826",
+            "ft6336",
+            "gt911"
+          ],
+          "description": "cst816/cst826/ft6336 share the FocalTech register layout (points from 0x02); gt911 uses 16-bit registers (status 0x814E) and answers at 0x5D or 0x14."
+        },
+        "address": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 119
+        },
+        "reset": {
+          "$ref": "#/$defs/line"
+        },
+        "max_x": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_y": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "swap_xy": {
+          "type": "boolean"
+        },
+        "mirror_x": {
+          "type": "boolean"
+        },
+        "mirror_y": {
+          "type": "boolean"
+        }
       }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "description": "Where the facts in this definition come from (manufacturer pages, schematics, board-support code)."
     }
   },
   "$defs": {
     "pin": {
-      "type": "integer", "minimum": -1, "maximum": 48,
-      "not": { "enum": [22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37] },
+      "type": "integer",
+      "minimum": -1,
+      "maximum": 48,
+      "not": {
+        "enum": [
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37
+        ]
+      },
       "description": "ESP32-S3 GPIO. 22-25 do not exist; 26-32 are the SPI flash and 33-37 the octal PSRAM, never usable."
     },
     "line": {
       "oneOf": [
-        { "$ref": "#/$defs/pin" },
-        { "type": "object", "additionalProperties": false, "required": ["expander_bit"],
-          "properties": { "expander_bit": { "type": "integer", "minimum": 0, "maximum": 7 } } }
+        {
+          "$ref": "#/$defs/pin"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "expander_bit"
+          ],
+          "properties": {
+            "expander_bit": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            }
+          }
+        }
       ]
     }
   }

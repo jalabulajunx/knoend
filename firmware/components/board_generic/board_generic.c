@@ -32,7 +32,11 @@ static const char *TAG = "board";
 
 #define DEFINITION_SUBTYPE 0x40
 #define DEFINITION_MAX     4096
-#define TOUCH_REG_POINTS   0x02 // FocalTech layout: count, then X high/low, Y high/low
+#define TOUCH_REG_POINTS   0x02 // FocalTech layout (CST816, CST826, FT6336): count, then X high/low, Y high/low
+#define GT911_REG_STATUS   0x814E // bit 7: new data ready; bits 0-3: number of points
+#define GT911_REG_POINT1   0x8150 // X low, X high, Y low, Y high
+#define MAX_INIT_CMDS      32
+#define MAX_INIT_BYTES     16
 
 #define BACKLIGHT_TIMER   LEDC_TIMER_1
 #define BACKLIGHT_CHANNEL LEDC_CHANNEL_0
@@ -43,6 +47,15 @@ typedef struct {
     int gpio;         // -1 if none
     int expander_bit; // -1 if none
 } line_t;
+
+typedef enum { TOUCH_FOCALTECH, TOUCH_GT911 } touch_kind_t;
+
+typedef struct {
+    uint8_t cmd;
+    uint8_t len;
+    uint8_t data[MAX_INIT_BYTES];
+    uint16_t delay_ms;
+} init_cmd_t;
 
 typedef struct {
     char id[33];
@@ -56,12 +69,16 @@ typedef struct {
     char display_driver[16];
     int sclk, mosi, dc, cs;
     line_t lcd_reset;
+    bool reset_active_high;
+    init_cmd_t init_cmds[MAX_INIT_CMDS];
+    int init_count;
     int width, height, pclk_hz;
     bool bgr, invert, mirror_x, mirror_y, swap_xy;
     int rotation;
     int backlight_gpio;
     bool backlight_active_low;
     char touch_driver[16];
+    touch_kind_t touch_kind;
     int touch_address;
     line_t touch_reset;
     int touch_max_x, touch_max_y;
@@ -147,6 +164,23 @@ static esp_err_t parse(const char *text)
     def.dc = get_int(display, "dc", -1);
     def.cs = get_int(display, "cs", -1);
     def.lcd_reset = get_line(display, "reset");
+    def.reset_active_high = get_bool(display, "reset_active_high");
+    const cJSON *cmds = cJSON_GetObjectItemCaseSensitive(display, "init_cmds");
+    const cJSON *cmd;
+    cJSON_ArrayForEach(cmd, cmds) {
+        if (def.init_count >= MAX_INIT_CMDS) {
+            break;
+        }
+        init_cmd_t *c = &def.init_cmds[def.init_count++];
+        c->cmd = (uint8_t)get_int(cmd, "cmd", 0);
+        c->delay_ms = (uint16_t)get_int(cmd, "delay_ms", 0);
+        const cJSON *byte;
+        cJSON_ArrayForEach(byte, cJSON_GetObjectItemCaseSensitive(cmd, "data")) {
+            if (c->len < MAX_INIT_BYTES && cJSON_IsNumber(byte)) {
+                c->data[c->len++] = (uint8_t)byte->valueint;
+            }
+        }
+    }
     def.width = get_int(display, "width", 0);
     def.height = get_int(display, "height", 0);
     def.pclk_hz = get_int(display, "pclk_hz", 40000000);
@@ -178,8 +212,15 @@ static esp_err_t parse(const char *text)
     ESP_RETURN_ON_FALSE(def.id[0] != '\0' && def.width >= 64 && def.height >= 64, ESP_ERR_INVALID_ARG, TAG, "incomplete definition");
     ESP_RETURN_ON_FALSE(strcmp(def.display_driver, "st7789") == 0 || strcmp(def.display_driver, "ili9341") == 0,
                         ESP_ERR_NOT_SUPPORTED, TAG, "display driver \"%s\" not supported", def.display_driver);
-    ESP_RETURN_ON_FALSE(strcmp(def.touch_driver, "cst826") == 0 || strcmp(def.touch_driver, "ft6336") == 0,
-                        ESP_ERR_NOT_SUPPORTED, TAG, "touch driver \"%s\" not supported", def.touch_driver);
+    if (strcmp(def.touch_driver, "gt911") == 0) {
+        def.touch_kind = TOUCH_GT911;
+    } else if (strcmp(def.touch_driver, "cst826") == 0 || strcmp(def.touch_driver, "cst816") == 0 ||
+               strcmp(def.touch_driver, "ft6336") == 0) {
+        def.touch_kind = TOUCH_FOCALTECH;
+    } else {
+        ESP_LOGE(TAG, "touch driver \"%s\" not supported", def.touch_driver);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     ESP_RETURN_ON_FALSE(def.rotation % 90 == 0 && def.rotation >= 0 && def.rotation < 360, ESP_ERR_INVALID_ARG, TAG, "rotation");
     return ESP_OK;
 }
@@ -225,7 +266,7 @@ static esp_err_t set_line(line_t line, int level)
     return ESP_OK;
 }
 
-static esp_err_t pulse_reset(line_t line)
+static esp_err_t pulse_reset(line_t line, bool active_high)
 {
     if (line.gpio < 0 && line.expander_bit < 0) {
         return ESP_OK;
@@ -234,9 +275,9 @@ static esp_err_t pulse_reset(line_t line)
         const gpio_config_t config = { .pin_bit_mask = 1ULL << line.gpio, .mode = GPIO_MODE_OUTPUT };
         ESP_RETURN_ON_ERROR(gpio_config(&config), TAG, "reset gpio");
     }
-    ESP_RETURN_ON_ERROR(set_line(line, 0), TAG, "reset low");
+    ESP_RETURN_ON_ERROR(set_line(line, active_high ? 1 : 0), TAG, "reset assert");
     vTaskDelay(pdMS_TO_TICKS(20));
-    ESP_RETURN_ON_ERROR(set_line(line, 1), TAG, "reset high");
+    ESP_RETURN_ON_ERROR(set_line(line, active_high ? 0 : 1), TAG, "reset release");
     vTaskDelay(pdMS_TO_TICKS(120));
     return ESP_OK;
 }
@@ -256,7 +297,20 @@ static esp_err_t i2c_init(void)
         ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(i2c_bus, &config, &expander), TAG, "expander");
         ESP_RETURN_ON_ERROR(expander_write((uint8_t)def.expander_initial), TAG, "expander write");
     }
-    const i2c_device_config_t config = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = def.touch_address, .scl_speed_hz = 400000 };
+    return ESP_OK;
+}
+
+// Touch is attached after the display has started: on some boards (S3-BOX-3) the display reset
+// also resets the touch controller, and a GT911 picks its address (0x5D or 0x14) at reset.
+static esp_err_t touch_attach(void)
+{
+    ESP_RETURN_ON_FALSE(i2c_bus != NULL, ESP_ERR_INVALID_STATE, TAG, "touch needs the I2C pins in the definition");
+    ESP_RETURN_ON_ERROR(pulse_reset(def.touch_reset, false), TAG, "touch reset");
+    int address = def.touch_address;
+    if (def.touch_kind == TOUCH_GT911 && i2c_master_probe(i2c_bus, address, 50) != ESP_OK) {
+        address = address == 0x5D ? 0x14 : 0x5D;
+    }
+    const i2c_device_config_t config = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = address, .scl_speed_hz = 400000 };
     return i2c_master_bus_add_device(i2c_bus, &config, &touch);
 }
 
@@ -277,7 +331,7 @@ static esp_err_t display_init(esp_lcd_panel_io_handle_t *io, esp_lcd_panel_handl
         .rgb_ele_order = def.bgr ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
     };
-    ESP_RETURN_ON_ERROR(pulse_reset(def.lcd_reset), TAG, "lcd reset");
+    ESP_RETURN_ON_ERROR(pulse_reset(def.lcd_reset, def.reset_active_high), TAG, "lcd reset");
     if (strcmp(def.display_driver, "ili9341") == 0) {
         ESP_RETURN_ON_ERROR(esp_lcd_new_panel_ili9341(*io, &panel_config, panel), TAG, "ili9341");
     } else {
@@ -285,6 +339,15 @@ static esp_err_t display_init(esp_lcd_panel_io_handle_t *io, esp_lcd_panel_handl
     }
     ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(*panel), TAG, "panel reset");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(*panel), TAG, "panel init");
+    // Board-specific registers (gamma, power, timing) after the driver's own start-up, and before
+    // orientation, which rewrites the address-mode register.
+    for (int i = 0; i < def.init_count; i++) {
+        const init_cmd_t *c = &def.init_cmds[i];
+        ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(*io, c->cmd, c->len ? c->data : NULL, c->len), TAG, "init cmd 0x%02x", c->cmd);
+        if (c->delay_ms) {
+            vTaskDelay(pdMS_TO_TICKS(c->delay_ms));
+        }
+    }
     ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(*panel, def.invert), TAG, "invert");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(*panel, def.swap_xy), TAG, "swap");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(*panel, def.mirror_x, def.mirror_y), TAG, "mirror");
@@ -323,17 +386,56 @@ void board_set_backlight(uint8_t percent)
     ledc_update_duty(LEDC_LOW_SPEED_MODE, BACKLIGHT_CHANNEL);
 }
 
-// LVGL polls this; coordinates go in the panel's native frame and LVGL applies the rotation.
-static void touch_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
+// GT911 (from its datasheet's register map): new frames are flagged in 0x814E and must be
+// acknowledged by writing 0 back. Between frames the last state is kept, so a finger held down
+// does not flicker between pressed and released.
+static bool gt911_read(int *x, int *y)
+{
+    static bool pressed;
+    static int last_x, last_y;
+    uint8_t reg[2] = { GT911_REG_STATUS >> 8, GT911_REG_STATUS & 0xFF };
+    uint8_t status = 0;
+    if (i2c_master_transmit_receive(touch, reg, 2, &status, 1, 20) != ESP_OK) {
+        return false;
+    }
+    if (status & 0x80) {
+        pressed = (status & 0x0F) > 0;
+        if (pressed) {
+            uint8_t point_reg[2] = { GT911_REG_POINT1 >> 8, GT911_REG_POINT1 & 0xFF };
+            uint8_t p[4];
+            if (i2c_master_transmit_receive(touch, point_reg, 2, p, sizeof(p), 20) == ESP_OK) {
+                last_x = p[0] | (p[1] << 8);
+                last_y = p[2] | (p[3] << 8);
+            }
+        }
+        const uint8_t clear[3] = { GT911_REG_STATUS >> 8, GT911_REG_STATUS & 0xFF, 0 };
+        i2c_master_transmit(touch, clear, sizeof(clear), 20);
+    }
+    *x = last_x;
+    *y = last_y;
+    return pressed;
+}
+
+static bool focaltech_read(int *x, int *y)
 {
     uint8_t reg = TOUCH_REG_POINTS;
     uint8_t buf[5];
-    data->state = LV_INDEV_STATE_REL;
     if (i2c_master_transmit_receive(touch, &reg, 1, buf, sizeof(buf), 20) != ESP_OK || (buf[0] & 0x0F) == 0) {
+        return false;
+    }
+    *x = ((buf[1] & 0x0F) << 8) | buf[2];
+    *y = ((buf[3] & 0x0F) << 8) | buf[4];
+    return true;
+}
+
+// LVGL polls this; coordinates go in the panel's native frame and LVGL applies the rotation.
+static void touch_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
+{
+    int x, y;
+    data->state = LV_INDEV_STATE_REL;
+    if (!(def.touch_kind == TOUCH_GT911 ? gt911_read(&x, &y) : focaltech_read(&x, &y))) {
         return;
     }
-    int x = ((buf[1] & 0x0F) << 8) | buf[2];
-    int y = ((buf[3] & 0x0F) << 8) | buf[4];
     if (def.touch_swap_xy) {
         const int t = x;
         x = y;
@@ -404,8 +506,8 @@ esp_err_t board_init(void)
     esp_lcd_panel_io_handle_t io = NULL;
     esp_lcd_panel_handle_t panel = NULL;
     ESP_RETURN_ON_ERROR(i2c_init(), TAG, "i2c");
-    ESP_RETURN_ON_ERROR(pulse_reset(def.touch_reset), TAG, "touch reset");
     ESP_RETURN_ON_ERROR(backlight_init(), TAG, "backlight");
     ESP_RETURN_ON_ERROR(display_init(&io, &panel), TAG, "display");
+    ESP_RETURN_ON_ERROR(touch_attach(), TAG, "touch");
     return lvgl_init(io, panel);
 }

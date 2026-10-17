@@ -228,13 +228,16 @@ function renderCandidates(candidates) {
     li.textContent = "No known board matches this hardware yet.";
     list.append(li);
   }
-  candidates.forEach((c, index) => {
-    const supported = c.status === "supported";
-    const sub = (supported ? "" : "Firmware coming soon. ") + c.reasons.join("; ");
-    const { li, input } = choice("board", c.board, c.name, sub, !supported);
+  let picked = false;
+  candidates.forEach((c) => {
+    const installable = c.status === "supported" || c.status === "unverified";
+    const prefix = c.status === "unverified"
+      ? "Unverified: written from the maker's documentation, not yet tested on this board. If the screen or touch is wrong, tell the assistant. "
+      : c.status === "supported" ? "" : "Firmware coming soon. ";
+    const { li, input } = choice("board", c.board, c.name, prefix + c.reasons.join("; "), !installable);
     input.addEventListener("change", () => { setup.board = c.board; $("install").disabled = false; });
     list.append(li);
-    if (index === 0 && supported) { input.checked = true; setup.board = c.board; $("install").disabled = false; }
+    if (!picked && installable) { picked = true; input.checked = true; setup.board = c.board; $("install").disabled = false; }
   });
 }
 
