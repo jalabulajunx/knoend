@@ -13,7 +13,7 @@
     "reset": { "expander_bit": 5 },
     "width": 240, "height": 320, "pclk_hz": 80000000,
     "bgr": false, "invert": false,
-    "mirror_x": false, "mirror_y": true, "swap_xy": false,
+    "mirror_x": false, "mirror_y": false, "swap_xy": false,
     "rotation": 90,
     "backlight": { "gpio": 6 }
   },

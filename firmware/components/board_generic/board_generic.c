@@ -463,6 +463,9 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t 
         .io_handle = io, .panel_handle = panel,
         .buffer_size = def.width * def.height / 8, .double_buffer = true,
         .hres = def.width, .vres = def.height,
+        // lvgl_port_add_disp() re-applies swap/mirror from this config when it registers the display,
+        // overwriting what display_init() set: give it the definition's values.
+        .rotation = { .swap_xy = def.swap_xy, .mirror_x = def.mirror_x, .mirror_y = def.mirror_y },
         .flags = { .buff_spiram = true, .sw_rotate = def.rotation != 0 },
     };
     lv_disp_t *display = lvgl_port_add_disp(&display_config);
