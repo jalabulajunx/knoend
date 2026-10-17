@@ -1,0 +1,15 @@
+{
+  "onx2432g028": {
+    "name": "ONX2432G028 (Nextion Open G-series, 2.8\")",
+    "flash_size": "16MB",
+    "bridges": ["ch340"],
+    "status": "supported"
+  },
+  "fnk0104b": {
+    "name": "Freenove FNK0104B (2.8\")",
+    "flash_size": "16MB",
+    "bridges": ["espressif-native"],
+    "status": "coming",
+    "note": "Board profile not written yet."
+  }
+}
