@@ -258,3 +258,13 @@ Entry template:
 - Tested: commands and paths checked against the code (CLI flags, partition table, release script,
   CI); the guide itself has not been followed end to end on a fresh machine or on a Mac.
 - Open: Tom following `docs/setup.md` on his Mac is the first real test of it.
+
+## 2026-10-18 - Sundar (Claude Code) - First release v0.1.0
+
+- PR #3 merged (GT911, unverified boards, setup guide). Tagged v0.1.0 on main with Sundar's go-ahead;
+  the release workflow built and published the universal image, three board definitions, the
+  manifest, and `openpager` for Linux x86_64 and macOS arm64/x86_64.
+- Checked: every manifest part downloaded from releases/latest matches its SHA-256; the Linux binary
+  reports `openpager 0.1.0`. Not yet done: installing a board from the release (default firmware
+  source) and running the macOS binaries.
+- Docs now point to the release instead of building from source.

@@ -27,7 +27,8 @@ How to set it up: [`setup.md`](setup.md). Day-by-day detail, including what was 
 - GT911 touch, display start-up commands, active-high reset; the ESP32-S3-BOX-3 and Waveshare
   ESP32-S3-Touch-LCD-2 definitions (status "unverified").
 - USB-Serial-JTAG serial line (native-USB boards).
-- Release workflow (`.github/workflows/release.yml`); no release published yet.
+- Installing from the published release v0.1.0 through the web app (assets and checksums checked;
+  not yet run on a board from the release).
 
 ## Not started
 
