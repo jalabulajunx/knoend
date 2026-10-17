@@ -1,107 +1,20 @@
-// OpenPager firmware core: draws the key grid and reports each tap.
+// OpenPager firmware: start-up only. The grid lives in ui.c, the protocol in protocol.c.
 //
-// Transport so far: Bluetooth LE keyboard. Until layouts exist, key N types the digit N.
-// Every tap also prints one line on the console so a bench test can count presses on the
-// board, the screen and the computer:
-//   KEY <index 1-9> seq=<n> t=<ms since boot> ble=<sent|not-connected|error>
+// Every tap prints one console line so a bench test can count presses on the board, the screen
+// and the computer:
+//   KEY <index 1-9> seq=<n> t=<ms since boot> <hid-sent|hid-not-connected|event-sent|...>
+// Protocol packets share the same serial line; they are the lines that start with '{'.
 
-#include <inttypes.h>
 #include <stdio.h>
 
 #include "ble_keyboard.h"
 #include "board.h"
 #include "esp_app_desc.h"
-#include "esp_log.h"
-#include "esp_lvgl_port.h"
-#include "esp_timer.h"
-#include "lvgl.h"
 #include "nvs_flash.h"
+#include "protocol.h"
+#include "ui.h"
 
-#define GRID_COLS      3
-#define GRID_ROWS      3
-#define GRID_GAP       4
-#define STATUS_HEIGHT  40
-
-#define DEVICE_NAME    "OpenPager"
-#define HID_USAGE_1    0x1E // USB HID usage IDs for '1'..'9' are consecutive
-
-static const char *TAG = "openpager";
-
-static lv_obj_t *status_label;
-static uint32_t tap_count;
-static int last_key;
-
-static void update_status_locked(void)
-{
-    const char *link = ble_keyboard_connected() ? "Bluetooth connected"
-                                                : "Pair \"" DEVICE_NAME "\" over Bluetooth";
-    if (last_key == 0) {
-        lv_label_set_text(status_label, link);
-    } else {
-        lv_label_set_text_fmt(status_label, "%s  -  key %d, %" PRIu32 " taps", link, last_key,
-                              tap_count);
-    }
-}
-
-static void status_timer(lv_timer_t *timer)
-{
-    update_status_locked();
-}
-
-static void key_event(lv_event_t *event)
-{
-    const int index = (int)(intptr_t)lv_event_get_user_data(event);
-
-    // One tap per press: CLICKED fires once on release, however long the key was held.
-    tap_count++;
-    last_key = index;
-    const esp_err_t sent = ble_keyboard_tap(0, HID_USAGE_1 + index - 1);
-    printf("KEY %d seq=%" PRIu32 " t=%" PRIu64 " ble=%s\n", index, tap_count,
-           (uint64_t)(esp_timer_get_time() / 1000),
-           sent == ESP_OK ? "sent" : sent == ESP_ERR_INVALID_STATE ? "not-connected" : "error");
-    fflush(stdout);
-    update_status_locked();
-}
-
-static void build_screen_locked(void)
-{
-    const board_info_t *board = board_info();
-    lv_obj_t *screen = lv_scr_act();
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x101418), 0);
-    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
-
-    const int grid_h = board->height - STATUS_HEIGHT;
-    const int key_w = (board->width - GRID_GAP * (GRID_COLS + 1)) / GRID_COLS;
-    const int key_h = (grid_h - GRID_GAP * (GRID_ROWS + 1)) / GRID_ROWS;
-
-    for (int row = 0; row < GRID_ROWS; row++) {
-        for (int col = 0; col < GRID_COLS; col++) {
-            const int index = row * GRID_COLS + col + 1;
-            lv_obj_t *key = lv_btn_create(screen);
-            lv_obj_set_size(key, key_w, key_h);
-            lv_obj_set_pos(key, GRID_GAP + col * (key_w + GRID_GAP),
-                           GRID_GAP + row * (key_h + GRID_GAP));
-            lv_obj_set_style_bg_color(key, lv_color_hex(0x2A3440), 0);
-            lv_obj_set_style_bg_color(key, lv_color_hex(0x3D7EFF), LV_STATE_PRESSED);
-            lv_obj_set_style_radius(key, 8, 0);
-            lv_obj_add_event_cb(key, key_event, LV_EVENT_CLICKED, (void *)(intptr_t)index);
-
-            lv_obj_t *label = lv_label_create(key);
-            lv_label_set_text_fmt(label, "%d", index);
-            lv_obj_set_style_text_font(label, &lv_font_montserrat_28, 0);
-            lv_obj_center(label);
-        }
-    }
-
-    status_label = lv_label_create(screen);
-    lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
-    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xC0C8D0), 0);
-    lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
-    lv_obj_align(status_label, LV_ALIGN_BOTTOM_LEFT, GRID_GAP, -(STATUS_HEIGHT - 14) / 2);
-    update_status_locked();
-    lv_timer_create(status_timer, 500, NULL);
-}
+#define DEVICE_NAME "OpenPager"
 
 void app_main(void)
 {
@@ -113,17 +26,12 @@ void app_main(void)
     ESP_ERROR_CHECK(err);
 
     ESP_ERROR_CHECK(board_init());
-
-    if (lvgl_port_lock(1000)) {
-        build_screen_locked();
-        lvgl_port_unlock();
-    } else {
-        ESP_LOGE(TAG, "could not take the LVGL lock to draw the first screen");
-    }
+    ui_start();
     board_set_backlight(100);
 
     ESP_ERROR_CHECK(ble_keyboard_start(DEVICE_NAME));
 
     printf("READY openpager %s board=%s\n", esp_app_get_description()->version, board_info()->id);
     fflush(stdout);
+    ESP_ERROR_CHECK(protocol_start());
 }

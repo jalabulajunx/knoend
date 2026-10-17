@@ -12,7 +12,8 @@ Beyond the JSON Schemas it checks what schemas cannot express:
     vector's key, and each sender's counter must increase.
 
 Needs Python 3.11+ (tomllib) and the jsonschema package (Arch: python-jsonschema).
-Usage: python3 tools/validate_spec.py
+Usage: python3 tools/validate_spec.py            (spec examples)
+       python3 tools/validate_spec.py --packets FILE  (every packet line in a transcript)
 """
 
 import hashlib
@@ -133,7 +134,28 @@ def check(path):
     return check_packet(text)
 
 
+def check_packet_file(path):
+    """Validates every line starting with '{' in a captured transcript (e.g. from serial_probe.py)."""
+    problems = 0
+    for number, line in enumerate(Path(path).read_text().splitlines(), start=1):
+        if not line.startswith("{"):
+            continue
+        try:
+            errors = check_packet(line)
+        except json.JSONDecodeError as error:
+            errors = [f"not JSON: {error}"]
+        if errors:
+            problems += 1
+            print(f"FAIL line {number}: {line[:100]}")
+            for error in errors:
+                print(f"       {error}")
+    print(f"{path}: {problems} invalid packet(s)")
+    return 1 if problems else 0
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--packets":
+        return check_packet_file(sys.argv[2])
     failures = 0
     valid = sorted(p for p in (SPEC / "examples").iterdir() if p.is_file())
     invalid = sorted((SPEC / "examples" / "invalid").iterdir())
