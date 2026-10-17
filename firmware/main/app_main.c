@@ -1,12 +1,14 @@
 // OpenPager firmware core: draws the key grid and reports each tap.
 //
-// This stage has no transports yet. Every tap prints one line on the console so a bench test
-// can count presses on the board, the screen and the computer:
-//   KEY <index 1-9> seq=<n> t=<ms since boot>
+// Transport so far: Bluetooth LE keyboard. Until layouts exist, key N types the digit N.
+// Every tap also prints one line on the console so a bench test can count presses on the
+// board, the screen and the computer:
+//   KEY <index 1-9> seq=<n> t=<ms since boot> ble=<sent|not-connected|error>
 
 #include <inttypes.h>
 #include <stdio.h>
 
+#include "ble_keyboard.h"
 #include "board.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -20,10 +22,31 @@
 #define GRID_GAP       4
 #define STATUS_HEIGHT  40
 
+#define DEVICE_NAME    "OpenPager"
+#define HID_USAGE_1    0x1E // USB HID usage IDs for '1'..'9' are consecutive
+
 static const char *TAG = "openpager";
 
 static lv_obj_t *status_label;
 static uint32_t tap_count;
+static int last_key;
+
+static void update_status_locked(void)
+{
+    const char *link = ble_keyboard_connected() ? "Bluetooth connected"
+                                                : "Pair \"" DEVICE_NAME "\" over Bluetooth";
+    if (last_key == 0) {
+        lv_label_set_text(status_label, link);
+    } else {
+        lv_label_set_text_fmt(status_label, "%s  -  key %d, %" PRIu32 " taps", link, last_key,
+                              tap_count);
+    }
+}
+
+static void status_timer(lv_timer_t *timer)
+{
+    update_status_locked();
+}
 
 static void key_event(lv_event_t *event)
 {
@@ -31,10 +54,13 @@ static void key_event(lv_event_t *event)
 
     // One tap per press: CLICKED fires once on release, however long the key was held.
     tap_count++;
-    printf("KEY %d seq=%" PRIu32 " t=%" PRIu64 "\n", index, tap_count,
-           (uint64_t)(esp_timer_get_time() / 1000));
+    last_key = index;
+    const esp_err_t sent = ble_keyboard_tap(0, HID_USAGE_1 + index - 1);
+    printf("KEY %d seq=%" PRIu32 " t=%" PRIu64 " ble=%s\n", index, tap_count,
+           (uint64_t)(esp_timer_get_time() / 1000),
+           sent == ESP_OK ? "sent" : sent == ESP_ERR_INVALID_STATE ? "not-connected" : "error");
     fflush(stdout);
-    lv_label_set_text_fmt(status_label, "Key %d  -  %" PRIu32 " taps", index, tap_count);
+    update_status_locked();
 }
 
 static void build_screen_locked(void)
@@ -73,8 +99,8 @@ static void build_screen_locked(void)
     lv_obj_set_style_text_color(status_label, lv_color_hex(0xC0C8D0), 0);
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
     lv_obj_align(status_label, LV_ALIGN_BOTTOM_LEFT, GRID_GAP, -(STATUS_HEIGHT - 14) / 2);
-    lv_label_set_text_fmt(status_label, "OpenPager %s  -  %s  -  tap a key",
-                          esp_app_get_description()->version, board->name);
+    update_status_locked();
+    lv_timer_create(status_timer, 500, NULL);
 }
 
 void app_main(void)
@@ -95,6 +121,8 @@ void app_main(void)
         ESP_LOGE(TAG, "could not take the LVGL lock to draw the first screen");
     }
     board_set_backlight(100);
+
+    ESP_ERROR_CHECK(ble_keyboard_start(DEVICE_NAME));
 
     printf("READY openpager %s board=%s\n", esp_app_get_description()->version, board_info()->id);
     fflush(stdout);
