@@ -25,7 +25,9 @@ static void reader_task(void *arg)
     bool overflow = false;
 
     while (true) {
-        int count = uart_read_bytes(UART_PORT, chunk, sizeof(chunk), portMAX_DELAY);
+        // A short timeout, not portMAX_DELAY: uart_read_bytes() waits for the whole chunk, so an
+        // unbounded wait would hold a short packet until more bytes arrived behind it.
+        int count = uart_read_bytes(UART_PORT, chunk, sizeof(chunk), pdMS_TO_TICKS(20));
         for (int i = 0; i < count; i++) {
             const char c = (char)chunk[i];
             if (c == '\n') {
