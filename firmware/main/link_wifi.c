@@ -47,6 +47,7 @@ static link_wifi_key_cb key_cb;
 static link_wifi_session_cb session_cb;
 static httpd_handle_t server;
 static bool services_started;
+static bool have_network; // only try to connect once credentials exist
 
 // ---- crypto helpers ----
 
@@ -389,9 +390,10 @@ static void start_services(void)
 
 static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (!have_network) {
+            return;
+        }
         const wifi_event_sta_disconnected_t *event = data;
         printf("WIFI disconnected reason=%d, retrying\n", event->reason);
         fflush(stdout);
@@ -426,6 +428,7 @@ static esp_err_t join(const wifi_config_t *stored)
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &config), TAG, "set config");
     printf("WIFI joining \"%s\"\n", (const char *)config.sta.ssid);
     fflush(stdout);
+    have_network = true;
     esp_wifi_disconnect();
     return esp_wifi_connect();
 }
