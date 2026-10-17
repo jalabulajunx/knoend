@@ -167,6 +167,12 @@
         <div id="advice" hidden>
           <p id="advice-text" class="advice"></p>
           <div id="advice-actions" class="actions left"></div>
+          <div id="advice-fix" class="fix" hidden>
+            <p class="small"><strong>Suggested change</strong> <span class="muted">(nothing changes until you press Apply)</span></p>
+            <ul id="advice-fix-list" class="small"></ul>
+            <div class="actions left"><button type="button" id="advice-fix-apply" class="primary">Apply</button></div>
+            <p id="advice-fix-status" class="note" hidden></p>
+          </div>
           <details><summary class="muted small">What was sent to the AI</summary><pre id="advice-sent"></pre></details>
         </div>
         <p id="assistant-off" class="muted small" hidden>Set up an AI provider above to use the assistant.</p>

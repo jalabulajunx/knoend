@@ -176,6 +176,15 @@ devices and whether each has a port, the WCH driver state, and whether openpager
 
 ### The AI pieces
 
+- **The assistant can propose a change, the person applies it.** Besides buttons, its reply may
+  carry a "fix": a model, an API address, request options (null = leave out), a reply timeout, or
+  which board to install for. The web app lists the change and does nothing until Apply; AI
+  changes are saved and tested at once. Keys, commands and files are never part of a fix.
+- **The wizard keeps looking by itself.** While no board is found it checks every 4 s (and when the
+  page comes back into view); a changed state (driver installed, switched on) is shown and, in
+  guided mode, sent to the assistant once; when the board appears it is identified without a click.
+  After the Accessibility page is opened, the page notices when typing is allowed.
+
 - **Configure fails** with "environment variable ... is not set" or 401/403: no API key, or a wrong
   one, for the chosen provider. Set it in the web app's AI settings.
 - **The provider refuses a request setting** (400: "temperature does not support 0.2", "Unsupported

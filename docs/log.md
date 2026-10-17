@@ -372,3 +372,29 @@ Entry template:
 - Not tested: real no-port detection on hardware (the ONX is on Wi-Fi with a working port here),
   macOS build of the moved code (CI), saving options through the form against OpenAI.
 - Open: a v0.1.1 release so Mac users get Tom's focus fix and these.
+
+## 2026-10-18 - Sundar (Claude Code) - Assistant proposes fixes; the wizard re-checks by itself
+
+- Merged PR #6 (onboarding without rebuilds). Then, as agreed with Sundar:
+- Changed:
+  - `agents/src/assistant.rs`: the reply may carry a `fix` (model, base_url, request options with
+    null = leave out, timeout_secs, board). `check_fix` keeps only well-formed fields (plain names,
+    http(s) addresses, scalar option values, no `model`/`messages`/`system`, timeout 10-3600) and
+    drops anything else (keys, files, nested values). Prompt: offer a fix only on evidence; models
+    from the provider's list (sent as `ai_models_available`); never claim a change before Apply.
+  - Web app: the fix is listed under the answer with an Apply button; AI changes are saved through
+    `/api/ai` and tested; a board choice is checked against the installable candidates. While no
+    board is found the wizard re-checks every 4 s (and on becoming visible), redraws and asks the
+    assistant only when something changed, and identifies a board that appears (guided mode).
+    After opening Accessibility it polls the new `/api/typing` and says when typing is allowed.
+  - `agent.toml` `timeout_secs` settable from the web app.
+- Tested (Arch Linux, Gemini): 31 Rust tests (new: fix checking). In the browser with stand-in
+  `/api/ports` and `/api/identify` replies (the ONX was not touched): no-port -> driver "waiting for
+  user" -> port appears: one assistant call per state, then identified automatically and on to
+  "Choose firmware". Real assistant, three native-USB boards tied, "I have the Freenove FNK0104B":
+  it proposed `board: fnk0104b`; Apply selected it and enabled Install. After the prompt fix its
+  answer says "Pressing Apply makes this selection" (before: "I have selected ... for you"). Apply
+  of an AI-settings fix (stand-in proposal, same model) saved, tested, and left `agent.toml` byte
+  for byte as before.
+- Not tested: on a Mac (driver flow, `/api/typing` with Accessibility); the watcher pauses while the
+  page is hidden, which the browser pane here is, so the test forced it visible.

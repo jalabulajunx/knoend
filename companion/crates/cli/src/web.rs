@@ -60,6 +60,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/ai/models", post(ai_models))
         .route("/assist", post(assist))
         .route("/open", post(open_help))
+        .route("/typing", get(typing))
         .layer(middleware::from_fn_with_state(app.clone(), require_token));
     let router = Router::new()
         .route("/", get(index))
@@ -277,6 +278,7 @@ async fn ai_settings() -> ApiResult {
             "base_url": config.base_url,
             "options": config.options,
             "omit": config.omit,
+            "timeout_secs": config.timeout_secs,
             "key": config.key_source(),
             "describe": config.describe(),
         }))),
@@ -293,6 +295,8 @@ struct AiRequest {
     /// Extra request fields (a JSON object); a field set to null goes to `omit` (never sent).
     #[serde(default)]
     options: Option<Value>,
+    #[serde(default)]
+    timeout_secs: Option<u64>,
 }
 
 /// Saves provider + model to agent.toml and the key to the local key store, then checks them with
@@ -308,6 +312,9 @@ async fn save_ai_settings(Json(request): Json<AiRequest>) -> ApiResult {
         if let Some(v) = value.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()) {
             table.insert(name.into(), v.to_string().into());
         }
+    }
+    if let Some(timeout) = request.timeout_secs.filter(|t| (10..=3600).contains(t)) {
+        table.insert("timeout_secs".into(), toml::Value::Integer(timeout as i64));
     }
     if let Some(options) = request.options.as_ref().filter(|o| !o.is_null()) {
         let options = options.as_object().ok_or_else(|| fail(StatusCode::BAD_REQUEST, "request options must be a JSON object"))?;
@@ -358,7 +365,16 @@ async fn assist(State(app): State<App>, Json(request): Json<AssistRequest>) -> A
     let snapshot = crate::diagnostics::snapshot(&app.shared, request.context).await;
     let advice = openpager_agents::assistant::advise(&config, &request.question, &snapshot).await
         .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
-    Ok(Json(json!({"answer": advice.answer, "actions": advice.actions, "sent": snapshot, "by": config.describe()})))
+    Ok(Json(json!({"answer": advice.answer, "actions": advice.actions, "fix": advice.fix, "sent": snapshot, "by": config.describe()})))
+}
+
+/// Whether this computer lets openpager type for the board (macOS asks for Accessibility; elsewhere
+/// always yes). The wizard polls it after opening the settings page.
+async fn typing() -> ApiResult {
+    #[cfg(target_os = "macos")]
+    return Ok(Json(json!({"can_type_keys": openpager_input::accessibility_trusted(), "app_to_allow": openpager_input::launching_app()})));
+    #[cfg(not(target_os = "macos"))]
+    Ok(Json(json!({"can_type_keys": true})))
 }
 
 #[derive(Deserialize)]

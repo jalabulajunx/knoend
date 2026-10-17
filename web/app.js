@@ -159,12 +159,22 @@ function choice(name, value, title, sub, disabled) {
   return { li, input };
 }
 
-async function scanPorts() {
+/** What the last port scan saw, so watching only redraws (and asks the assistant) on a change. */
+let lastPorts = null;
+
+/** Lists the ports. `watching`: a background re-check; does nothing unless something changed, and
+ *  carries on by itself when a board turns up. */
+async function scanPorts(watching = false) {
   const list = $("ports");
-  list.replaceChildren();
-  $("identify").disabled = true;
   try {
     const { ports, no_port: noPort = [], os, wch_driver: wch } = await api("/ports");
+    const seen = JSON.stringify([ports.map((p) => p.name), noPort.map((d) => d.usb_id), wch]);
+    if (watching && seen === lastPorts) return;
+    const appeared = watching && ports.length && lastPorts !== null;
+    lastPorts = seen;
+    list.replaceChildren();
+    $("identify").disabled = true;
+    setup.port = null;
     if (!ports.length) {
       const li = document.createElement("li");
       li.className = "muted";
@@ -179,10 +189,7 @@ async function scanPorts() {
             const b = document.createElement("button");
             b.className = "secondary";
             b.textContent = label;
-            b.addEventListener("click", async () => {
-              try { li.firstChild.textContent = `${(await api("/open", { target })).done}. Then unplug the board, plug it in again and press "Look again".`; }
-              catch (e) { li.firstChild.textContent = `Could not open it: ${e.message}`; }
-            });
+            b.addEventListener("click", async () => { li.firstChild.textContent = await openOnMac(target); });
             buttons.append(b);
           }
           li.replaceChildren(document.createTextNode(li.textContent), buttons);
@@ -201,12 +208,30 @@ async function scanPorts() {
       list.append(li);
       if (ports.length === 1) { input.checked = true; setup.port = p.name; $("identify").disabled = false; }
     }
+    // Found while watching (a cable, a driver, a switch): carry on without being asked.
+    if (appeared && setup.port) {
+      const note = document.createElement("li");
+      note.className = "note success";
+      note.textContent = `Found the board on ${setup.port}.${setup.mode === "ai" ? " Identifying it now..." : " Press Identify to continue."}`;
+      list.prepend(note);
+      $("advice").hidden = true;
+      if (setup.mode === "ai") $("identify").click();
+    }
   } catch (e) {
+    if (watching) return;
     list.innerHTML = "";
     logTo($("activity"), `Could not list ports: ${e.message}`, "error");
   }
 }
-$("rescan").addEventListener("click", scanPorts);
+$("rescan").addEventListener("click", () => scanPorts());
+
+// While the wizard waits for a board, look again every few seconds.
+setInterval(() => {
+  if (setup.step === 1 && !setup.port && !$("view-setup").hidden && document.visibilityState === "visible") scanPorts(true);
+}, 4000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && setup.step === 1 && !setup.port && !$("view-setup").hidden) scanPorts(true);
+});
 
 /** Why a USB-serial chip that is plugged in has no port, from what the computer reports. */
 function noPortAdvice(d, os, wch) {
@@ -601,14 +626,107 @@ const ACTIONS = {
   install_usb_driver: ["Install the USB driver", () => openOnMac("usb_driver")],
 };
 
-/** Settings pages and the driver installer the person approves on their Mac (macOS only). */
+/** Settings pages and the driver installer the person approves on their Mac (macOS only). Then
+ *  keeps checking, so the wizard carries on once the person has done their part. */
 async function openOnMac(target) {
+  let text;
   try {
     const r = await api("/open", { target });
-    $("advice-text").textContent = `${r.done}. When you have finished there, ask again or press "Look again".`;
+    if (target === "accessibility_settings") {
+      text = `${r.done}. Switch on the app it names there; this page will notice.`;
+      watchTyping();
+    } else {
+      if (setup.step !== 1) step(1);
+      text = `${r.done}. When you have finished there, unplug the board and plug it in again; this page keeps looking and carries on when it appears.`;
+    }
   } catch (e) {
-    $("advice-text").textContent = `Could not open it: ${e.message}`;
+    text = `Could not open it: ${e.message}`;
   }
+  $("advice-text").textContent = text;
+  return text;
+}
+
+/** After the Accessibility page is opened: check every few seconds (up to 10 minutes). */
+let typingWatch = null;
+function watchTyping() {
+  clearInterval(typingWatch);
+  const until = Date.now() + 10 * 60 * 1000;
+  typingWatch = setInterval(async () => {
+    if (Date.now() > until) return clearInterval(typingWatch);
+    try {
+      const r = await api("/typing");
+      if (r.can_type_keys) {
+        clearInterval(typingWatch);
+        $("advice").hidden = false;
+        $("advice-text").textContent = "Typing is allowed now. Press a key on the board to try it; if nothing is typed, restart openpager once.";
+        $("advice-actions").replaceChildren();
+      }
+    } catch { /* service restarting; try again */ }
+  }, 3000);
+}
+
+/** One line per change in a suggested fix. */
+function describeFix(fix) {
+  const lines = [];
+  if (fix.model) lines.push(`Model: ${fix.model}`);
+  if (fix.base_url !== undefined) lines.push(fix.base_url ? `API address: ${fix.base_url}` : "API address: the provider's usual one");
+  for (const [name, value] of Object.entries(fix.options || {})) {
+    lines.push(value === null ? `Leave out the setting "${name}"` : `Set "${name}" to ${JSON.stringify(value)}`);
+  }
+  if (fix.timeout_secs) lines.push(`Wait up to ${fix.timeout_secs} seconds for a reply`);
+  if (fix.board) {
+    const c = (setup.identified?.candidates || []).find((c) => c.board === fix.board);
+    lines.push(`Install for: ${c ? c.name : fix.board}`);
+  }
+  return lines;
+}
+
+/** Applies a fix the person accepted: the board choice here, AI settings saved and tested. */
+async function applyFix(fix) {
+  const status = $("advice-fix-status");
+  status.hidden = false;
+  status.className = "note";
+  const done = [];
+  if (fix.board) {
+    const c = (setup.identified?.candidates || []).find((c) => c.board === fix.board && (c.status === "supported" || c.status === "unverified"));
+    const input = c && document.querySelector(`#candidates input[value="${CSS.escape(c.board)}"]`);
+    if (!input) {
+      status.className = "note error";
+      status.textContent = "That board is not one of the installable boards found for this hardware; nothing was changed.";
+      return;
+    }
+    input.checked = true;
+    setup.board = c.board;
+    $("install").disabled = false;
+    if (setup.step !== 2) step(2);
+    done.push(`chose ${c.name}`);
+  }
+  if (fix.model || fix.base_url !== undefined || fix.options || fix.timeout_secs) {
+    status.textContent = "Saving the change and sending a one-word test request...";
+    try {
+      const info = await api("/ai");
+      const options = { ...(info.options || {}) };
+      for (const name of info.omit || []) options[name] = null;
+      Object.assign(options, fix.options || {});
+      const r = await api("/ai", { provider: info.provider, model: fix.model || info.model || null, api_key: null,
+        base_url: fix.base_url !== undefined ? (fix.base_url || null) : (info.base_url || null),
+        options: Object.keys(options).length ? options : null, timeout_secs: fix.timeout_secs || info.timeout_secs || null });
+      await loadAi();
+      if (!r.ok) {
+        status.className = "note error";
+        status.textContent = `Saved, but the test still fails: ${r.error}`;
+        return;
+      }
+      done.push(`AI settings saved; ${r.describe} answered the test`);
+    } catch (e) {
+      status.className = "note error";
+      status.textContent = `Could not apply it: ${e.message}`;
+      return;
+    }
+  }
+  status.className = "note success";
+  status.textContent = `Done: ${done.join("; ")}.`;
+  $("advice-fix-apply").disabled = true;
 }
 
 async function ask(question, error) {
@@ -620,8 +738,10 @@ async function ask(question, error) {
   box.hidden = false;
   $("advice-text").textContent = "Thinking...";
   $("advice-actions").replaceChildren();
+  $("advice-fix").hidden = true;
   const context = { wizard_step: setup.step, port: setup.port, chosen_board: setup.board,
-                    identify_result: setup.identified, error: error || null, setup_mode: setup.mode };
+                    identify_result: setup.identified, error: error || null, setup_mode: setup.mode,
+                    ai_models_available: models.slice(0, 200) };
   try {
     const r = await api("/assist", { question, context });
     $("advice-text").textContent = r.answer;
@@ -633,6 +753,14 @@ async function ask(question, error) {
       b.textContent = ACTIONS[id][0];
       b.addEventListener("click", ACTIONS[id][1]);
       $("advice-actions").append(b);
+    }
+    if (r.fix) {
+      $("advice-fix-list").replaceChildren(...describeFix(r.fix).map((line) => { const li = document.createElement("li"); li.textContent = line; return li; }));
+      $("advice-fix-status").hidden = true;
+      const apply = $("advice-fix-apply");
+      apply.disabled = false;
+      apply.onclick = () => applyFix(r.fix);
+      $("advice-fix").hidden = false;
     }
   } catch (e) {
     $("advice-text").textContent = `The assistant could not answer: ${e.message}`;
