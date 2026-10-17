@@ -336,3 +336,39 @@ Entry template:
   - The wizard should ask, not pre-select, when native-USB boards tie.
   - Press the new assistant buttons in a real setup; a release with the focus and OpenAI fixes for
     Mac users.
+
+## 2026-10-18 - Sundar (Claude Code) - PR #5 reviewed and merged; onboarding without rebuilds
+
+- Reviewed and merged Tom's PR #5 (macOS focus, OpenAI temperature, assistant learns macOS).
+  Follow-up from the pairing session: what Tom and Sundar fixed by editing Rust (provider
+  parameters, API address) or by hand (Mac USB driver) should be the setup's job, not a developer's.
+- Changed:
+  - `agents/src/provider.rs`: any request setting the provider rejects is dropped, or renamed when
+    the error names the replacement, and the request retried (up to 3; remembered per model for the
+    run). Error styles handled: OpenAI `param`, quoted names, Anthropic "x: Extra inputs", Gemini
+    (one-element list, `Unknown name "x"`, `fieldViolations`). `agent.toml` gains `[options]` and
+    `omit`. Every error ends with "What to do:" by status.
+  - Web app: AI settings > Advanced (API address for every provider, request options as JSON with
+    `null` = leave out). "No board found" now tells "chip plugged in, no driver" from "nothing
+    plugged in", on Linux (brltty/usbfs, missing module) and macOS (driver missing / not switched on,
+    with the install and Driver Extensions buttons), also in manual mode. Boards that tie (native
+    USB) are no longer pre-selected. The model field is now a combo box: clicking it (or the arrow)
+    lists every model the provider offers, scrolled to the current one; typing filters anywhere in
+    the name; arrows + Enter pick; any name can still be typed. (The old `<datalist>` was pre-filled
+    with the current model, so it only ever offered that one and looked empty.) A 404 from the test
+    reopens the list.
+  - `flash/src/usb.rs`: USB-serial chips with or without a port, Linux (sysfs, bound drivers) and
+    macOS (moved from Tom's diagnostics); `/api/ports` returns them; Linux `system_checks` too.
+  - WCH installer downloaded into a fresh 0700 folder (not a fixed temp name).
+  - Assistant prompt: never send the person to edit code or rebuild; provider problems are fixed in
+    AI settings; ask which board when boards tie. AGENTS.md: "Never make a rebuild the fix".
+- Tested (Arch Linux): 30 Rust tests (new: error styles incl. Gemini as received, agent.toml options,
+  sysfs parsing). Live with Gemini: an unknown option in `agent.toml` was rejected, dropped and the
+  draft succeeded (5.4 s); wrong model -> 404 with the "What to do"; unreachable address -> connection
+  advice. Web app in the browser: Advanced section loads saved settings; the four no-port messages
+  and buttons rendered from stand-in `/api/ports` replies; tie and clear-match candidates from a
+  stand-in identify reply, with the firmware list fetched from the v0.1.0 release; the assistant,
+  asked about an "unsupported parameter" error, pointed to Advanced settings, not a rebuild.
+- Not tested: real no-port detection on hardware (the ONX is on Wi-Fi with a working port here),
+  macOS build of the moved code (CI), saving options through the form against OpenAI.
+- Open: a v0.1.1 release so Mac users get Tom's focus fix and these.

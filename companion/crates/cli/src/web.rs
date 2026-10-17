@@ -131,10 +131,19 @@ async fn firmware(State(app): State<App>) -> ApiResult {
     Ok(Json(json!({"source": app.shared.firmware_source, "manifest": manifest})))
 }
 
+/// Serial ports, plus USB-serial chips that are plugged in but have no port (no driver claimed
+/// them), so the wizard can say why "no board" without the AI.
 async fn ports() -> ApiResult {
-    let ports = tokio::task::spawn_blocking(openpager_flash::list_ports).await
-        .map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(json!({"ports": ports})))
+    let (ports, no_port, driver) = tokio::task::spawn_blocking(|| {
+        let ports = openpager_flash::list_ports();
+        let no_port: Vec<_> = openpager_flash::usb_serial_devices(&ports).into_iter().filter(|d| !d.has_serial_port).collect();
+        #[cfg(target_os = "macos")]
+        let driver = (!no_port.is_empty()).then(crate::diagnostics::wch_driver_state);
+        #[cfg(not(target_os = "macos"))]
+        let driver: Option<String> = None;
+        (ports, no_port, driver)
+    }).await.map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({"ports": ports, "no_port": no_port, "os": std::env::consts::OS, "wch_driver": driver})))
 }
 
 #[derive(Deserialize)]
@@ -265,6 +274,9 @@ async fn ai_settings() -> ApiResult {
             "configured": agent_toml().exists(),
             "provider": format!("{:?}", config.provider).to_lowercase(),
             "model": config.model().ok(),
+            "base_url": config.base_url,
+            "options": config.options,
+            "omit": config.omit,
             "key": config.key_source(),
             "describe": config.describe(),
         }))),
@@ -278,6 +290,9 @@ struct AiRequest {
     model: Option<String>,
     api_key: Option<String>,
     base_url: Option<String>,
+    /// Extra request fields (a JSON object); a field set to null goes to `omit` (never sent).
+    #[serde(default)]
+    options: Option<Value>,
 }
 
 /// Saves provider + model to agent.toml and the key to the local key store, then checks them with
@@ -292,6 +307,25 @@ async fn save_ai_settings(Json(request): Json<AiRequest>) -> ApiResult {
     for (name, value) in [("model", &request.model), ("base_url", &request.base_url)] {
         if let Some(v) = value.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()) {
             table.insert(name.into(), v.to_string().into());
+        }
+    }
+    if let Some(options) = request.options.as_ref().filter(|o| !o.is_null()) {
+        let options = options.as_object().ok_or_else(|| fail(StatusCode::BAD_REQUEST, "request options must be a JSON object"))?;
+        let mut keep = toml::Table::new();
+        let mut omit = Vec::new();
+        for (name, value) in options {
+            if value.is_null() {
+                omit.push(toml::Value::String(name.clone()));
+            } else {
+                let value = toml::Value::try_from(value).map_err(|e| fail(StatusCode::BAD_REQUEST, format!("option {name}: {e}")))?;
+                keep.insert(name.clone(), value);
+            }
+        }
+        if !omit.is_empty() {
+            table.insert("omit".into(), toml::Value::Array(omit));
+        }
+        if !keep.is_empty() {
+            table.insert("options".into(), toml::Value::Table(keep));
         }
     }
     let text = format!("# Written by the OpenPager web app. API keys are kept in secrets.json, not here.\n{}",

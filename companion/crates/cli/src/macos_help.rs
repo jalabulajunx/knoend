@@ -26,7 +26,16 @@ pub async fn open(target: &str) -> Result<String, String> {
             let bytes = reqwest::get(WCH_DRIVER_URL).await.and_then(|r| r.error_for_status())
                 .map_err(|e| format!("could not download WCH's driver: {e}"))?
                 .bytes().await.map_err(|e| e.to_string())?;
-            let path = std::env::temp_dir().join("openpager-CH34xVCPDriver.pkg");
+            // A new folder only this user can write, so nothing can swap the file between the
+            // check and the opening.
+            let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+            let dir = std::env::temp_dir().join(format!("openpager-driver-{}-{nanos}", std::process::id()));
+            #[cfg(unix)]
+            std::os::unix::fs::DirBuilderExt::mode(&mut std::fs::DirBuilder::new(), 0o700).create(&dir)
+                .map_err(|e| format!("{}: {e}", dir.display()))?;
+            #[cfg(not(unix))]
+            std::fs::create_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            let path = dir.join("CH34xVCPDriver.pkg");
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             // Gatekeeper must accept it as notarized and signed by WCH before it is opened.
             let check = std::process::Command::new("spctl").args(["-a", "-vv", "-t", "install"]).arg(&path)
