@@ -1,0 +1,8 @@
+{ "id": 8, "type": "openpager.layout", "body": {
+    "layout": "community.amazon", "name": "Amazon", "source": "community", "reviewed": true,
+    "keys": [
+      { "key": 1, "label": "Search", "send": { "event": true } },
+      { "key": 2, "label": "Orders", "speak": "Your orders", "send": { "event": true } },
+      { "key": 3, "label": "Cart", "send": { "event": true } },
+      { "key": 4, "label": "Wish list", "send": { "event": true } },
+      { "key": 9, "label": "Buy now", "confirm": true, "send": { "event": true } } ] } }

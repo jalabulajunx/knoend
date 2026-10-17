@@ -1,0 +1,34 @@
+# Example community library for a website. Paths and selectors are illustrative and may change
+# when the site does.
+[pack]
+id = "community.amazon"
+name = "Amazon"
+version = "1.2.0"
+source = "community"
+license = "MIT"
+
+[match]
+web = ["amazon.ca", "amazon.com"]
+
+[[key]]
+label = "Search"
+action = { kind = "element", selector = "#twotabsearchtextbox" }
+
+[[key]]
+label = "Orders"
+speak = "Your orders"
+action = { kind = "open", url = "/gp/your-account/order-history" }
+
+[[key]]
+label = "Cart"
+action = { kind = "open", url = "/gp/cart/view.html" }
+
+[[key]]
+label = "Wish list"
+action = { kind = "open", url = "/hz/wishlist/ls" }
+
+[[key]]
+slot = 9
+label = "Buy now"
+confirm = true
+action = { kind = "element", selector = "#buy-now-button" }

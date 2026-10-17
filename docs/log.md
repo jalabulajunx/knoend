@@ -79,3 +79,24 @@ Entry template:
   - Show a pairing code on the board (and confirm on the board) to restore MITM protection.
   - `spec/` v0 with Tom; data channel (BLE data service / Wi-Fi / serial) next on the ONX.
   - macOS pairing on Tom's Mac not yet tried.
+
+## 2026-10-17 - Sundar (Claude Code) - spec/ v0 draft for review
+
+- Changed: `spec/protocol.md`, `spec/schemas/` (packet, library, Wi-Fi frame), `spec/examples/`
+  (14 valid, 7 must-fail), `tools/validate_spec.py`. On branch `sundar/spec-v0`, **not merged**:
+  needs Tom's review (spec/ is co-owned).
+- Main choices, all open to review:
+  - KDE-Connect-shaped packets `{id, type, body, re?}`; unknown types and fields ignored; 4096-byte cap.
+  - Serial = one JSON packet per line (lines not starting with `{` are logs); Wi-Fi = WebSocket
+    text frames; BLE data = custom GATT service (UUIDs `f0e35c51-...-97d0615e0001..3`) beside HID.
+  - Layout keys carry `send`: either `hid` (board types it, works without companion; companion has
+    already resolved Primary to Ctrl/Cmd) or `event` (board sends `openpager.key`).
+  - Risky keys `confirm: true` = second tap within 3 s. Approval requests: no answer = no.
+  - Wi-Fi frames: `{ctr, mac, packet}`, mac = HMAC-SHA256(K, ctr + "\n" + packet text). Key
+    exchange not specified yet.
+  - Library actions limited to shortcut / same-site open / element / named command.
+- Tested: `python3 tools/validate_spec.py` (system Python 3.14, python-jsonschema 4.26): 14 valid
+  pass, 7 invalid rejected, each for the intended reason (checked by reading the messages; one
+  example first failed for the wrong reason and was fixed).
+- Open: pairing key exchange; pages beyond 9 keys; icons; what desktop `match` patterns compare
+  against per OS; BLE data service on macOS/Windows untested.

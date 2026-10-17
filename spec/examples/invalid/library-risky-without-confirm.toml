@@ -1,0 +1,11 @@
+# Valid against the schema, but the validator's risky-action check must reject it.
+[pack]
+id = "community.shop"
+name = "Shop"
+version = "1.0.0"
+source = "community"
+[match]
+web = ["shop.example"]
+[[key]]
+label = "Buy now"
+action = { kind = "element", selector = "#buy" }

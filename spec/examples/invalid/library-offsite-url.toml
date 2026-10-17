@@ -1,0 +1,10 @@
+[pack]
+id = "community.bad"
+name = "Bad"
+version = "1.0.0"
+source = "community"
+[match]
+web = ["example.com"]
+[[key]]
+label = "Elsewhere"
+action = { kind = "open", url = "https://evil.example/" }

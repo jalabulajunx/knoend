@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jalabulajunx/openpager/spec/schemas/library.schema.json",
+  "title": "OpenPager layout library (v0, draft)",
+  "description": "A TOML layout library, parsed to JSON. Data only: actions are limited to the kinds below. See spec/protocol.md section 5.",
+  "type": "object",
+  "required": ["pack", "match", "key"],
+  "additionalProperties": false,
+  "properties": {
+    "pack": {
+      "type": "object",
+      "required": ["id", "name", "version", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^(builtin|community|ai|user)\\.[a-z0-9-]+(\\.[a-z0-9-]+)*$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "source": { "enum": ["builtin", "community", "ai", "user"] },
+        "description": { "type": "string", "maxLength": 200 },
+        "license": { "type": "string", "maxLength": 64 },
+        "authors": { "type": "array", "items": { "type": "string", "maxLength": 64 } },
+        "overrides": { "type": "string", "description": "For source = user: id of the library this file layers on." }
+      }
+    },
+    "match": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "web": { "$ref": "#/$defs/patterns" },
+        "linux": { "$ref": "#/$defs/patterns" },
+        "macos": { "$ref": "#/$defs/patterns" },
+        "windows": { "$ref": "#/$defs/patterns" },
+        "agent": { "$ref": "#/$defs/patterns" }
+      }
+    },
+    "key": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": ["label", "action"],
+        "additionalProperties": false,
+        "properties": {
+          "slot": { "type": "integer", "minimum": 1, "maximum": 9 },
+          "label": { "type": "string", "minLength": 1, "maxLength": 24 },
+          "speak": { "type": "string", "maxLength": 80 },
+          "confirm": { "type": "boolean" },
+          "action": {
+            "oneOf": [
+              {
+                "type": "object", "additionalProperties": false, "required": ["kind", "keys"],
+                "properties": {
+                  "kind": { "const": "shortcut" },
+                  "keys": {
+                    "type": "string",
+                    "pattern": "^((Primary|Ctrl|Shift|Alt|Meta)\\+)*([A-Z0-9]|F([1-9]|1[0-9]|2[0-4])|Enter|Escape|Tab|Space|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right|Backquote|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash)$"
+                  }
+                }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["kind", "url"],
+                "properties": {
+                  "kind": { "const": "open" },
+                  "url": { "type": "string", "pattern": "^/[^/]", "maxLength": 512 }
+                }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["kind", "selector"],
+                "properties": {
+                  "kind": { "const": "element" },
+                  "selector": { "type": "string", "minLength": 1, "maxLength": 256 }
+                }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["kind", "name"],
+                "properties": {
+                  "kind": { "const": "command" },
+                  "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,47}$" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "patterns": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "uniqueItems": true
+    }
+  }
+}

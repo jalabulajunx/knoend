@@ -1,0 +1,53 @@
+# Built-in library for Visual Studio Code. Shortcuts are VS Code's defaults; Primary = Cmd on
+# macOS, Ctrl elsewhere.
+[pack]
+id = "builtin.vscode"
+name = "VS Code"
+version = "0.1.0"
+source = "builtin"
+license = "MIT"
+
+[match]
+linux = ["code", "code-oss"]
+macos = ["com.microsoft.VSCode"]
+windows = ["Code.exe"]
+
+[[key]]
+label = "Palette"
+speak = "Command palette"
+action = { kind = "shortcut", keys = "Primary+Shift+P" }
+
+[[key]]
+label = "Quick open"
+action = { kind = "shortcut", keys = "Primary+P" }
+
+[[key]]
+label = "Find in files"
+action = { kind = "shortcut", keys = "Primary+Shift+F" }
+
+[[key]]
+label = "Sidebar"
+speak = "Toggle sidebar"
+action = { kind = "shortcut", keys = "Primary+B" }
+
+[[key]]
+label = "Save"
+action = { kind = "shortcut", keys = "Primary+S" }
+
+[[key]]
+label = "Go to line"
+action = { kind = "shortcut", keys = "Ctrl+G" }
+
+[[key]]
+label = "Source control"
+action = { kind = "shortcut", keys = "Ctrl+Shift+G" }
+
+[[key]]
+label = "Terminal"
+speak = "Toggle terminal"
+action = { kind = "shortcut", keys = "Ctrl+Backquote" }
+
+[[key]]
+label = "Run"
+speak = "Start debugging"
+action = { kind = "shortcut", keys = "F5" }

@@ -1,0 +1,5 @@
+{ "id": 0, "type": "openpager.identity", "body": {
+    "deviceId": "laptop-3f9c2a", "deviceName": "Workstation", "deviceType": "companion",
+    "protocolVersion": 0,
+    "incoming": ["openpager.key", "openpager.layout.ack", "openpager.approve.response", "openpager.ping"],
+    "outgoing": ["openpager.layout", "openpager.status", "openpager.approve.request", "openpager.ping"] } }

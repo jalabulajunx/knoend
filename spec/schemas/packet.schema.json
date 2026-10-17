@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jalabulajunx/openpager/spec/schemas/packet.schema.json",
+  "title": "OpenPager packet (protocol v0, draft)",
+  "description": "One packet between a board and a companion. See spec/protocol.md.",
+  "type": "object",
+  "required": ["id", "type", "body"],
+  "properties": {
+    "id": { "type": "integer", "minimum": 0 },
+    "re": { "type": "integer", "minimum": 0 },
+    "type": { "type": "string", "pattern": "^openpager\\.[a-z]+(\\.[a-z]+)*$" },
+    "body": { "type": "object" }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "openpager.identity" } } },
+      "then": { "properties": { "body": { "$ref": "#/$defs/identity" } } } },
+    { "if": { "properties": { "type": { "const": "openpager.layout" } } },
+      "then": { "properties": { "body": { "$ref": "#/$defs/layout" } } } },
+    { "if": { "properties": { "type": { "const": "openpager.layout.ack" } } },
+      "then": { "required": ["re"], "properties": { "body": { "$ref": "#/$defs/layoutAck" } } } },
+    { "if": { "properties": { "type": { "const": "openpager.key" } } },
+      "then": { "properties": { "body": { "$ref": "#/$defs/key" } } } },
+    { "if": { "properties": { "type": { "const": "openpager.status" } } },
+      "then": { "properties": { "body": { "$ref": "#/$defs/status" } } } },
+    { "if": { "properties": { "type": { "const": "openpager.approve.request" } } },
+      "then": { "properties": { "body": { "$ref": "#/$defs/approveRequest" } } } },
+    { "if": { "properties": { "type": { "const": "openpager.approve.response" } } },
+      "then": { "required": ["re"], "properties": { "body": { "$ref": "#/$defs/approveResponse" } } } },
+    { "if": { "properties": { "type": { "const": "openpager.error" } } },
+      "then": { "properties": { "body": { "$ref": "#/$defs/error" } } } }
+  ],
+  "$defs": {
+    "slot": { "type": "integer", "minimum": 1, "maximum": 9 },
+    "label": { "type": "string", "minLength": 1, "maxLength": 24 },
+    "packetType": { "type": "string", "pattern": "^openpager\\.[a-z]+(\\.[a-z]+)*$" },
+
+    "identity": {
+      "type": "object",
+      "required": ["deviceId", "deviceName", "deviceType", "protocolVersion", "incoming", "outgoing"],
+      "properties": {
+        "deviceId": { "type": "string", "pattern": "^[0-9a-z-]{4,64}$" },
+        "deviceName": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "deviceType": { "enum": ["board", "companion", "sim"] },
+        "protocolVersion": { "type": "integer", "minimum": 0 },
+        "firmware": { "type": "string", "maxLength": 32 },
+        "board": {
+          "type": "object",
+          "required": ["profile", "width", "height", "grid"],
+          "properties": {
+            "profile": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 },
+            "grid": {
+              "type": "object",
+              "required": ["cols", "rows"],
+              "properties": {
+                "cols": { "type": "integer", "minimum": 1, "maximum": 3 },
+                "rows": { "type": "integer", "minimum": 1, "maximum": 3 }
+              }
+            },
+            "statusBar": { "type": "boolean" }
+          }
+        },
+        "features": {
+          "type": "object",
+          "properties": {
+            "speaker": { "type": "boolean" },
+            "battery": { "type": "boolean" },
+            "nativeUsb": { "type": "boolean" },
+            "transports": {
+              "type": "array",
+              "items": { "enum": ["ble-hid", "ble-data", "serial", "wifi", "usb-hid"] },
+              "uniqueItems": true
+            }
+          }
+        },
+        "incoming": { "type": "array", "items": { "$ref": "#/$defs/packetType" }, "uniqueItems": true },
+        "outgoing": { "type": "array", "items": { "$ref": "#/$defs/packetType" }, "uniqueItems": true }
+      },
+      "if": { "properties": { "deviceType": { "enum": ["board", "sim"] } } },
+      "then": { "required": ["board"] }
+    },
+
+    "layout": {
+      "type": "object",
+      "required": ["layout", "name", "keys"],
+      "properties": {
+        "layout": { "type": "string", "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "source": { "enum": ["builtin", "community", "ai", "user", "default"] },
+        "reviewed": { "type": "boolean" },
+        "keys": {
+          "type": "array",
+          "maxItems": 9,
+          "items": {
+            "type": "object",
+            "required": ["key", "label", "send"],
+            "properties": {
+              "key": { "$ref": "#/$defs/slot" },
+              "label": { "$ref": "#/$defs/label" },
+              "speak": { "type": "string", "maxLength": 80 },
+              "confirm": { "type": "boolean" },
+              "send": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": ["hid"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "hid": {
+                        "type": "object",
+                        "required": ["modifiers", "usage"],
+                        "additionalProperties": false,
+                        "properties": {
+                          "modifiers": { "type": "integer", "minimum": 0, "maximum": 15 },
+                          "usage": { "type": "integer", "minimum": 4, "maximum": 115 }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["event"],
+                    "additionalProperties": false,
+                    "properties": { "event": { "const": true } }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "layoutAck": {
+      "type": "object",
+      "required": ["layout", "ok"],
+      "properties": {
+        "layout": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "error": { "type": "string", "maxLength": 80 }
+      },
+      "if": { "properties": { "ok": { "const": false } } },
+      "then": { "required": ["error"] }
+    },
+
+    "key": {
+      "type": "object",
+      "required": ["key", "layout", "seq"],
+      "properties": {
+        "key": { "$ref": "#/$defs/slot" },
+        "layout": { "type": "string" },
+        "seq": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "status": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 80 },
+        "level": { "enum": ["info", "attention", "alert"] },
+        "ttl": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "approveRequest": {
+      "type": "object",
+      "required": ["request", "agent", "summary", "command", "destructive", "timeout"],
+      "properties": {
+        "request": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "agent": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "session": { "type": "string", "maxLength": 32 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "command": { "type": "string", "maxLength": 1024 },
+        "destructive": { "type": "boolean" },
+        "timeout": { "type": "integer", "minimum": 1, "maximum": 3600 }
+      }
+    },
+
+    "approveResponse": {
+      "type": "object",
+      "required": ["request", "decision"],
+      "properties": {
+        "request": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "decision": { "enum": ["allow", "deny"] }
+      }
+    },
+
+    "error": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": { "enum": ["bad-packet", "unsupported", "too-large", "unauthorised", "busy"] },
+        "message": { "type": "string", "maxLength": 120 }
+      }
+    }
+  }
+}
