@@ -21,7 +21,7 @@ How to set it up: [`setup.md`](setup.md). Day-by-day detail, including what was 
 | Shared contracts and validator | `spec/`, `tools/validate_spec.py` | `python3 tools/validate_spec.py` |
 | macOS: layout follows the front window, keys typed by the service, assistant snapshot shows USB driver and Accessibility state | `focus/src/macos.rs`, `input/src/macos.rs`, `cli/src/diagnostics.rs` | switch apps on a Mac; "Ask the assistant" |
 | USB-Serial-JTAG serial line (native-USB boards): identify, install, pair | `firmware/main/`, `companion/crates/flash` | Freenove FNK0104B on macOS |
-| Installing v0.1.0 from the published release through the web app | `companion/crates/cli/src/firmware.rs` | default firmware source |
+| Installing from the published release (v0.1.0; v0.1.1 adds the Mac fixes and onboarding work) through the web app | `companion/crates/cli/src/firmware.rs` | default firmware source |
 | CI: spec, companion on Linux + macOS, firmware build | `.github/workflows/ci.yml` | every push and PR |
 
 ## Built, not yet tested

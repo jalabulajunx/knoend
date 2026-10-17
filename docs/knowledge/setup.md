@@ -158,10 +158,9 @@ devices and whether each has a port, the WCH driver state, and whether openpager
   (`system_checks.accessibility.app_to_allow` names it). System Settings > Privacy & Security >
   Accessibility (the "Open Accessibility settings" button), switch that app on, then restart
   `openpager`; restarting the app itself was not needed on macOS 26.6.
-- **The layout does not follow the app on a Mac** (it stays on the first app). Fixed in the
-  companion after v0.1.0: `NSWorkspace.frontmostApplication` never updates in a program without a
-  main run loop, so the watcher now asks the window server which app owns the front window. With
-  v0.1.0, use a newer build.
+- **The layout does not follow the app on a Mac** (it stays on the first app). Fixed in
+  v0.1.1: `NSWorkspace.frontmostApplication` never updates in a program without a main run loop, so
+  the watcher now asks the window server which app owns the front window. With v0.1.0, update.
 - **"openpager" cannot be opened because the developer cannot be verified.** The binary is not
   signed yet: right-click > Open once, or `xattr -d com.apple.quarantine openpager`.
 - **Two ports per board** (`/dev/cu.*` and `/dev/tty.*`): the companion lists only the `cu.*` one,
