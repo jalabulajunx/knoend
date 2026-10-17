@@ -16,8 +16,3 @@ dist/
 .idea/
 *.swp
 .DS_Store
-
-# Private working notes (kept locally, not published)
-HANDOFF.md
-PLAN.md
-CLAUDE.md

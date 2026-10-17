@@ -123,7 +123,7 @@ web/                  web app: served by the local service, and hosted for flash
 extension/            Chrome extension (reports the active tab)
 libraries/builtin/    built-in layout libraries (*.toml)
 hardware/             grid overlay CAD, battery and wiring notes
-docs/                 decisions/ (short ADRs), terms/ (third-party agreements kept for reference)
+docs/                 decisions/ (short ADRs)
 tools/                flashing scripts, host listener, test helpers
 ```
 
