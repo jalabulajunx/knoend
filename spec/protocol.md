@@ -64,6 +64,8 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `openpager.status` | C→B | Show a message on the status bar |
 | `openpager.approve.request` | C→B | A coding agent asks permission; show it and wait for Approve/Deny |
 | `openpager.approve.response` | B→C | The person's answer |
+| `openpager.pair` | C→B | Serial only: hand the board a Wi-Fi key (section 4.1) |
+| `openpager.pair.ack` | B→C | Key stored |
 | `openpager.ping` | both | Liveness check; answer with `openpager.ping` and `re` set |
 | `openpager.error` | both | A packet could not be handled |
 
@@ -167,20 +169,68 @@ means until replaced. An empty `text` clears the bar.
 ## 4. Pairing and authentication (Wi-Fi)
 
 Bluetooth uses the link's own pairing and encryption (currently "Just Works"; see the running log).
-Serial is trusted (physical access). Wi-Fi needs its own trust, because anyone on the network can
-reach the board:
+Serial is trusted: a cable means physical access. Wi-Fi needs its own trust, because anyone on the
+network can reach the board. The trust is a 32-byte key `K` shared by one board and one companion,
+handed over by cable.
 
-1. **Pairing (draft):** the board and the companion each show the same 6-digit code; the person
-   confirms on both. The result is a 32-byte shared key `K`, stored on both sides.
-2. **Every Wi-Fi frame is authenticated:**
-   `{ "ctr": 105, "mac": "<64 hex digits>", "packet": "<packet JSON as a string>" }`
-   where `ctr` is a per-sender counter that must increase (replays are dropped). `mac` is
-   HMAC-SHA256 with key `K` over `ctr` in decimal, a newline, then the exact `packet` text (here
-   `"105\n{\"id\":...}"`), so no JSON canonicalisation is needed.
-3. Frames that fail the check are dropped and answered with `openpager.error` code `unauthorised`
-   (unauthenticated, so the receiver must not trust it).
+### 4.1 Pair over USB (primary)
 
-The key-exchange messages are not specified yet; open item for v0.1.
+While the board is connected by USB, including right after the companion flashes it:
+
+1. The companion generates `K` from the operating system's secure random source and stores it in
+   the OS keyring under the board's `deviceId`.
+2. It sends, **over serial only**:
+   `{ "id": 3, "type": "openpager.pair", "body": { "companion": "laptop-3f9c2a", "companionName": "Workstation", "key": "<64 hex digits>" } }`
+3. The board stores `K` for that companion (up to 4 companions; the oldest is replaced) and answers
+   `openpager.pair.ack` with `{ "companion": "laptop-3f9c2a", "ok": true }`.
+
+Rules:
+- The board **rejects `openpager.pair` on any transport other than serial** (`openpager.error`,
+  code `unauthorised`).
+- `K` is never part of the firmware image. Firmware is public and every board runs the same image,
+  so a built-in key would be the same on every board.
+- The web app asks before pairing ("Pair this board with this computer?"). Boards flashed from the
+  hosted page without the service are paired the first time the service sees them over USB.
+- Forgetting: the companion deletes its copy; "Forget all computers" on the board (and a factory
+  reset) erases every stored key.
+
+### 4.2 Discovery and session handshake
+
+- The board announces `_openpager._tcp` over mDNS with TXT `id=<deviceId>` and `pv=<protocolVersion>`.
+  Nothing derived from `K` is broadcast (it could be replayed, and would let anyone track the board).
+- The companion opens `ws://<board>/ws`. The first three text frames prove both sides hold `K`, using
+  fresh 16-byte random nonces written as 32 hex digits:
+
+| # | From | Message |
+| --- | --- | --- |
+| 1 | companion | `{ "hello": { "companion": "<companion id>", "nonce": "<Nc>" } }` |
+| 2 | board | `{ "hello": { "board": "<deviceId>", "nonce": "<Nb>", "proof": HMAC(K, "board\n" + Nc + "\n" + Nb) } }` |
+| 3 | companion | `{ "proof": HMAC(K, "companion\n" + Nb + "\n" + Nc) }` |
+
+  HMAC is HMAC-SHA256, written as 64 lowercase hex digits. If the board holds no key for that
+  companion, or a proof is wrong, the other side closes the connection. Each proof covers a nonce
+  the other side just chose, so a recorded handshake cannot be replayed.
+
+### 4.3 Authenticated frames
+
+After the handshake every frame is:
+
+`{ "ctr": 0, "mac": "<64 hex digits>", "packet": "<packet JSON as a string>" }`
+
+- Session id `S` = `Nb` + `Nc` (64 hex digits, board's nonce first).
+- `mac` = HMAC-SHA256(K, `S` + "\n" + `ctr` in decimal + "\n" + the exact `packet` text). No JSON
+  canonicalisation is needed, and a frame from one session never verifies in another.
+- `ctr` starts at 0 for each sender in each session and must increase; repeats are dropped.
+- Frames that fail are dropped and the connection is closed.
+
+The exact bytes are pinned by the test vector [`examples/wifi-session.json`](examples/wifi-session.json)
+(all-zero test key; `tools/validate_spec.py` recomputes every proof and MAC).
+
+### 4.4 Fallback: pairing code (no cable)
+
+For a computer that never gets a cable: both screens show the same 6-digit code and the person
+confirms on both. This needs a password-authenticated key exchange; the messages are not specified
+yet (open item for v0.1).
 
 ## 5. Layout libraries (files)
 
@@ -228,7 +278,8 @@ Precedence when several libraries match: user override → installed library →
 
 ## 6. Open questions
 
-- Pairing key exchange messages (section 4).
+- Pairing-code key exchange for computers without a cable (section 4.4).
+- Storing keys with NVS encryption on the board (today: plain NVS; reading them needs the board in hand).
 - Pages beyond 9 keys (`PluginDynamicFolder`-style folders).
 - Icons: format and size on 106×66 px keys, and whether they travel in packets or live on microSD.
 - What desktop `match` patterns are compared against on each OS (Linux: `.desktop` id or WM_CLASS;

@@ -1,1 +1,0 @@
-{"ctr": 105, "mac": "4b6f1f4b2bac501a8ebb36da68a63712fedfc3db0f515e3275aa3571ed2ddbcf", "packet": "{\"id\":21,\"type\":\"openpager.status\",\"body\":{\"text\":\"Claude is waiting\",\"level\":\"info\"}}"}

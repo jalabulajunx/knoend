@@ -8,7 +8,8 @@ Beyond the JSON Schemas it checks what schemas cannot express:
   - packets are at most 4096 bytes;
   - key slots are not used twice;
   - risky-looking keys (buy, pay, submit, send, delete ...) carry confirm = true;
-  - the Wi-Fi frame example's MAC verifies with the all-zero test key.
+  - Wi-Fi session test vectors: both handshake proofs and every frame MAC are recomputed with the
+    vector's key, and each sender's counter must increase.
 
 Needs Python 3.11+ (tomllib) and the jsonschema package (Arch: python-jsonschema).
 Usage: python3 tools/validate_spec.py
@@ -27,7 +28,6 @@ from jsonschema import Draft202012Validator
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "spec"
 MAX_PACKET_BYTES = 4096
-TEST_KEY = bytes(32)  # all-zero key: test vectors only
 RISKY = re.compile(r"\b(buy|purchase|pay|checkout|order now|submit|send|delete|remove|erase)\b", re.I)
 
 
@@ -39,7 +39,7 @@ def load_schema(name):
 
 PACKET = load_schema("packet.schema.json")
 LIBRARY = load_schema("library.schema.json")
-WIFI_FRAME = load_schema("wifi-frame.schema.json")
+WIFI = load_schema("wifi-message.schema.json")
 
 
 def slots(keys, field):
@@ -87,15 +87,40 @@ def check_library(path):
     return errors
 
 
-def check_wifi_frame(text):
-    frame = json.loads(text)
-    errors = [e.message for e in WIFI_FRAME.iter_errors(frame)]
-    if not errors:
-        expected = hmac.new(TEST_KEY, f"{frame['ctr']}\n{frame['packet']}".encode(),
-                            hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, frame["mac"]):
-            errors.append("mac does not verify with the test key")
-        errors += check_packet(frame["packet"])
+def check_wifi_session(text):
+    """Replays a recorded session: hello (companion), hello (board), proof (companion), frames."""
+    session = json.loads(text)
+    key = bytes.fromhex(session["key"])
+    mac = lambda msg: hmac.new(key, msg.encode(), hashlib.sha256).hexdigest()
+    messages = session["messages"]
+    errors = []
+    for n, item in enumerate(messages):
+        errors += [f"message {n}: {e.message}" for e in WIFI.iter_errors(item["message"])]
+    if errors:
+        return errors
+    if len(messages) < 3:
+        return ["a session needs the three handshake messages"]
+
+    nc = messages[0]["message"]["hello"]["nonce"]
+    nb = messages[1]["message"]["hello"]["nonce"]
+    if not hmac.compare_digest(messages[1]["message"]["hello"]["proof"], mac(f"board\n{nc}\n{nb}")):
+        errors.append("board proof does not verify")
+    if not hmac.compare_digest(messages[2]["message"]["proof"], mac(f"companion\n{nb}\n{nc}")):
+        errors.append("companion proof does not verify")
+
+    session_id = nb + nc
+    last_ctr = {}
+    for n, item in enumerate(messages[3:], start=3):
+        frame, sender = item["message"], item["from"]
+        if "packet" not in frame:
+            errors.append(f"message {n}: expected a frame after the handshake")
+            continue
+        if not hmac.compare_digest(frame["mac"], mac(f"{session_id}\n{frame['ctr']}\n{frame['packet']}")):
+            errors.append(f"message {n}: mac does not verify")
+        if sender in last_ctr and frame["ctr"] <= last_ctr[sender]:
+            errors.append(f"message {n}: {sender} counter {frame['ctr']} does not increase")
+        last_ctr[sender] = frame["ctr"]
+        errors += [f"message {n}: {e}" for e in check_packet(frame["packet"])]
     return errors
 
 
@@ -103,8 +128,8 @@ def check(path):
     if path.suffix == ".toml":
         return check_library(path)
     text = path.read_text().strip()
-    if path.name.startswith("wifi-frame"):
-        return check_wifi_frame(text)
+    if path.name.startswith("wifi-session"):
+        return check_wifi_session(text)
     return check_packet(text)
 
 

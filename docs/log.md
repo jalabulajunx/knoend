@@ -100,3 +100,22 @@ Entry template:
   example first failed for the wrong reason and was fixed).
 - Open: pairing key exchange; pages beyond 9 keys; icons; what desktop `match` patterns compare
   against per OS; BLE data service on macOS/Windows untested.
+
+## 2026-10-17 - Sundar (Claude Code) - spec v0: pair over USB, session-bound Wi-Fi auth
+
+- Changed (branch `sundar/spec-v0`, still not merged): `spec/protocol.md` section 4 rewritten;
+  `openpager.pair` / `openpager.pair.ack` added; `wifi-frame.schema.json` replaced by
+  `wifi-message.schema.json` (hello, proof, frame); test vector `examples/wifi-session.json`.
+- Decided (Sundar's idea): **pair over USB.** While the board is cabled (including right after the
+  companion flashes it) the companion generates a random 32-byte key and sends it in
+  `openpager.pair` over serial; the board accepts that packet on serial only. No key in the
+  firmware image (public, identical on every board). mDNS broadcasts only `id` and `pv`. On each
+  Wi-Fi connection both sides prove the key over fresh nonces; frame MACs cover the session id
+  (`Nb + Nc`) so frames cannot be replayed across sessions (the earlier draft's per-session counter
+  allowed that). The 6-digit code stays as the no-cable fallback (exchange not specified).
+- Tested: `python3 tools/validate_spec.py`: 16 valid pass; 10 invalid rejected, each for the
+  intended reason (tampered frame, replayed handshake, repeated counter, short pairing key, plus the
+  earlier six). The test vector was generated and checked by the same Python formulas, so it only
+  proves consistency with the spec text; it becomes a real cross-check when the C and Rust code
+  reproduce it.
+- Open: where the companion stores keys per OS (keyring choice); NVS encryption on the board.

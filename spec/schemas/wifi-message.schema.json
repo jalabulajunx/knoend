@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jalabulajunx/openpager/spec/schemas/wifi-message.schema.json",
+  "title": "OpenPager Wi-Fi WebSocket message (protocol v0, draft)",
+  "description": "Handshake messages (hello, proof) and authenticated frames. See spec/protocol.md section 4.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hello"
+      ],
+      "properties": {
+        "hello": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "companion",
+            "nonce"
+          ],
+          "properties": {
+            "companion": {
+              "type": "string",
+              "pattern": "^[0-9a-z-]{4,64}$"
+            },
+            "nonce": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hello"
+      ],
+      "properties": {
+        "hello": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "board",
+            "nonce",
+            "proof"
+          ],
+          "properties": {
+            "board": {
+              "type": "string",
+              "pattern": "^[0-9a-z-]{4,64}$"
+            },
+            "nonce": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "proof": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proof"
+      ],
+      "properties": {
+        "proof": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ctr",
+        "mac",
+        "packet"
+      ],
+      "properties": {
+        "ctr": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mac": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "packet": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 4096
+        }
+      }
+    }
+  ]
+}
