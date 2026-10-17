@@ -5,8 +5,9 @@ part 2 is for people working on the code. When something goes wrong, see
 [`knowledge/setup.md`](knowledge/setup.md), which lists every failure seen so far and its fix. The
 web app's setup assistant reads the same file.
 
-Tested on Arch Linux (X11, i3) with an ONX2432G028. The macOS build compiles in CI but has **not
-been run on a Mac yet**. Windows is not supported yet.
+Tested on Arch Linux (X11, i3) and on macOS 26.6 (Apple silicon) with an ONX2432G028. On a Mac,
+the v0.1.0 release cannot follow the focused app and fails with newer OpenAI models: build the
+service from source (below) until the next release. Windows is not supported yet.
 
 ## What you need
 
@@ -34,14 +35,22 @@ tar xzf openpager-*.tar.gz
 On a Mac the binary is not signed yet: the first time, right-click > Open, or run
 `xattr -d com.apple.quarantine openpager`.
 
-Or build it from source (stable Rust from [rustup](https://rustup.rs); on Linux also `pkg-config`
-and the libudev headers: `libudev-dev` on Debian and Ubuntu, already in `systemd-libs` on Arch):
+Or build it from source (stable Rust from [rustup](https://rustup.rs); on a Mac also the Xcode
+Command Line Tools, `xcode-select --install`; on Linux also `pkg-config` and the libudev headers:
+`libudev-dev` on Debian and Ubuntu, already in `systemd-libs` on Arch):
 
 ```bash
 git clone https://github.com/jalabulajunx/openpager.git
 cd openpager/companion
 cargo build --release
 ```
+
+**Mac USB driver.** Boards with a CH340K serial chip (the ONX2432G028, USB ID `1a86:7522`) need
+WCH's driver on macOS; without it the wizard says "No board found". The setup assistant offers to
+install it, or get `CH34xVCPDriver.pkg` from
+[WCHSoftGroup/ch34xser_macos](https://github.com/WCHSoftGroup/ch34xser_macos). After installing,
+switch it on in System Settings > General > Login Items & Extensions > Driver Extensions, then
+unplug and replug the board.
 
 **Linux serial access.** Your user must be in the group that owns the serial port: `uucp` on Arch,
 `dialout` on Debian and Ubuntu. After adding yourself, log out and back in.
@@ -110,7 +119,9 @@ network. The service finds it by mDNS.
     else running.
   - Otherwise it sends each key to the service, which types it for you.
 - **On a Mac,** the service can only type for you once you allow it: System Settings > Privacy &
-  Security > Accessibility, then add Terminal (or the `openpager` binary).
+  Security > Accessibility, then switch on the app you started `openpager` from (Terminal, iTerm,
+  or Visual Studio Code if you started it in VS Code's terminal), and restart `openpager`. The
+  service log names the app; the setup assistant has a button that opens the page.
 
 ### Where things are kept
 
@@ -176,7 +187,7 @@ cargo test
 | --- | --- |
 | `core` | protocol, libraries, validation, matching |
 | `transport` | serial, Wi-Fi (mDNS + authenticated WebSocket), pairing |
-| `focus` | focused app (X11 on Linux, NSWorkspace on macOS) |
+| `focus` | focused app (X11 on Linux, the window server's front window on macOS) |
 | `input` | typing keys (XTest on Linux, Core Graphics on macOS) |
 | `flash` | identify and flash boards (espflash), firmware manifest |
 | `agents` | AI providers, setup assistant, layout drafting, key storage |
@@ -228,6 +239,6 @@ the maintainers before tagging.
 ### Known gaps
 
 - Linux focus tracking needs X11. On Wayland, only XWayland apps are seen.
-- macOS is untested on real hardware.
+- macOS is tested on 26.6 with Apple silicon only; Intel Macs are untested.
 - Windows has no focus or typing backend yet.
 - The board UI always shows nine tiles. Dynamic tiles with paging are planned.

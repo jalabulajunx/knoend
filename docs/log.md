@@ -268,3 +268,71 @@ Entry template:
   reports `openpager 0.1.0`. Not yet done: installing a board from the release (default firmware
   source) and running the macOS binaries.
 - Docs now point to the release instead of building from source.
+
+## 2026-10-17 - Tom (Claude Code) - First run on a Mac: two boards, focus and OpenAI fixes, assistant learns macOS
+
+- Changed (branch `tom/macos-setup`):
+  - `agents/src/provider.rs`: OpenAI-style requests retry once without `temperature` when the
+    provider rejects it (400 with `param: temperature`; newer OpenAI reasoning models accept only
+    the default).
+  - `focus/src/macos.rs`: the focused app now comes from the window server (owner of the frontmost
+    layer-0 window, `CGWindowListCopyWindowInfo`, then `NSRunningApplication` by PID).
+    `NSWorkspace.frontmostApplication` never changed in the service (no main run loop), so the
+    layout stayed on the first app.
+  - Setup assistant: the snapshot's `system_checks` on macOS lists USB serial devices with
+    `has_serial_port`, the WCH driver extension state, `can_type_keys` and `app_to_allow`; new
+    actions open Accessibility, open Driver Extensions, and download + open WCH's driver installer
+    after a Gatekeeper check (`cli/src/macos_help.rs`, `POST /api/open`); the prompt tells it to
+    read `system_checks` first and lead the person through steps only they can approve. Decision:
+    [`decisions/2026-10-17-assistant-opens-settings.md`](decisions/2026-10-17-assistant-opens-settings.md).
+  - The Accessibility error names the app that launched `openpager`.
+  - Docs: `knowledge/setup.md` (macOS section rewritten from confirmed facts; identical native-USB
+    boards; OpenAI temperature; building on a Mac), `setup.md`, `status.md`, and in `AGENTS.md` a
+    section asking agents to turn each hand-made setup fix into knowledge, snapshot evidence and an
+    assistant action, plus "lessons that cost time".
+- Changed (branch `tom/fnk0104b`, not merged, needs a firmware build): `fnk0104b.json` definition from
+  Freenove's 2.8" schematic (pin numbers only; LCD SPI CS 10, MOSI 11, SCK 12, DC 46, backlight 45
+  active high, reset on CHIP_PU; I2C SDA 16, SCL 15; FT6336 at 0x38, reset 18), catalog status
+  "unverified"; `board_generic.c` passes the definition's swap/mirror to `esp_lvgl_port`, because
+  `lvgl_port_add_disp()` re-applies its own (all false) values when registering the display, so
+  `mirror_*`/`swap_xy` in every definition have had no effect; ONX `mirror_y` set to false to keep
+  its confirmed picture under that fix.
+- Tested (macOS 26.6.1, Apple silicon, Wi-Fi "home"; service built from this branch):
+  - v0.1.0 release binary runs (`openpager 0.1.0`), web app serves.
+  - OpenAI (`gpt-6-luna`): the key test failed with v0.1.0 (400, temperature); after the fix a
+    Firefox layout was drafted in 7.4 s, first attempt.
+  - Freenove FNK0104B (native USB, `/dev/cu.usbmodem101`): the wizard chose the ESP32-S3-BOX-3
+    definition (equal evidence, see knowledge); it installed, paired over USB-Serial-JTAG and joined
+    Wi-Fi with a dark screen. With `fnk0104b.json` (local firmware folder, v0.1.0 image): display,
+    backlight and touch work, picture mirrored left-right; `mirror_y: true` changed nothing even
+    after erase, and reading the `board` partition back (esptool `read_flash 0x310000`) showed the
+    new definition byte for byte, which led to the `esp_lvgl_port` finding above. The firmware fix
+    is not built yet (no ESP-IDF on this Mac).
+  - Typing: refused until Visual Studio Code (which launched `openpager`) was allowed under
+    Accessibility; then VS Code's Terminal key and Firefox keys typed. Restarting `openpager` was
+    enough.
+  - Focus: with the new watcher, VS Code -> Firefox ("Unsupported", Configure) -> VS Code, layouts
+    followed each switch.
+  - ONX2432G028 (CH340K, `1a86:7522`): "No board found". The USB device was present but had no
+    port: Apple's driver covers 7523 and 55d4 only. WCH's `CH34xVCPDriver.pkg` (notarized, team
+    5JZGQTGU4W) installed with errors shown but succeeded; the extension stayed "activated waiting
+    for user" until switched on under Driver Extensions; then `/dev/cu.wchusbserial10`, listed as
+    `ch340`. Installed v0.1.0 for the ONX, paired, Wi-Fi, focus and keys work.
+  - `POST /api/assist` with the new snapshot: `system_checks` showed the CH340K with its port, the
+    driver `activated enabled`, typing allowed via Visual Studio Code, and the answer used them.
+  - `cargo test`: 23 passed. Not tested: the three new assistant buttons pressed in the web app;
+    Intel Macs.
+- Building on the Mac: `cargo` needed the Xcode Command Line Tools, then failed with `tapi error ...
+  MacOSX27.0.sdk ... unknown architecture` (a stale SDK newer than the linker); built with `SDKROOT`
+  pointing at the 26.5 SDK. Recorded in the knowledge base.
+- Third-party: no code copied. Freenove's schematic (CC BY-NC-SA repository) read for pin numbers
+  only; esp-bsp sources (Apache-2.0) read to find the mirroring cause; WCH's driver installed on this
+  Mac, not redistributed.
+- Decided: the assistant may open settings pages and a verified driver installer (decision record);
+  Freenove work on its own branch.
+- Open:
+  - Build the firmware with the mirror fix, flash the Freenove, confirm the picture and touch; Sundar
+    to check the ONX picture with that firmware before `tom/fnk0104b` merges.
+  - The wizard should ask, not pre-select, when native-USB boards tie.
+  - Press the new assistant buttons in a real setup; a release with the focus and OpenAI fixes for
+    Mac users.

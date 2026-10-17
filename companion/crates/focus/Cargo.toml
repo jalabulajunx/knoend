@@ -13,5 +13,7 @@ x11rb = "0.14.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString"] }
-objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSDictionary", "NSValue", "NSEnumerator"] }
+objc2-app-kit = { version = "0.3", features = ["NSRunningApplication", "libc"] }
+objc2-core-foundation = { version = "0.3", features = ["CFArray"] }
+objc2-core-graphics = { version = "0.3", features = ["CGWindow"] }

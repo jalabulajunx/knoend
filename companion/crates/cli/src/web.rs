@@ -59,6 +59,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/ai", get(ai_settings).post(save_ai_settings))
         .route("/ai/models", post(ai_models))
         .route("/assist", post(assist))
+        .route("/open", post(open_help))
         .layer(middleware::from_fn_with_state(app.clone(), require_token));
     let router = Router::new()
         .route("/", get(index))
@@ -324,6 +325,19 @@ async fn assist(State(app): State<App>, Json(request): Json<AssistRequest>) -> A
     let advice = openpager_agents::assistant::advise(&config, &request.question, &snapshot).await
         .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
     Ok(Json(json!({"answer": advice.answer, "actions": advice.actions, "sent": snapshot, "by": config.describe()})))
+}
+
+#[derive(Deserialize)]
+struct OpenRequest {
+    target: String,
+}
+
+/// Brings up a settings page or a verified driver installer on this Mac (fixed list; the person
+/// still approves everything there).
+async fn open_help(Json(request): Json<OpenRequest>) -> ApiResult {
+    let done = crate::macos_help::open(&request.target).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
+    println!("{done}");
+    Ok(Json(json!({"done": done})))
 }
 
 #[derive(Deserialize)]

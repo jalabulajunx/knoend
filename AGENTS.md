@@ -25,6 +25,42 @@ its cause and fix, and how to approach problems nobody has seen yet. The compani
 uses the same file as its prompt, so **add what you learn there** (symptom, cause, fix, how it was
 confirmed), not only in the log.
 
+## The setup assistant should be able to do what you did
+
+The goal is that anyone can set up their computer and a board with the in-product setup assistant
+alone, without a coding agent or a developer. So when you solve a setup problem by hand (a missing
+driver, a permission, a wrong board, a setting), do not stop at the fix:
+
+1. **Knowledge:** add symptom, cause, fix and how it was confirmed to
+   [`docs/knowledge/setup.md`](docs/knowledge/setup.md). The assistant's prompt is built from it.
+2. **Evidence:** make the deciding fact visible in the assistant's snapshot
+   (`companion/crates/cli/src/diagnostics.rs`, `system_checks`), so the assistant reads it instead
+   of asking the person to run commands. Facts only: never passwords, keys or window titles.
+3. **Action:** if the fix needs the person (a password, an Allow switch, an installer), add an
+   assistant action that takes them to the exact place (`assistant::ACTIONS`, the web app's
+   `ACTIONS`, a fixed list in `cli/src/macos_help.rs` or alongside). Actions only open or prepare;
+   nothing is approved, installed or erased without the person's click. Anything downloaded is
+   checked before it is opened (checksum, or the OS's signature and notarization check).
+4. **Prompt:** if the assistant has to behave differently (lead the steps, wait for the person,
+   check again afterwards), say so in its system prompt (`companion/crates/agents/src/assistant.rs`)
+   and add a test for the new text.
+5. **Try it:** ask the assistant about the situation through the web app (or `POST /api/assist`)
+   and check its answer uses the new evidence.
+
+## Lessons that cost time
+
+- **"Compiles in CI" is not "works".** The macOS focus watcher passed CI but never followed
+  the focused app: `NSWorkspace.frontmostApplication` only updates in a program with a main run loop.
+  Platform code needs a run on that platform before it is called working.
+- **Read the companion's log first.** On 2026-10-17 every "nothing happens" (keys not typed, layout
+  not changing, board not found) had its cause in the service log or in what macOS reports about USB
+  devices, not on the board.
+- **A board can be on the USB bus with no serial port** (no driver). Look at the USB devices, not only
+  the port list (`system_profiler SPUSBHostDataType` on macOS, `lsusb`/`dmesg` on Linux).
+- **Check that a setting reaches the hardware.** A definition value can be stored on the board and
+  still be overwritten later in start-up (see the 2026-10-17 log entry on mirroring). Read back what
+  the board holds before changing the value again.
+
 ## Working rules
 
 - **Verify before claiming.** Check the content of outputs, not just exit codes. Say plainly what is

@@ -43,8 +43,8 @@ C3, C6) are not supported.
 
 - **No port listed.** Check, in order: the cable carries data (many USB-C cables are charge-only;
   try another); the board is powered (screen or LED on); on Linux, `dmesg` shows the CH340 or
-  Espressif device; on macOS, recent versions include CH34x and Espressif drivers (older macOS may
-  need the WCH driver, unverified). Try a different USB port, avoiding hubs.
+  Espressif device; on macOS, see "USB device seen but no port" below. Try a different USB port,
+  avoiding hubs.
 - **Port listed but cannot be opened (permission denied).** On Linux the user must be in the group
   that owns the port (`uucp` on Arch, `dialout` on Debian/Ubuntu): `ls -l /dev/ttyUSB0`, then add the
   user to that group and log out and in. Also close anything else holding the port (serial
@@ -73,6 +73,12 @@ C3, C6) are not supported.
 - **Wrong board chosen.** The universal image is the same; only the definition differs. Flash again
   with the right board; nothing is damaged by a wrong display definition, the screen just stays
   blank or garbled.
+- **Boards on the S3's own USB look identical.** The Freenove FNK0104B, ESP32-S3-BOX-3 and Waveshare
+  boards all show an Espressif `303a:1001` port, an ESP32-S3 and 16 MB flash, so the wizard cannot
+  tell them apart and ticks the first installable one. Ask the person which board they have (name on
+  the box or the back of the board) before installing. Seen 2026-10-17: a Freenove FNK0104B got the
+  BOX-3 definition; it ran (Wi-Fi, pairing, keys) with a dark screen. Once OpenPager runs, the board
+  reports its definition and identify ranks that board first, even if it was the wrong one.
 
 ### After flashing
 
@@ -120,19 +126,53 @@ C3, C6) are not supported.
 
 ### macOS
 
-- **Keys typed by the companion do nothing on a Mac.** macOS only lets programs type into other apps
-  with the Accessibility permission: System Settings > Privacy & Security > Accessibility, add the
-  app that runs `openpager` (Terminal, or the `openpager` binary), then restart it. The companion
-  reports this instead of failing silently. (Written without a Mac to test on; confirm on one.)
+Confirmed on macOS 26.6 (Apple silicon) on 2026-10-17 with the ONX2432G028 and the Freenove
+FNK0104B: install, pairing, Wi-Fi, layouts following the focused app, keys typed by the companion,
+and drafting a layout with OpenAI. The assistant's snapshot (`system_checks`) shows the USB serial
+devices and whether each has a port, the WCH driver state, and whether openpager may type.
+
+- **USB device seen but no port** ("No board found"; `system_checks.usb_serial_devices` shows the
+  device with `has_serial_port: false`). macOS sees the board's USB chip but no driver claimed it.
+  Apple's built-in CH34x driver covers `1a86:7523` and `1a86:55d4` only; the ONX2432G028's CH340K is
+  **`1a86:7522`**, which needs WCH's own driver (the same board works on Linux, whose `ch341` driver
+  covers it). Fix: "Install the USB driver" button (or `CH34xVCPDriver.pkg` from
+  github.com/WCHSoftGroup/ch34xser_macos, notarized, signed by Nanjing Qinheng Microelectronics,
+  team 5JZGQTGU4W). The installer asks for the Mac password and may show errors yet finish.
+- **Driver installed, still no port.** `system_checks.wch_driver_extension` (or
+  `systemextensionsctl list`) says `activated waiting for user`: macOS has not been allowed to load
+  it. System Settings > General > Login Items & Extensions > Driver Extensions (the "Open Driver
+  Extensions" button), switch on CH34xVCPDriver, then unplug and replug the board. Working state:
+  `activated enabled`, and a port `/dev/cu.wchusbserial...` appears.
+- **Keys typed by the companion do nothing on a Mac.** The log says "macOS needs Accessibility
+  permission". macOS only lets a program type into other apps with Accessibility, and it asks for
+  it for the **app that launched `openpager`**, not the binary: Terminal, iTerm, or Visual Studio
+  Code when started from VS Code's terminal or a coding agent inside it
+  (`system_checks.accessibility.app_to_allow` names it). System Settings > Privacy & Security >
+  Accessibility (the "Open Accessibility settings" button), switch that app on, then restart
+  `openpager`; restarting the app itself was not needed on macOS 26.6.
+- **The layout does not follow the app on a Mac** (it stays on the first app). Fixed in the
+  companion after v0.1.0: `NSWorkspace.frontmostApplication` never updates in a program without a
+  main run loop, so the watcher now asks the window server which app owns the front window. With
+  v0.1.0, use a newer build.
 - **"openpager" cannot be opened because the developer cannot be verified.** The binary is not
   signed yet: right-click > Open once, or `xattr -d com.apple.quarantine openpager`.
 - **Two ports per board** (`/dev/cu.*` and `/dev/tty.*`): the companion lists only the `cu.*` one,
   which is the one to use.
+- **Building the companion on a Mac** (developers only; not needed with the release binary):
+  `cargo build` fails at linking with `xcrun: error: invalid active developer path` until the Xcode
+  Command Line Tools are installed (`xcode-select --install`). If it then fails with `tapi error:
+  malformed file ... MacOSX27.0.sdk ... unknown architecture`, an SDK newer than the installed
+  linker is left over and `xcrun` picks it because it is the highest version: build with
+  `SDKROOT=$(xcrun --sdk macosx26.5 --show-sdk-path)` (the SDK matching the tools; see
+  `ls /Library/Developer/CommandLineTools/SDKs`), or remove the stray SDK.
 
 ### The AI pieces
 
 - **Configure fails** with "environment variable ... is not set" or 401/403: no API key, or a wrong
   one, for the chosen provider. Set it in the web app's AI settings.
+- **OpenAI test fails with 400 "temperature does not support 0.2 with this model".** Newer OpenAI
+  (reasoning) models accept only the default temperature. Fixed in the companion after v0.1.0: it
+  retries without the temperature. With v0.1.0, use a newer build or another model.
 - **Very slow drafts with a local model.** Ollama on a CPU-only machine runs at a few tokens per
   second (about 2 minutes per draft on our test laptop); use a hosted provider for a responsive
   setup, or a machine with a supported GPU.
@@ -153,3 +193,6 @@ C3, C6) are not supported.
    and the pins, then draft a definition (`spec/schemas/board.schema.json`) and test it. Never use
    GPIO 26-37 on the ESP32-S3 (flash and PSRAM).
 7. Say plainly what is known, what is a guess, and what to check next.
+8. Look below the port list. A board can be on the USB bus with no driver (macOS), or a permission
+   can stop keys with every board-side step working: the companion log is the first place where
+   the failing layer shows ("could not type", "no paired board", focus lines).
