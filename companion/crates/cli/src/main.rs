@@ -8,6 +8,7 @@
 
 mod diagnostics;
 mod firmware;
+mod macos_help;
 mod provision;
 mod service;
 mod web;

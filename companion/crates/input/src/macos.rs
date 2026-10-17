@@ -1,7 +1,7 @@
 //! macOS: keyboard events through Core Graphics. Posting them needs the Accessibility permission
-//! (System Settings > Privacy & Security > Accessibility, add the program running `openpager`);
-//! without it macOS drops them silently, so we check first and say so.
-//! Written without a Mac to test on: compile-checked in CI, behaviour untested until tried.
+//! for the app that launched `openpager` (Terminal, iTerm, Visual Studio Code...): System Settings >
+//! Privacy & Security > Accessibility. Without it macOS drops them silently, so we check first and
+//! say so. Tested on macOS 26.6 (2026-10-17): typed shortcuts reached VS Code and Firefox.
 
 use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, CGKeyCode};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
@@ -14,6 +14,28 @@ extern "C" {
 }
 
 pub struct Typist;
+
+/// Whether macOS lets this process post keyboard events (the Accessibility permission).
+pub fn accessibility_trusted() -> bool {
+    unsafe { AXIsProcessTrusted() }
+}
+
+/// The app macOS holds responsible for this process, and so the one to allow under Accessibility:
+/// the first `.app` among its parent processes (a command started from Terminal belongs to Terminal).
+pub fn launching_app() -> Option<String> {
+    let mut pid = std::process::id();
+    for _ in 0..16 {
+        let out = std::process::Command::new("ps").args(["-o", "ppid=,comm=", "-p", &pid.to_string()]).output().ok()?;
+        let line = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let (ppid, command) = line.split_once(char::is_whitespace)?;
+        if let Some(end) = command.find(".app/") {
+            let app = &command[..end];
+            return Some(app.rsplit('/').next().unwrap_or(app).to_string());
+        }
+        pid = ppid.trim().parse().ok().filter(|&p| p > 1)?;
+    }
+    None
+}
 
 /// macOS virtual key codes (Events.h kVK_*), US layout positions.
 fn keycode(key: Key) -> Option<CGKeyCode> {
@@ -59,10 +81,11 @@ fn flags(modifiers: u8) -> CGEventFlags {
 
 impl Typist {
     pub fn connect() -> Result<Typist, String> {
-        if unsafe { AXIsProcessTrusted() } {
+        if accessibility_trusted() {
             Ok(Typist)
         } else {
-            Err("macOS needs Accessibility permission to type for the board: System Settings > Privacy & Security > Accessibility, then add the app that runs openpager (e.g. Terminal) and restart it".into())
+            let app = launching_app().unwrap_or_else(|| "the app that runs openpager (e.g. Terminal)".into());
+            Err(format!("macOS needs Accessibility permission to type for the board: System Settings > Privacy & Security > Accessibility, switch on {app}, then restart openpager"))
         }
     }
 

@@ -463,7 +463,20 @@ const ACTIONS = {
   install_erase: ["Erase and install", () => { if (setup.board) { $("erase").checked = true; $("install").click(); } else step(1); }],
   pair: ["Go to pairing", () => { step(4); scanWifi(); }],
   dashboard: ["Open the dashboard", () => show("dashboard")],
+  open_accessibility_settings: ["Open Accessibility settings", () => openOnMac("accessibility_settings")],
+  open_driver_settings: ["Open Driver Extensions", () => openOnMac("driver_settings")],
+  install_usb_driver: ["Install the USB driver", () => openOnMac("usb_driver")],
 };
+
+/** Settings pages and the driver installer the person approves on their Mac (macOS only). */
+async function openOnMac(target) {
+  try {
+    const r = await api("/open", { target });
+    $("advice-text").textContent = `${r.done}. When you have finished there, ask again or press "Look again".`;
+  } catch (e) {
+    $("advice-text").textContent = `Could not open it: ${e.message}`;
+  }
+}
 
 async function ask(question, error) {
   if (!aiReady) {

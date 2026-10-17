@@ -10,7 +10,7 @@ pub use x11::Typist;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::Typist;
+pub use macos::{accessibility_trusted, launching_app, Typist};
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 mod unsupported;

@@ -47,7 +47,8 @@ pub enum Progress {
     Done,
 }
 
-fn bridge(vid: u16, pid: u16) -> &'static str {
+/// The kind of USB-serial bridge a USB vendor ID belongs to (what board definitions list).
+pub fn bridge(vid: u16, pid: u16) -> &'static str {
     match (vid, pid) {
         (0x303a, _) => "espressif-native",
         (0x1a86, _) => "ch340",

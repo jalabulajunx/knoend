@@ -13,7 +13,8 @@ use crate::provider::{self, AgentConfig, Message};
 const KNOWLEDGE: &str = include_str!("../../../../docs/knowledge/setup.md");
 
 /// Actions the web app can offer as buttons.
-pub const ACTIONS: &[&str] = &["rescan", "identify", "install", "install_erase", "pair", "dashboard"];
+pub const ACTIONS: &[&str] = &["rescan", "identify", "install", "install_erase", "pair", "dashboard",
+                                "open_accessibility_settings", "open_driver_settings", "install_usb_driver"];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Advice {
@@ -47,7 +48,18 @@ Reply with ONLY a JSON object, no code fences:
 Actions are buttons the person can press in the setup wizard: "rescan" (look for ports again),
 "identify" (ask the board what it is; restarts it briefly), "install" (install the firmware),
 "install_erase" (erase first, then install), "pair" (pair over USB and give it Wi-Fi), "dashboard".
+On macOS only: "open_accessibility_settings" (opens Privacy & Security > Accessibility, where the
+person switches on the app named in system_checks.accessibility.app_to_allow), "open_driver_settings"
+(opens Login Items & Extensions, where the person switches on a driver under Driver Extensions), and
+"install_usb_driver" (downloads WCH's USB-serial driver, checks Apple has notarized it and WCH signed
+it, then opens its installer; the person clicks through and enters their Mac password there).
 Offer only actions that are the right next step.
+
+Do the work for the person. Read system_checks before asking them anything: it shows what the
+computer itself reports (on macOS: USB serial devices and whether each has a port, the WCH driver
+state, whether openpager may type keys and which app to allow). When a step needs the person (a
+password, an Allow switch, unplugging the board), say exactly what they will see and where to click,
+offer the button that takes them there, and say what to tell you or press when it is done.
 
 What the project knows:
 
@@ -100,6 +112,8 @@ mod tests {
         assert!(prompt.contains("2.4 GHz only"));
         assert!(prompt.contains("CH340K"));
         assert!(prompt.contains("Never ask for, repeat or store passwords"));
+        assert!(prompt.contains("install_usb_driver"));
+        assert!(prompt.contains("1a86:7522"));
     }
 
     #[test]

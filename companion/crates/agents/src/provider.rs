@@ -181,19 +181,31 @@ pub async fn complete(config: &AgentConfig, system: &str, messages: &[Message]) 
 
     let mut all = vec![json!({"role": "system", "content": system})];
     all.extend(history);
-    let mut request = client.post(format!("{base}/chat/completions"))
-        .json(&json!({"model": model, "messages": all, "temperature": 0.2}));
-    if let Some(key) = key {
-        request = request.bearer_auth(key);
+    let mut body = json!({"model": model, "messages": all, "temperature": 0.2});
+    let (mut status, mut reply) = chat_request(&client, &base, key.as_deref(), &body, config.provider).await?;
+    // Reasoning models (OpenAI GPT-5, o-series) accept only the default temperature: retry without it.
+    if status == reqwest::StatusCode::BAD_REQUEST && reply["error"]["param"] == "temperature" {
+        body.as_object_mut().unwrap().remove("temperature");
+        (status, reply) = chat_request(&client, &base, key.as_deref(), &body, config.provider).await?;
     }
-    let response = request.send().await.map_err(|e| format!("{:?} request failed: {e}", config.provider))?;
-    let status = response.status();
-    let reply: Value = response.json().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
         return Err(format!("{:?} returned {status}: {}", config.provider, reply["error"]));
     }
     reply["choices"][0]["message"]["content"].as_str().map(str::to_string)
         .filter(|t| !t.is_empty()).ok_or_else(|| "empty reply from the model".into())
+}
+
+/// One OpenAI-style chat completions request: the status and the parsed reply.
+async fn chat_request(client: &reqwest::Client, base: &str, key: Option<&str>, body: &Value, provider: Provider)
+                      -> Result<(reqwest::StatusCode, Value), String> {
+    let mut request = client.post(format!("{base}/chat/completions")).json(body);
+    if let Some(key) = key {
+        request = request.bearer_auth(key);
+    }
+    let response = request.send().await.map_err(|e| format!("{provider:?} request failed: {e}"))?;
+    let status = response.status();
+    let reply: Value = response.json().await.map_err(|e| e.to_string())?;
+    Ok((status, reply))
 }
 
 /// Model names the provider offers, sorted. `key` overrides the saved/env key for this one request
