@@ -195,6 +195,41 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "openpager.wifi"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/wifi"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "openpager.wifi.ack"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "re"
+        ],
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/wifiAck"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -644,6 +679,40 @@
         "companion": {
           "type": "string"
         },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "wifi": {
+      "type": "object",
+      "required": [
+        "ssid",
+        "password"
+      ],
+      "description": "Serial only. The board rejects this packet on any other transport.",
+      "properties": {
+        "ssid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "password": {
+          "type": "string",
+          "maxLength": 64
+        }
+      }
+    },
+    "wifiAck": {
+      "type": "object",
+      "required": [
+        "ok"
+      ],
+      "properties": {
         "ok": {
           "type": "boolean"
         },

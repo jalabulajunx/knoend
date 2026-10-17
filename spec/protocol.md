@@ -66,6 +66,8 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `openpager.approve.response` | B→C | The person's answer |
 | `openpager.pair` | C→B | Serial only: hand the board a Wi-Fi key (section 4.1) |
 | `openpager.pair.ack` | B→C | Key stored |
+| `openpager.wifi` | C→B | Serial only: the home Wi-Fi name and password (section 4.1) |
+| `openpager.wifi.ack` | B→C | Credentials stored; the board joins the network |
 | `openpager.ping` | both | Liveness check; answer with `openpager.ping` and `re` set |
 | `openpager.error` | both | A packet could not be handled |
 
@@ -184,8 +186,13 @@ While the board is connected by USB, including right after the companion flashes
 3. The board stores `K` for that companion (up to 4 companions; the oldest is replaced) and answers
    `openpager.pair.ack` with `{ "companion": "laptop-3f9c2a", "ok": true }`.
 
+4. The companion can send the home Wi-Fi credentials the same way, also **serial only**:
+   `{ "type": "openpager.wifi", "body": { "ssid": "Home", "password": "..." } }`, answered by
+   `openpager.wifi.ack` `{ "ok": true }`. The board stores them and joins the network; neither side
+   logs the password. An open network has an empty password.
+
 Rules:
-- The board **rejects `openpager.pair` on any transport other than serial** (`openpager.error`,
+- The board **rejects `openpager.pair` and `openpager.wifi` on any transport other than serial** (`openpager.error`,
   code `unauthorised`).
 - `K` is never part of the firmware image. Firmware is public and every board runs the same image,
   so a built-in key would be the same on every board.
@@ -196,7 +203,8 @@ Rules:
 
 ### 4.2 Discovery and session handshake
 
-- The board announces `_openpager._tcp` over mDNS with TXT `id=<deviceId>` and `pv=<protocolVersion>`.
+- The board announces `_openpager._tcp` (port 80) over mDNS with TXT `id=<deviceId>` and
+  `pv=<protocolVersion>`, host name `openpager-<last 6 hex digits of deviceId>.local`.
   Nothing derived from `K` is broadcast (it could be replayed, and would let anyone track the board).
 - The companion opens `ws://<board>/ws`. The first three text frames prove both sides hold `K`, using
   fresh 16-byte random nonces written as 32 hex digits:

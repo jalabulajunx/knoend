@@ -137,7 +137,8 @@ static void key_event(lv_event_t *event)
         confirm_slot = index;
         confirm_expires_us = esp_timer_get_time() + CONFIRM_MS * 1000LL;
         lv_obj_set_style_bg_color(key_buttons[index], lv_color_hex(COLOR_CONFIRM), 0);
-        printf("KEY %d seq=%" PRIu32 " confirm-pending\n", index + 1, tap_count);
+        printf("KEY %d seq=%" PRIu32 " t=%" PRIu64 " confirm-pending\n", index + 1, tap_count,
+               (uint64_t)(esp_timer_get_time() / 1000));
         fflush(stdout);
     } else {
         if (confirm_slot == index) {

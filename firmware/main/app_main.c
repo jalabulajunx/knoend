@@ -10,6 +10,7 @@
 #include "ble_keyboard.h"
 #include "board.h"
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "nvs_flash.h"
 #include "protocol.h"
 #include "ui.h"
@@ -34,4 +35,11 @@ void app_main(void)
     printf("READY openpager %s board=%s\n", esp_app_get_description()->version, board_info()->id);
     fflush(stdout);
     ESP_ERROR_CHECK(protocol_start());
+
+    // Bluetooth, Wi-Fi and LVGL share internal RAM; this is the number to watch.
+    printf("HEAP internal free=%u min=%u, psram free=%u\n",
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    fflush(stdout);
 }

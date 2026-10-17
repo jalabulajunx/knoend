@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "link_serial.h"
+#include "link_wifi.h"
 #include "nvs.h"
 #include "ui.h"
 
@@ -23,48 +24,67 @@ static const char *TAG = "protocol";
 
 // Only what this firmware actually handles is advertised.
 static const char *const incoming_types[] = {
-    "openpager.identity", "openpager.layout", "openpager.status", "openpager.pair", "openpager.ping",
+    "openpager.identity", "openpager.layout", "openpager.status", "openpager.pair", "openpager.wifi",
+    "openpager.ping",
 };
 static const char *const outgoing_types[] = {
     "openpager.identity", "openpager.key", "openpager.layout.ack", "openpager.pair.ack",
-    "openpager.ping", "openpager.error",
+    "openpager.wifi.ack", "openpager.ping", "openpager.error",
 };
-static const char *const transports[] = { "ble-hid", "serial" };
+static const char *const transports[] = { "ble-hid", "serial", "wifi" };
 
-typedef enum { TRANSPORT_SERIAL } transport_t;
+typedef enum {
+    TRANSPORT_SERIAL = 1,
+    TRANSPORT_WIFI = 2,
+    TRANSPORT_ALL = TRANSPORT_SERIAL | TRANSPORT_WIFI,
+} transport_t;
 
 static SemaphoreHandle_t send_lock;
-static uint32_t next_id;
+static uint32_t next_id_serial;
+static uint32_t next_id_wifi; // restarts at 0 for each Wi-Fi session
 static char device_id[13];
 
 // ---- sending ----
 
-// Takes ownership of `body`. `re` < 0 means "not a reply".
-static void send_packet(const char *type, cJSON *body, int64_t re)
+// Takes ownership of `body`. `re` < 0 means "not a reply". Replies go back over the transport
+// the request came on; unsolicited packets (taps, the boot identity) go to every open link.
+static void send_packet(const char *type, cJSON *body, int64_t re, transport_t to)
 {
     xSemaphoreTake(send_lock, portMAX_DELAY);
     cJSON *packet = cJSON_CreateObject();
-    cJSON_AddNumberToObject(packet, "id", next_id++);
+    cJSON *id = cJSON_AddNumberToObject(packet, "id", 0);
     if (re >= 0) {
         cJSON_AddNumberToObject(packet, "re", (double)re);
     }
     cJSON_AddStringToObject(packet, "type", type);
     cJSON_AddItemToObject(packet, "body", body);
-    char *text = cJSON_PrintUnformatted(packet);
-    if (text != NULL) {
-        link_serial_send(text);
-        cJSON_free(text);
+
+    if (to & TRANSPORT_SERIAL) {
+        cJSON_SetNumberValue(id, next_id_serial++);
+        char *text = cJSON_PrintUnformatted(packet);
+        if (text != NULL) {
+            link_serial_send(text);
+            cJSON_free(text);
+        }
+    }
+    if ((to & TRANSPORT_WIFI) && link_wifi_session_active()) {
+        cJSON_SetNumberValue(id, next_id_wifi++);
+        char *text = cJSON_PrintUnformatted(packet);
+        if (text != NULL) {
+            link_wifi_send(text);
+            cJSON_free(text);
+        }
     }
     cJSON_Delete(packet);
     xSemaphoreGive(send_lock);
 }
 
-static void send_error(int64_t re, const char *code, const char *message)
+static void send_error(int64_t re, const char *code, const char *message, transport_t to)
 {
     cJSON *body = cJSON_CreateObject();
     cJSON_AddStringToObject(body, "code", code);
     cJSON_AddStringToObject(body, "message", message);
-    send_packet("openpager.error", body, re);
+    send_packet("openpager.error", body, re, to);
 }
 
 static cJSON *string_array(const char *const *items, size_t count)
@@ -76,7 +96,7 @@ static cJSON *string_array(const char *const *items, size_t count)
     return array;
 }
 
-static void send_identity(int64_t re)
+static void send_identity(int64_t re, transport_t to)
 {
     const board_info_t *board = board_info();
     cJSON *body = cJSON_CreateObject();
@@ -106,7 +126,7 @@ static void send_identity(int64_t re)
                           string_array(incoming_types, sizeof(incoming_types) / sizeof(incoming_types[0])));
     cJSON_AddItemToObject(body, "outgoing",
                           string_array(outgoing_types, sizeof(outgoing_types) / sizeof(outgoing_types[0])));
-    send_packet("openpager.identity", body, re);
+    send_packet("openpager.identity", body, re, to);
 }
 
 void protocol_send_key(int slot, const char *layout_id, uint32_t seq)
@@ -115,7 +135,7 @@ void protocol_send_key(int slot, const char *layout_id, uint32_t seq)
     cJSON_AddNumberToObject(body, "key", slot);
     cJSON_AddStringToObject(body, "layout", layout_id);
     cJSON_AddNumberToObject(body, "seq", seq);
-    send_packet("openpager.key", body, -1);
+    send_packet("openpager.key", body, -1, TRANSPORT_ALL);
 }
 
 // ---- helpers ----
@@ -153,7 +173,7 @@ static size_t utf8_chars(const char *text)
 
 // ---- handlers ----
 
-static void handle_layout(const cJSON *body, int64_t re)
+static void handle_layout(const cJSON *body, int64_t re, transport_t from)
 {
     ui_layout_t layout = { .reviewed = true };
     char error[80] = "";
@@ -218,7 +238,7 @@ static void handle_layout(const cJSON *body, int64_t re)
     } else {
         ui_apply_layout(&layout); // all-or-nothing: only a fully valid layout replaces the keys
     }
-    send_packet("openpager.layout.ack", ack, re);
+    send_packet("openpager.layout.ack", ack, re, from);
 }
 
 static void handle_status(const cJSON *body)
@@ -307,7 +327,7 @@ static bool parse_key(const char *hex, uint8_t out[KEY_BYTES])
 static void handle_pair(const cJSON *body, int64_t re, transport_t transport)
 {
     if (transport != TRANSPORT_SERIAL) {
-        send_error(re, "unauthorised", "pairing is accepted over USB serial only");
+        send_error(re, "unauthorised", "pairing is accepted over USB serial only", transport);
         return;
     }
     uint8_t key[KEY_BYTES];
@@ -329,7 +349,49 @@ static void handle_pair(const cJSON *body, int64_t re, transport_t transport)
     } else {
         ESP_LOGI(TAG, "paired with companion %s", companion); // never log the key
     }
-    send_packet("openpager.pair.ack", ack, re);
+    send_packet("openpager.pair.ack", ack, re, transport);
+}
+
+static bool lookup_key(const char *companion, uint8_t key[KEY_BYTES])
+{
+    nvs_handle_t nvs;
+    pairings_t pairings = { 0 };
+    size_t size = sizeof(pairings);
+    bool found = false;
+    if (nvs_open("openpager", NVS_READONLY, &nvs) != ESP_OK) {
+        return false;
+    }
+    if (nvs_get_blob(nvs, "pairings", &pairings, &size) == ESP_OK) {
+        for (int i = 0; i < MAX_COMPANIONS; i++) {
+            if (pairings.entries[i].order != 0 && strcmp(pairings.entries[i].companion, companion) == 0) {
+                memcpy(key, pairings.entries[i].key, KEY_BYTES);
+                found = true;
+            }
+        }
+    }
+    nvs_close(nvs);
+    memset(&pairings, 0, sizeof(pairings));
+    return found;
+}
+
+static void handle_wifi(const cJSON *body, int64_t re, transport_t transport)
+{
+    if (transport != TRANSPORT_SERIAL) {
+        send_error(re, "unauthorised", "Wi-Fi settings are accepted over USB serial only", transport);
+        return;
+    }
+    const char *ssid = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(body, "ssid"));
+    const char *password = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(body, "password"));
+    const esp_err_t err = link_wifi_set_credentials(ssid, password);
+
+    cJSON *ack = cJSON_CreateObject();
+    cJSON_AddBoolToObject(ack, "ok", err == ESP_OK);
+    if (err != ESP_OK) {
+        cJSON_AddStringToObject(ack, "error", err == ESP_ERR_INVALID_ARG
+                                                  ? "ssid 1-32 bytes and password up to 64 are required"
+                                                  : "could not store or join");
+    }
+    send_packet("openpager.wifi.ack", ack, re, transport);
 }
 
 static void handle_line(const char *line, transport_t transport)
@@ -341,21 +403,23 @@ static void handle_line(const char *line, transport_t transport)
     const int64_t re = cJSON_IsNumber(id) && id->valuedouble >= 0 ? (int64_t)id->valuedouble : -1;
 
     if (packet == NULL) {
-        send_error(-1, "bad-packet", "not valid JSON");
+        send_error(-1, "bad-packet", "not valid JSON", transport);
     } else if (re < 0 || !cJSON_IsString(type) || !cJSON_IsObject(body)) {
-        send_error(re, "bad-packet", "id, type and body are required");
+        send_error(re, "bad-packet", "id, type and body are required", transport);
     } else if (strcmp(type->valuestring, "openpager.identity") == 0) {
         const char *name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(body, "deviceName"));
         ESP_LOGI(TAG, "companion says hello: %s", name != NULL ? name : "(no name)");
-        send_identity(re);
+        send_identity(re, transport);
     } else if (strcmp(type->valuestring, "openpager.ping") == 0) {
-        send_packet("openpager.ping", cJSON_CreateObject(), re);
+        send_packet("openpager.ping", cJSON_CreateObject(), re, transport);
     } else if (strcmp(type->valuestring, "openpager.layout") == 0) {
-        handle_layout(body, re);
+        handle_layout(body, re, transport);
     } else if (strcmp(type->valuestring, "openpager.status") == 0) {
         handle_status(body);
     } else if (strcmp(type->valuestring, "openpager.pair") == 0) {
         handle_pair(body, re, transport);
+    } else if (strcmp(type->valuestring, "openpager.wifi") == 0) {
+        handle_wifi(body, re, transport);
     }
     // Anything else is ignored, as the spec requires for unknown types.
     cJSON_Delete(packet);
@@ -364,10 +428,24 @@ static void handle_line(const char *line, transport_t transport)
 static void on_serial_line(const char *line, bool too_long)
 {
     if (too_long) {
-        send_error(-1, "too-large", "packet over 4096 bytes");
+        send_error(-1, "too-large", "packet over 4096 bytes", TRANSPORT_SERIAL);
         return;
     }
     handle_line(line, TRANSPORT_SERIAL);
+}
+
+static void on_wifi_packet(const char *packet)
+{
+    handle_line(packet, TRANSPORT_WIFI);
+}
+
+// A companion just proved it holds the key: start its numbering at 0 and introduce the board.
+static void on_wifi_session(void)
+{
+    xSemaphoreTake(send_lock, portMAX_DELAY);
+    next_id_wifi = 0;
+    xSemaphoreGive(send_lock);
+    send_identity(-1, TRANSPORT_WIFI);
 }
 
 esp_err_t protocol_start(void)
@@ -383,7 +461,8 @@ esp_err_t protocol_start(void)
     }
     esp_err_t err = link_serial_start(on_serial_line);
     if (err == ESP_OK) {
-        send_identity(-1);
+        send_identity(-1, TRANSPORT_SERIAL);
+        err = link_wifi_start(device_id, on_wifi_packet, lookup_key, on_wifi_session);
     }
     return err;
 }
