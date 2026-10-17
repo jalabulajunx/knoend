@@ -72,8 +72,9 @@
                 <option value="ollama">Ollama (local, no key)</option>
                 <option value="openai-compatible">Other OpenAI-compatible server</option>
               </select></label>
-            <label>Model <span class="muted">(blank = provider default, if it has one)</span>
-              <input id="ai-model" maxlength="80" placeholder="model name"></label>
+            <label>Model <span id="ai-models-note" class="muted">(pick from the list or type a name)</span>
+              <input id="ai-model" maxlength="120" placeholder="model name" list="ai-models" autocomplete="off">
+              <datalist id="ai-models"></datalist></label>
           </div>
           <label id="ai-base-wrap" hidden>Server URL <input id="ai-base" maxlength="200" placeholder="http://localhost:8000/v1"></label>
           <label id="ai-key-wrap">API key <span class="muted">(stored only on this computer; never shown again)</span>
@@ -128,9 +129,13 @@
         <h2>Pair and Wi-Fi</h2>
         <p>The board and this computer agree on a secret key over the cable. Wi-Fi lets the board work away from the desk; your password goes to the board over the cable only and is not stored here.</p>
         <form id="pair-form" autocomplete="off">
-          <label>Wi-Fi network <span class="muted">(2.4 GHz; leave empty to skip)</span>
-            <input id="ssid" name="ssid" maxlength="32"></label>
-          <label>Password
+          <div class="row-head"><strong>Wi-Fi network</strong>
+            <button type="button" id="scan-wifi" class="secondary small-button">Find networks</button></div>
+          <p id="wifi-note" class="muted small">The board looks for networks itself. It hears 2.4 GHz only: a network that is 5 GHz only will not appear.</p>
+          <ul id="networks" class="choices compact-choices"></ul>
+          <label id="ssid-wrap" hidden>Network name
+            <input id="ssid" name="ssid" maxlength="32" placeholder="as written on the router"></label>
+          <label id="password-wrap">Password
             <input id="password" name="password" type="password" maxlength="64"></label>
           <div class="actions">
             <button type="button" class="secondary" data-back="3">Back</button>

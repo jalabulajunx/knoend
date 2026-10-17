@@ -22,6 +22,17 @@ esp_err_t link_wifi_start(const char *device_id, link_wifi_packet_cb on_packet,
 // Stores new credentials (never logged) and joins that network.
 esp_err_t link_wifi_set_credentials(const char *ssid, const char *password);
 
+typedef struct {
+    char ssid[33];
+    int8_t rssi;    // dBm
+    uint8_t channel;
+    bool secured;
+} link_wifi_network_t;
+
+// Scans for networks (2.4 GHz only: that is all the ESP32-S3 radio hears). Fills up to `max`
+// entries, strongest first, one per name, hidden networks left out. Returns the count, or -1.
+int link_wifi_scan(link_wifi_network_t *out, int max);
+
 // True while an authenticated companion session is open.
 bool link_wifi_session_active(void);
 

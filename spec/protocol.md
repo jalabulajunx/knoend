@@ -68,6 +68,8 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `openpager.pair.ack` | B→C | Key stored |
 | `openpager.wifi` | C→B | Serial only: the home Wi-Fi name and password (section 4.1) |
 | `openpager.wifi.ack` | B→C | Credentials stored; the board joins the network |
+| `openpager.wifi.scan` | C→B | Serial only: list the Wi-Fi networks the board can hear (empty body) |
+| `openpager.wifi.networks` | B→C | Up to 20 networks, strongest first: `ssid`, `rssi` (dBm), `channel`, `secured`. The ESP32-S3 hears 2.4 GHz only |
 | `openpager.ping` | both | Liveness check; answer with `openpager.ping` and `re` set |
 | `openpager.error` | both | A packet could not be handled |
 

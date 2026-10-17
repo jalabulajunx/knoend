@@ -1,6 +1,7 @@
 #include "protocol.h"
 
 #include <stdbool.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -25,11 +26,11 @@ static const char *TAG = "protocol";
 // Only what this firmware actually handles is advertised.
 static const char *const incoming_types[] = {
     "openpager.identity", "openpager.layout", "openpager.status", "openpager.pair", "openpager.wifi",
-    "openpager.ping",
+    "openpager.wifi.scan", "openpager.ping",
 };
 static const char *const outgoing_types[] = {
     "openpager.identity", "openpager.key", "openpager.layout.ack", "openpager.pair.ack",
-    "openpager.wifi.ack", "openpager.ping", "openpager.error",
+    "openpager.wifi.ack", "openpager.wifi.networks", "openpager.ping", "openpager.error",
 };
 static const char *const transports[] = { "ble-hid", "serial", "wifi" };
 
@@ -406,6 +407,31 @@ static void handle_wifi(const cJSON *body, int64_t re, transport_t transport)
     send_packet("openpager.wifi.ack", ack, re, transport);
 }
 
+static void handle_wifi_scan(int64_t re, transport_t transport)
+{
+    if (transport != TRANSPORT_SERIAL) {
+        send_error(re, "unauthorised", "Wi-Fi scans are answered over USB serial only", transport);
+        return;
+    }
+    link_wifi_network_t *networks = calloc(20, sizeof(*networks));
+    const int count = networks ? link_wifi_scan(networks, 20) : -1;
+    cJSON *body = cJSON_CreateObject();
+    cJSON *list = cJSON_AddArrayToObject(body, "networks");
+    for (int i = 0; i < count; i++) {
+        cJSON *n = cJSON_CreateObject();
+        cJSON_AddStringToObject(n, "ssid", networks[i].ssid);
+        cJSON_AddNumberToObject(n, "rssi", networks[i].rssi);
+        cJSON_AddNumberToObject(n, "channel", networks[i].channel);
+        cJSON_AddBoolToObject(n, "secured", networks[i].secured);
+        cJSON_AddItemToArray(list, n);
+    }
+    if (count < 0) {
+        cJSON_AddStringToObject(body, "error", "scan failed");
+    }
+    free(networks);
+    send_packet("openpager.wifi.networks", body, re, transport);
+}
+
 static void handle_line(const char *line, transport_t transport)
 {
     cJSON *packet = cJSON_Parse(line);
@@ -432,6 +458,8 @@ static void handle_line(const char *line, transport_t transport)
         handle_pair(body, re, transport);
     } else if (strcmp(type->valuestring, "openpager.wifi") == 0) {
         handle_wifi(body, re, transport);
+    } else if (strcmp(type->valuestring, "openpager.wifi.scan") == 0) {
+        handle_wifi_scan(re, transport);
     }
     // Anything else is ignored, as the spec requires for unknown types.
     cJSON_Delete(packet);

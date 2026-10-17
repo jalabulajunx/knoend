@@ -280,12 +280,71 @@ function onFlash(p) {
   if (p.text) logTo($("flash-log"), p.text);
 }
 
-$("to-pair").addEventListener("click", () => step(4));
+$("to-pair").addEventListener("click", () => { step(4); scanWifi(); });
+
+// ---- Wi-Fi networks, as the board hears them ----
+
+let chosenNetwork = null; // { ssid, secured } or "other"
+
+function bars(rssi) {
+  const level = rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : 1;
+  return "\u2582\u2584\u2586\u2588".slice(0, level).padEnd(4, "\u00b7");
+}
+
+function pickNetwork(choice) {
+  chosenNetwork = choice;
+  const other = choice === "other";
+  $("ssid-wrap").hidden = !other;
+  $("password-wrap").hidden = !other && choice && !choice.secured;
+  if (!other && choice) $("ssid").value = choice.ssid;
+  if (other) { $("ssid").value = ""; $("ssid").focus(); }
+}
+
+async function scanWifi() {
+  const list = $("networks");
+  const button = $("scan-wifi");
+  list.replaceChildren();
+  button.disabled = true;
+  $("wifi-note").textContent = "Asking the board to look for networks (about 5 seconds)...";
+  try {
+    const { networks = [], error } = await api("/wifi/scan", { port: setup.port });
+    for (const n of networks) {
+      const { li, input } = choice("network", n.ssid, n.ssid, "", false);
+      const label = li.querySelector("label");
+      const meta = document.createElement("span");
+      meta.className = "bars";
+      meta.textContent = bars(n.rssi);
+      meta.title = `${n.rssi} dBm, channel ${n.channel}`;
+      const lock = document.createElement("span");
+      lock.className = "lock";
+      lock.textContent = n.secured ? "secured" : "open";
+      label.querySelector(".sub").remove();
+      label.append(meta, lock);
+      input.addEventListener("change", () => pickNetwork(n));
+      list.append(li);
+    }
+    const { li, input } = choice("network", "", "Other network...", "A hidden network, or one not listed", false);
+    input.addEventListener("change", () => pickNetwork("other"));
+    list.append(li);
+    $("wifi-note").textContent = networks.length
+      ? "Pick your network. It hears 2.4 GHz only: a 5 GHz-only network will not appear."
+      : `No networks heard${error ? ` (${error})` : ""}. The board hears 2.4 GHz only.`;
+    if (!networks.length) autoAssist(`The board's Wi-Fi scan found no networks${error ? `: ${error}` : ""}.`);
+  } catch (e) {
+    $("wifi-note").textContent = `Could not scan: ${e.message}. You can still type the name under "Other network".`;
+    const { li, input } = choice("network", "", "Other network...", "Type the name", false);
+    input.addEventListener("change", () => pickNetwork("other"));
+    list.append(li);
+  } finally {
+    button.disabled = false;
+  }
+}
+$("scan-wifi").addEventListener("click", scanWifi);
 
 $("pair-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("pair-done").hidden = true;
-  const ssid = $("ssid").value.trim();
+  const ssid = (chosenNetwork && chosenNetwork !== "other" ? chosenNetwork.ssid : $("ssid").value).trim();
   const password = $("password").value;
   const button = e.submitter;
   button.disabled = true;
@@ -323,7 +382,29 @@ function providerFields() {
   $("ai-base-wrap").hidden = provider !== "openai-compatible";
   $("ai-key-wrap").hidden = provider === "ollama";
 }
-$("ai-provider").addEventListener("change", providerFields);
+$("ai-provider").addEventListener("change", () => { providerFields(); loadModels(); });
+
+/** Fills the model list from the provider (with the key just typed, if any; it is not saved). */
+async function loadModels() {
+  const note = $("ai-models-note");
+  const list = $("ai-models");
+  list.replaceChildren();
+  note.textContent = "(loading the provider's models...)";
+  try {
+    const { models } = await api("/ai/models", { provider: $("ai-provider").value,
+      api_key: $("ai-key").value || null, base_url: $("ai-base").value || null });
+    for (const m of models) {
+      const option = document.createElement("option");
+      option.value = m;
+      list.append(option);
+    }
+    note.textContent = models.length ? `(${models.length} available; pick or type)` : "(the provider listed none; type a name)";
+  } catch (e) {
+    note.textContent = `(could not list models: ${e.message}; type a name)`;
+  }
+}
+$("ai-key").addEventListener("change", loadModels);
+$("ai-base").addEventListener("change", loadModels);
 
 function renderAi(info) {
   aiReady = !!info.configured && info.key !== "missing";
@@ -340,6 +421,7 @@ async function loadAi() {
   if (info.model) $("ai-model").value = info.model;
   providerFields();
   renderAi(info);
+  loadModels();
   return info;
 }
 
@@ -376,7 +458,7 @@ const ACTIONS = {
   identify: ["Identify the board", () => { step(1); $("identify").click(); }],
   install: ["Install", () => { if (setup.board) { $("erase").checked = false; $("install").click(); } else step(1); }],
   install_erase: ["Erase and install", () => { if (setup.board) { $("erase").checked = true; $("install").click(); } else step(1); }],
-  pair: ["Go to pairing", () => step(4)],
+  pair: ["Go to pairing", () => { step(4); scanWifi(); }],
   dashboard: ["Open the dashboard", () => show("dashboard")],
 };
 

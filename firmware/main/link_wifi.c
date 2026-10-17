@@ -458,6 +458,50 @@ esp_err_t link_wifi_set_credentials(const char *ssid, const char *password)
     return err;
 }
 
+int link_wifi_scan(link_wifi_network_t *out, int max)
+{
+    const wifi_scan_config_t config = { .show_hidden = false };
+    esp_err_t err = ESP_FAIL;
+    // A scan is refused while the radio is in the middle of connecting; try a few times.
+    for (int attempt = 0; attempt < 4 && err != ESP_OK; attempt++) {
+        err = esp_wifi_scan_start(&config, true);
+        if (err != ESP_OK) {
+            vTaskDelay(pdMS_TO_TICKS(800));
+        }
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "scan failed: %s", esp_err_to_name(err));
+        return -1;
+    }
+    uint16_t found = 0;
+    esp_wifi_scan_get_ap_num(&found);
+    wifi_ap_record_t *records = calloc(found ? found : 1, sizeof(*records));
+    if (records == NULL) {
+        esp_wifi_clear_ap_list();
+        return -1;
+    }
+    esp_wifi_scan_get_ap_records(&found, records); // sorted strongest first
+
+    int count = 0;
+    for (int i = 0; i < found && count < max; i++) {
+        const char *ssid = (const char *)records[i].ssid;
+        bool seen = ssid[0] == '\0';
+        for (int j = 0; j < count && !seen; j++) {
+            seen = strcmp(out[j].ssid, ssid) == 0;
+        }
+        if (seen) {
+            continue;
+        }
+        snprintf(out[count].ssid, sizeof(out[count].ssid), "%s", ssid);
+        out[count].rssi = records[i].rssi;
+        out[count].channel = records[i].primary;
+        out[count].secured = records[i].authmode != WIFI_AUTH_OPEN;
+        count++;
+    }
+    free(records);
+    return count;
+}
+
 esp_err_t link_wifi_start(const char *id, link_wifi_packet_cb on_packet, link_wifi_key_cb lookup_key,
                           link_wifi_session_cb on_session)
 {
