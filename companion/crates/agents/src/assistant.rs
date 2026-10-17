@@ -20,6 +20,57 @@ pub const ACTIONS: &[&str] = &["rescan", "identify", "install", "install_erase",
 pub struct Advice {
     pub answer: String,
     pub actions: Vec<String>,
+    /// A concrete change the person can apply with one click (checked here; shown in full first).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fix: Option<Fix>,
+}
+
+/// A change to the AI settings or the board choice. Only these fields, each checked; never a key,
+/// a command or a file.
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+pub struct Fix {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// An http(s) address, or "" for the provider's usual one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// Request options to set; null = leave that setting out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<serde_json::Map<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
+    /// A board id from the identify result's candidates (the web app checks it is one).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
+}
+
+fn plain_name(s: &str, max: usize) -> bool {
+    !s.is_empty() && s.len() <= max && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.:/@".contains(c))
+}
+
+/// Keeps only well-formed fields; None if nothing usable is left.
+fn check_fix(value: &Value) -> Option<Fix> {
+    let fix = Fix {
+        model: value["model"].as_str().map(str::trim).filter(|m| plain_name(m, 120)).map(str::to_string),
+        base_url: value["base_url"].as_str().map(str::trim)
+            .filter(|u| u.is_empty() || (u.len() <= 200 && (u.starts_with("https://") || u.starts_with("http://"))
+                                           && !u.contains(char::is_whitespace)))
+            .map(str::to_string),
+        options: value["options"].as_object().map(|o| o.iter()
+            .filter(|(k, v)| plain_name(k, 60) && !matches!(k.as_str(), "model" | "messages" | "system")
+                && match v {
+                    Value::Null | Value::Bool(_) | Value::Number(_) => true,
+                    Value::String(s) => s.len() <= 100,
+                    _ => false,
+                })
+            .take(10)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<serde_json::Map<_, _>>())
+            .filter(|o| !o.is_empty()),
+        timeout_secs: value["timeout_secs"].as_u64().filter(|t| (10..=3600).contains(t)),
+        board: value["board"].as_str().filter(|b| plain_name(b, 60) && !b.contains(['/', ':', '@'])).map(str::to_string),
+    };
+    (fix != Fix::default()).then_some(fix)
 }
 
 fn system_prompt() -> String {
@@ -44,7 +95,7 @@ How to work:
   words unless the person asks for detail. Commands go in their own line, exactly as typed.
 
 Reply with ONLY a JSON object, no code fences:
-{{"answer": "<your reply to the person>", "actions": [<zero or more of: {actions}>]}}
+{{"answer": "<your reply to the person>", "actions": [<zero or more of: {actions}>], "fix": <optional, see below>}}
 Actions are buttons the person can press in the setup wizard: "rescan" (look for ports again),
 "identify" (ask the board what it is; restarts it briefly), "install" (install the firmware),
 "install_erase" (erase first, then install), "pair" (pair over USB and give it Wi-Fi), "dashboard".
@@ -54,6 +105,16 @@ person switches on the app named in system_checks.accessibility.app_to_allow), "
 "install_usb_driver" (downloads WCH's USB-serial driver, checks Apple has notarized it and WCH signed
 it, then opens its installer; the person clicks through and enters their Mac password there).
 Offer only actions that are the right next step.
+
+"fix" is a change the person can apply with one click; the web app shows it and, for AI settings,
+saves it and runs the test again. Include it only when the evidence points to that exact change.
+Fields (all optional): "model" (a name from from_the_web_app.ai_models_available when that list is
+given), "base_url" (an http(s) address, or "" for the provider's usual one), "options" (request
+settings to add; null leaves a setting out, e.g. {{"temperature": null}}), "timeout_secs" (10 to
+3600, e.g. longer for a slow local model), "board" (a board id from identify_result.candidates,
+when the person has told you which board they have). Never put keys or passwords in it. Say in
+"answer" what the fix would change and why, and that pressing Apply makes the change: nothing has
+changed until the person presses it, so never write that you changed or selected anything.
 
 Do the work for the person. Read system_checks before asking them anything: it shows what the
 computer itself reports (usb_serial_devices: each USB-serial chip and whether it has a port, on Linux
@@ -85,12 +146,12 @@ fn parse(reply: &str) -> Advice {
                     .filter(|a| ACTIONS.contains(a))
                     .map(str::to_string)
                     .collect();
-                return Advice { answer: answer.to_string(), actions };
+                return Advice { answer: answer.to_string(), actions, fix: check_fix(&value["fix"]) };
             }
         }
     }
     // Not the JSON we asked for: show the text, offer no buttons.
-    Advice { answer: reply.trim().to_string(), actions: Vec::new() }
+    Advice { answer: reply.trim().to_string(), actions: Vec::new(), fix: None }
 }
 
 /// Asks the model for advice on `question`, given the `snapshot` the service collected.
@@ -122,6 +183,7 @@ mod tests {
         assert!(prompt.contains("Never ask for, repeat or store passwords"));
         assert!(prompt.contains("install_usb_driver"));
         assert!(prompt.contains("Never tell the person to edit source code"));
+        assert!(prompt.contains("never write that you changed or selected anything"));
         assert!(prompt.contains("1a86:7522"));
     }
 
@@ -130,6 +192,25 @@ mod tests {
         let advice = parse(r#"Sure: {"answer": "Try another cable.", "actions": ["rescan", "format_disk", "identify"]}"#);
         assert_eq!(advice.answer, "Try another cable.");
         assert_eq!(advice.actions, vec!["rescan", "identify"]);
+    }
+
+    #[test]
+    fn fixes_keep_only_checked_fields() {
+        let advice = parse(r#"{"answer": "Switch model.", "actions": [], "fix": {"model": "gpt-6-luna",
+            "base_url": "file:///etc/passwd", "options": {"temperature": null, "messages": "x", "nested": {"a": 1},
+            "reasoning_effort": "low"}, "timeout_secs": 5, "board": "../../x", "api_key": "sk-123"}}"#);
+        let fix = advice.fix.expect("fix");
+        assert_eq!(fix.model.as_deref(), Some("gpt-6-luna"));
+        assert_eq!(fix.base_url, None);
+        let options = fix.options.expect("options");
+        assert_eq!(options.len(), 2);
+        assert!(options["temperature"].is_null());
+        assert_eq!(options["reasoning_effort"], "low");
+        assert_eq!(fix.timeout_secs, None);
+        assert_eq!(fix.board, None);
+        assert!(parse(r#"{"answer": "a", "fix": {"model": "two words"}}"#).fix.is_none());
+        assert_eq!(parse(r#"{"answer": "a", "fix": {"base_url": "", "board": "fnk0104b"}}"#).fix,
+                   Some(Fix { base_url: Some(String::new()), board: Some("fnk0104b".into()), ..Fix::default() }));
     }
 
     #[test]

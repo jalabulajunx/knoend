@@ -38,7 +38,8 @@ driver, a permission, a wrong board, a setting), do not stop at the fix:
    of asking the person to run commands. Facts only: never passwords, keys or window titles.
 3. **Action:** if the fix needs the person (a password, an Allow switch, an installer), add an
    assistant action that takes them to the exact place (`assistant::ACTIONS`, the web app's
-   `ACTIONS`, a fixed list in `cli/src/macos_help.rs` or alongside). Actions only open or prepare;
+   `ACTIONS`, a fixed list in `cli/src/macos_help.rs` or alongside), or a checked field in the
+   assistant's `fix` (`assistant::check_fix`) when the fix is a setting. Actions only open or prepare;
    nothing is approved, installed or erased without the person's click. Anything downloaded is
    checked before it is opened (checksum, or the OS's signature and notarization check).
 4. **Prompt:** if the assistant has to behave differently (lead the steps, wait for the person,
