@@ -203,3 +203,29 @@ Entry template:
   extension, simulator, agent-CLI hooks.
 - Open for tomorrow: Tom reviews `spec/` and the code; firmware card for unsupported apps; layout
   kept across reboots; Eon Era access (promised at kickoff) not yet confirmed.
+
+## 2026-10-18 - Sundar (Claude Code) - Web setup, universal image, keys without Bluetooth, setup assistant (PR #1)
+
+- Changed (merged as PR #1, `main` 8ddb81b): `openpager serve` web app (wizard + dashboard), flashing
+  (`crates/flash`, espflash), universal firmware image with board definitions (`board_generic`,
+  `board` partition at 0x310000, `spec/schemas/board.schema.json`), keystrokes typed by the service
+  when no Bluetooth host is connected (`crates/input`, X11 XTest), setup assistant with
+  `docs/knowledge/setup.md` built in, AI-guided setup with locally stored API keys, Mac focus and
+  typing backends, CI (spec, firmware, companion on Linux + macOS) and a release workflow.
+- Tested (ONX2432G028, Arch Linux, home Wi-Fi):
+  - From scratch, by Sundar in the web app: guided mode, Gemini key entered and tested in the page,
+    identify, erase + install (4 parts verified), pair, join Wi-Fi, dashboard connected, VS Code key
+    typed by the service with Bluetooth off. Service log confirms each step.
+  - Universal image keeps pairing keys and Wi-Fi when updated without erasing (the settings
+    partition did not move).
+  - The assistant, given a real snapshot, found that focus was on Firefox and Bluetooth soft-blocked.
+  - CI green on Linux and macOS (the Mac code compiles and its tests pass; behaviour untested).
+- Found and fixed: separate espflash write sessions restart the chip after the first part; a short
+  last part (517-byte definition) lost its final 5 bytes (now padded to the 4 KB partition); the
+  identity probe missed the boot announcement; a restarted board went unnoticed (10 s heartbeat);
+  CSS `display` overrode the `hidden` attribute.
+- Decided: one universal image + per-board JSON definitions (Tasmota-style); keys must work without
+  Bluetooth; the in-product assistant shares the knowledge base with coding agents.
+- Open (UI, requested by Sundar): list models per provider instead of typing the name; scan and
+  list Wi-Fi networks instead of typing the name. Also: first release (`v*` tag) not run yet;
+  macOS behaviour on Tom's Mac; FNK0104B definition; dynamic tiles (PLAN backlog).
