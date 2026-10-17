@@ -248,3 +248,13 @@ Entry template:
   longer than the schema's 300 characters.
 - Open: run the two unverified boards (or any GT911 board); RGB-panel boards (4.3-7") need an RGB
   driver and a larger layout; Hynitron CST328/CST3530 for the Waveshare 2.8.
+
+## 2026-10-18 - Sundar (Claude Code) - Setup guide; README and status brought up to date
+
+- Changed: new `docs/setup.md` (set up a board: build the service, package firmware until the first
+  release, `openpager serve` wizard; working on the code: ESP-IDF, crates, CLI, validator, CI,
+  releases). README: status, boards (with unverified ones), what works today, getting started,
+  layout. `docs/status.md`, `firmware/README.md`, `tools/README.md` rewritten to match main.
+- Tested: commands and paths checked against the code (CLI flags, partition table, release script,
+  CI); the guide itself has not been followed end to end on a fresh machine or on a Mac.
+- Open: Tom following `docs/setup.md` on his Mac is the first real test of it.
