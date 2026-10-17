@@ -1,4 +1,5 @@
-// The contract every board profile implements. The firmware core includes only this header.
+// The contract the board support implements (components/board_generic, driven by a board
+// definition). The firmware core includes only this header.
 //
 // Display and touch are handed to LVGL through esp_lvgl_port: after board_init() returns, the
 // core draws with LVGL, taking lvgl_port_lock() around every LVGL call made outside an LVGL
@@ -22,9 +23,19 @@ typedef struct {
     bool has_native_usb; // true when the USB-C port can enumerate as a USB keyboard
 } board_info_t;
 
+// Which line the companion talks to over USB.
+typedef enum {
+    BOARD_SERIAL_UART0,           // a USB-serial bridge (CH340, CP210x) on UART0
+    BOARD_SERIAL_USB_SERIAL_JTAG, // the ESP32-S3's own USB port
+} board_serial_t;
+
 // Power rails, buses, display, touch and LVGL. Leaves the backlight off; call
 // board_set_backlight() once the first screen is drawn.
+// Returns an error (and the board runs without a display) if no usable board definition exists.
 esp_err_t board_init(void);
+
+// The serial line named by the board definition (UART0 when there is none).
+board_serial_t board_serial(void);
 
 const board_info_t *board_info(void);
 

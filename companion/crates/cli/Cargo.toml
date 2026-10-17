@@ -13,6 +13,7 @@ openpager-agents = { version = "0.1.0", path = "../agents" }
 openpager-core = { version = "0.1.0", path = "../core" }
 openpager-flash = { version = "0.1.0", path = "../flash" }
 openpager-focus = { version = "0.1.0", path = "../focus" }
+openpager-input = { version = "0.1.0", path = "../input" }
 openpager-transport = { version = "0.1.0", path = "../transport" }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 rpassword = "7.5.4"

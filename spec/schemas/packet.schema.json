@@ -536,6 +536,27 @@
         "seq": {
           "type": "integer",
           "minimum": 1
+        },
+        "hid": {
+          "type": "object",
+          "required": [
+            "modifiers",
+            "usage"
+          ],
+          "additionalProperties": false,
+          "description": "Present when the board could not type a shortcut key itself (no Bluetooth host): the companion types it.",
+          "properties": {
+            "modifiers": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "usage": {
+              "type": "integer",
+              "minimum": 4,
+              "maximum": 115
+            }
+          }
         }
       }
     },

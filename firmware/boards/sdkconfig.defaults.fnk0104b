@@ -1,3 +1,0 @@
-# Freenove FNK0104B (Tom). Placeholder until the profile exists; values to confirm on the board.
-CONFIG_OPENPAGER_BOARD_FNK0104B=y
-CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y

@@ -1639,6 +1639,7 @@ dependencies = [
  "openpager-core",
  "openpager-flash",
  "openpager-focus",
+ "openpager-input",
  "openpager-transport",
  "reqwest",
  "rpassword",
@@ -1688,6 +1689,13 @@ name = "openpager-focus"
 version = "0.1.0"
 dependencies = [
  "openpager-core",
+ "x11rb",
+]
+
+[[package]]
+name = "openpager-input"
+version = "0.1.0"
+dependencies = [
  "x11rb",
 ]
 

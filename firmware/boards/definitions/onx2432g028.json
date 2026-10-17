@@ -1,0 +1,21 @@
+{
+  "id": "onx2432g028",
+  "name": "ONX2432G028",
+  "chip": "esp32s3",
+  "serial": "uart0",
+  "native_usb": false,
+  "speaker": true,
+  "i2c": { "sda": 8, "scl": 7, "pullup": true },
+  "expander": { "driver": "pcf8574", "address": 56, "initial": 254 },
+  "display": {
+    "driver": "st7789",
+    "sclk": 5, "mosi": 1, "dc": 3, "cs": 2,
+    "reset": { "expander_bit": 5 },
+    "width": 240, "height": 320, "pclk_hz": 80000000,
+    "bgr": false, "invert": false,
+    "mirror_x": false, "mirror_y": true, "swap_xy": false,
+    "rotation": 90,
+    "backlight": { "gpio": 6 }
+  },
+  "touch": { "driver": "cst826", "address": 21, "max_x": 240, "max_y": 320 }
+}

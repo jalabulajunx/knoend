@@ -3,6 +3,9 @@
 
 use openpager_flash::manifest::{Manifest, Part};
 
+/// Size of the firmware's "board" partition (firmware/partitions.csv).
+const DEFINITION_PARTITION_SIZE: usize = 0x1000;
+
 pub const DEFAULT_SOURCE: &str = "https://github.com/jalabulajunx/openpager/releases/latest/download";
 
 async fn fetch(source: &str, file: &str) -> Result<Vec<u8>, String> {
@@ -33,6 +36,17 @@ pub async fn parts_for(source: &str, manifest: &Manifest, board: &str) -> Result
     let mut out = Vec::new();
     for part in &image.parts {
         out.push(load_part(source, part).await?);
+    }
+    // The board definition tells the universal image what hardware it is running on.
+    if let (Some(definition), Some(offset)) = (&entry.definition, &image.definition_offset) {
+        let (offset, mut bytes) = load_part(source, &definition.as_part(offset)).await?;
+        // Fill the whole 4 KB partition (0xFF = erased; the firmware stops reading there). Written
+        // as a short part, the tail of the definition did not reach the flash on the ONX (the last
+        // 5 of 517 bytes were missing and verification failed).
+        bytes.resize(DEFINITION_PARTITION_SIZE.max(bytes.len()), 0xFF);
+        out.push((offset, bytes));
+    } else if image.definition_offset.is_some() {
+        return Err(format!("{} has no board definition in this release", entry.name));
     }
     Ok(out)
 }

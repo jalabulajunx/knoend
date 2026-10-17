@@ -2,12 +2,13 @@
 //!
 //! ```json
 //! { "version": "0.2.0",
-//!   "images": { "onx2432g028": { "chip": "esp32s3", "parts": [
-//!       { "offset": "0x0", "file": "onx2432g028-bootloader.bin", "sha256": "...", "size": 20928 } ] } },
-//!   "boards": { "onx2432g028": { "name": "ONX2432G028", "image": "onx2432g028",
-//!       "flash_size": "16MB", "bridges": ["ch340"], "status": "supported" } } }
+//!   "images": { "universal-esp32s3": { "chip": "esp32s3", "definition_offset": "0x310000", "parts": [
+//!       { "offset": "0x0", "file": "universal-esp32s3-bootloader.bin", "sha256": "...", "size": 20928 } ] } },
+//!   "boards": { "onx2432g028": { "name": "ONX2432G028", "image": "universal-esp32s3",
+//!       "flash_size": "16MB", "bridges": ["ch340"], "status": "supported",
+//!       "definition": { "file": "board-onx2432g028.json", "sha256": "...", "size": 517 } } } }
 //! ```
-//! A board names the image it runs; several boards can share one image (the universal image).
+//! Boards share one universal image; what makes each board work is its definition.
 
 use std::collections::BTreeMap;
 
@@ -27,6 +28,17 @@ pub struct Manifest {
 pub struct Image {
     pub chip: String,
     pub parts: Vec<Part>,
+    /// Where the board definition goes (the "board" partition), as hex.
+    #[serde(default)]
+    pub definition_offset: Option<String>,
+}
+
+/// A board definition file (JSON), written into the image's "board" partition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Definition {
+    pub file: String,
+    pub sha256: String,
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +63,8 @@ pub struct Board {
     pub status: String,
     #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
+    pub definition: Option<Definition>,
 }
 
 /// A board the plugged-in hardware might be, best first.
@@ -61,6 +75,13 @@ pub struct Candidate {
     pub score: u32,
     pub reasons: Vec<String>,
     pub status: String,
+}
+
+impl Definition {
+    /// The definition as a flashable part at `offset`.
+    pub fn as_part(&self, offset: &str) -> Part {
+        Part { offset: offset.to_string(), file: self.file.clone(), sha256: self.sha256.clone(), size: self.size }
+    }
 }
 
 impl Part {

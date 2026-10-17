@@ -47,12 +47,15 @@ pub struct Shared {
     /// Held while a flash or provisioning job owns the USB serial port.
     pub serial: Arc<tokio::sync::Mutex<()>>,
     pub firmware_source: String,
+    /// Types keystrokes for a board that cannot (no Bluetooth host); connected on first use.
+    typist: Arc<std::sync::Mutex<Option<openpager_input::Typist>>>,
 }
 
 impl Shared {
     pub fn new(firmware_source: String) -> Arc<Shared> {
         let (events, _) = broadcast::channel(256);
-        Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())), firmware_source })
+        Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())), firmware_source,
+                          typist: Arc::new(std::sync::Mutex::new(None)) })
     }
 
     /// Publishes an event to the web app and prints it for the terminal.
@@ -321,6 +324,22 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, sender: &mut wi
             let layout = packet.body["layout"].as_str().unwrap_or("");
             let key = packet.body["key"].as_u64().unwrap_or(0);
             shared.emit("key", json!({"text": format!("Key {key} on {layout}"), "key": key, "layout": layout}));
+            // A shortcut the board could not type itself (no Bluetooth host): type it here.
+            if let (Some(modifiers), Some(usage)) = (packet.body["hid"]["modifiers"].as_u64(), packet.body["hid"]["usage"].as_u64()) {
+                let typist = shared.typist.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let mut slot = typist.lock().map_err(|_| "typist lock".to_string())?;
+                    if slot.is_none() {
+                        *slot = Some(openpager_input::Typist::connect()?);
+                    }
+                    slot.as_ref().expect("connected").tap(modifiers as u8, usage as u8)
+                }).await.unwrap_or_else(|e| Err(e.to_string()));
+                match result {
+                    Ok(()) => shared.emit("typed", json!({"text": format!("  typed key {key} on this computer (board has no Bluetooth host)")})),
+                    Err(e) => shared.emit("type-failed", json!({"text": format!("  could not type key {key}: {e}")})),
+                }
+                return None;
+            }
             if layout == UNSUPPORTED && key == u64::from(CONFIGURE_SLOT) {
                 let target = focus?.clone();
                 println!("  Configure requested for {}", target.display_name());

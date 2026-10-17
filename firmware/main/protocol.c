@@ -138,6 +138,18 @@ void protocol_send_key(int slot, const char *layout_id, uint32_t seq)
     send_packet("openpager.key", body, -1, TRANSPORT_ALL);
 }
 
+void protocol_send_keystroke(int slot, const char *layout_id, uint32_t seq, uint8_t modifiers, uint8_t usage)
+{
+    cJSON *body = cJSON_CreateObject();
+    cJSON_AddNumberToObject(body, "key", slot);
+    cJSON_AddStringToObject(body, "layout", layout_id);
+    cJSON_AddNumberToObject(body, "seq", seq);
+    cJSON *hid = cJSON_AddObjectToObject(body, "hid");
+    cJSON_AddNumberToObject(hid, "modifiers", modifiers);
+    cJSON_AddNumberToObject(hid, "usage", usage);
+    send_packet("openpager.key", body, -1, TRANSPORT_ALL);
+}
+
 // ---- helpers ----
 
 static bool get_int(const cJSON *object, const char *name, int min, int max, int *out)

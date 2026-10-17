@@ -1,0 +1,411 @@
+// Universal board support: one firmware image, driven by a board definition (JSON) stored in the
+// "board" flash partition. Schema: spec/schemas/board.schema.json; examples:
+// firmware/boards/definitions/. Written from schematics, datasheets and Espressif's esp_lcd /
+// esp_lvgl_port; no board-vendor example code.
+//
+// Without a valid definition the board still boots "headless": Bluetooth, serial and Wi-Fi run,
+// board_init() returns an error, and the companion can write a definition.
+
+#include "board.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "cJSON.h"
+#include "driver/gpio.h"
+#include "driver/i2c_master.h"
+#include "driver/ledc.h"
+#include "driver/spi_master.h"
+#include "esp_check.h"
+#include "esp_lcd_ili9341.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_vendor.h"
+#include "esp_log.h"
+#include "esp_lvgl_port.h"
+#include "esp_partition.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "lvgl.h"
+
+static const char *TAG = "board";
+
+#define DEFINITION_SUBTYPE 0x40
+#define DEFINITION_MAX     4096
+#define TOUCH_REG_POINTS   0x02 // FocalTech layout: count, then X high/low, Y high/low
+
+#define BACKLIGHT_TIMER   LEDC_TIMER_1
+#define BACKLIGHT_CHANNEL LEDC_CHANNEL_0
+#define BACKLIGHT_BITS    LEDC_TIMER_10_BIT
+
+// A control line is either a GPIO or a bit on the I/O expander.
+typedef struct {
+    int gpio;         // -1 if none
+    int expander_bit; // -1 if none
+} line_t;
+
+typedef struct {
+    char id[33];
+    char name[65];
+    board_serial_t serial;
+    bool native_usb, speaker;
+    int sda, scl;
+    bool pullup;
+    bool has_expander;
+    int expander_address, expander_initial;
+    char display_driver[16];
+    int sclk, mosi, dc, cs;
+    line_t lcd_reset;
+    int width, height, pclk_hz;
+    bool bgr, invert, mirror_x, mirror_y, swap_xy;
+    int rotation;
+    int backlight_gpio;
+    bool backlight_active_low;
+    char touch_driver[16];
+    int touch_address;
+    line_t touch_reset;
+    int touch_max_x, touch_max_y;
+    bool touch_swap_xy, touch_mirror_x, touch_mirror_y;
+} definition_t;
+
+static definition_t def;
+static board_info_t info = { .id = "unknown", .name = "No board definition" };
+static bool backlight_ready;
+static i2c_master_bus_handle_t i2c_bus;
+static i2c_master_dev_handle_t expander, touch;
+static uint8_t expander_state;
+
+const board_info_t *board_info(void)
+{
+    return &info;
+}
+
+// ---- reading and checking the definition ----
+
+static bool pin_ok(int pin)
+{
+    // -1 = not connected. 22-25 do not exist on the S3; 26-32 are the SPI flash, 33-37 the octal PSRAM.
+    return pin == -1 || (pin >= 0 && pin <= 48 && !(pin >= 22 && pin <= 37));
+}
+
+static int get_int(const cJSON *object, const char *name, int fallback)
+{
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(object, name);
+    return cJSON_IsNumber(item) ? item->valueint : fallback;
+}
+
+static bool get_bool(const cJSON *object, const char *name)
+{
+    return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(object, name));
+}
+
+static void get_str(const cJSON *object, const char *name, char *out, size_t size)
+{
+    const char *value = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
+    snprintf(out, size, "%s", value ? value : "");
+}
+
+static line_t get_line(const cJSON *object, const char *name)
+{
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(object, name);
+    if (cJSON_IsNumber(item)) {
+        return (line_t){ .gpio = item->valueint, .expander_bit = -1 };
+    }
+    if (cJSON_IsObject(item)) {
+        return (line_t){ .gpio = -1, .expander_bit = get_int(item, "expander_bit", -1) };
+    }
+    return (line_t){ .gpio = -1, .expander_bit = -1 };
+}
+
+static esp_err_t parse(const char *text)
+{
+    cJSON *root = cJSON_Parse(text);
+    ESP_RETURN_ON_FALSE(root != NULL, ESP_ERR_INVALID_ARG, TAG, "definition is not JSON");
+    const cJSON *i2c = cJSON_GetObjectItemCaseSensitive(root, "i2c");
+    const cJSON *expander_json = cJSON_GetObjectItemCaseSensitive(root, "expander");
+    const cJSON *display = cJSON_GetObjectItemCaseSensitive(root, "display");
+    const cJSON *backlight = cJSON_GetObjectItemCaseSensitive(display, "backlight");
+    const cJSON *touch_json = cJSON_GetObjectItemCaseSensitive(root, "touch");
+    char serial[24];
+
+    memset(&def, 0, sizeof(def));
+    get_str(root, "id", def.id, sizeof(def.id));
+    get_str(root, "name", def.name, sizeof(def.name));
+    get_str(root, "serial", serial, sizeof(serial));
+    def.serial = strcmp(serial, "usb-serial-jtag") == 0 ? BOARD_SERIAL_USB_SERIAL_JTAG : BOARD_SERIAL_UART0;
+    def.native_usb = get_bool(root, "native_usb");
+    def.speaker = get_bool(root, "speaker");
+    def.sda = get_int(i2c, "sda", -1);
+    def.scl = get_int(i2c, "scl", -1);
+    def.pullup = get_bool(i2c, "pullup");
+    def.has_expander = cJSON_IsObject(expander_json);
+    def.expander_address = get_int(expander_json, "address", 0);
+    def.expander_initial = get_int(expander_json, "initial", 0xFF);
+    get_str(display, "driver", def.display_driver, sizeof(def.display_driver));
+    def.sclk = get_int(display, "sclk", -1);
+    def.mosi = get_int(display, "mosi", -1);
+    def.dc = get_int(display, "dc", -1);
+    def.cs = get_int(display, "cs", -1);
+    def.lcd_reset = get_line(display, "reset");
+    def.width = get_int(display, "width", 0);
+    def.height = get_int(display, "height", 0);
+    def.pclk_hz = get_int(display, "pclk_hz", 40000000);
+    def.bgr = get_bool(display, "bgr");
+    def.invert = get_bool(display, "invert");
+    def.mirror_x = get_bool(display, "mirror_x");
+    def.mirror_y = get_bool(display, "mirror_y");
+    def.swap_xy = get_bool(display, "swap_xy");
+    def.rotation = get_int(display, "rotation", 0);
+    def.backlight_gpio = get_int(backlight, "gpio", -1);
+    def.backlight_active_low = get_bool(backlight, "active_low");
+    get_str(touch_json, "driver", def.touch_driver, sizeof(def.touch_driver));
+    def.touch_address = get_int(touch_json, "address", 0);
+    def.touch_reset = get_line(touch_json, "reset");
+    def.touch_max_x = get_int(touch_json, "max_x", def.width);
+    def.touch_max_y = get_int(touch_json, "max_y", def.height);
+    def.touch_swap_xy = get_bool(touch_json, "swap_xy");
+    def.touch_mirror_x = get_bool(touch_json, "mirror_x");
+    def.touch_mirror_y = get_bool(touch_json, "mirror_y");
+    cJSON_Delete(root);
+
+    // The schema is checked by the companion before writing; this repeats what could harm the
+    // board or the chip if it were wrong.
+    const int pins[] = { def.sda, def.scl, def.sclk, def.mosi, def.dc, def.cs, def.backlight_gpio,
+                         def.lcd_reset.gpio, def.touch_reset.gpio };
+    for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
+        ESP_RETURN_ON_FALSE(pin_ok(pins[i]), ESP_ERR_INVALID_ARG, TAG, "GPIO %d is not usable on the ESP32-S3", pins[i]);
+    }
+    ESP_RETURN_ON_FALSE(def.id[0] != '\0' && def.width >= 64 && def.height >= 64, ESP_ERR_INVALID_ARG, TAG, "incomplete definition");
+    ESP_RETURN_ON_FALSE(strcmp(def.display_driver, "st7789") == 0 || strcmp(def.display_driver, "ili9341") == 0,
+                        ESP_ERR_NOT_SUPPORTED, TAG, "display driver \"%s\" not supported", def.display_driver);
+    ESP_RETURN_ON_FALSE(strcmp(def.touch_driver, "cst826") == 0 || strcmp(def.touch_driver, "ft6336") == 0,
+                        ESP_ERR_NOT_SUPPORTED, TAG, "touch driver \"%s\" not supported", def.touch_driver);
+    ESP_RETURN_ON_FALSE(def.rotation % 90 == 0 && def.rotation >= 0 && def.rotation < 360, ESP_ERR_INVALID_ARG, TAG, "rotation");
+    return ESP_OK;
+}
+
+static esp_err_t load_definition(void)
+{
+    const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, DEFINITION_SUBTYPE, "board");
+    ESP_RETURN_ON_FALSE(partition != NULL, ESP_ERR_NOT_FOUND, TAG, "no \"board\" partition");
+    char *text = calloc(1, DEFINITION_MAX + 1);
+    ESP_RETURN_ON_FALSE(text != NULL, ESP_ERR_NO_MEM, TAG, "memory");
+    esp_err_t err = esp_partition_read(partition, 0, text, DEFINITION_MAX);
+    if (err == ESP_OK) {
+        // Erased flash reads 0xFF: the definition ends at the first 0xFF or NUL.
+        for (int i = 0; i < DEFINITION_MAX; i++) {
+            if ((unsigned char)text[i] == 0xFF || text[i] == '\0') {
+                text[i] = '\0';
+                break;
+            }
+        }
+        err = text[0] == '{' ? parse(text) : ESP_ERR_NOT_FOUND;
+    }
+    free(text);
+    return err;
+}
+
+// ---- hardware ----
+
+static esp_err_t expander_write(uint8_t state)
+{
+    expander_state = state;
+    return i2c_master_transmit(expander, &state, 1, 50);
+}
+
+static esp_err_t set_line(line_t line, int level)
+{
+    if (line.gpio >= 0) {
+        return gpio_set_level(line.gpio, level);
+    }
+    if (line.expander_bit >= 0 && expander != NULL) {
+        const uint8_t bit = 1u << line.expander_bit;
+        return expander_write(level ? (expander_state | bit) : (expander_state & ~bit));
+    }
+    return ESP_OK;
+}
+
+static esp_err_t pulse_reset(line_t line)
+{
+    if (line.gpio < 0 && line.expander_bit < 0) {
+        return ESP_OK;
+    }
+    if (line.gpio >= 0) {
+        const gpio_config_t config = { .pin_bit_mask = 1ULL << line.gpio, .mode = GPIO_MODE_OUTPUT };
+        ESP_RETURN_ON_ERROR(gpio_config(&config), TAG, "reset gpio");
+    }
+    ESP_RETURN_ON_ERROR(set_line(line, 0), TAG, "reset low");
+    vTaskDelay(pdMS_TO_TICKS(20));
+    ESP_RETURN_ON_ERROR(set_line(line, 1), TAG, "reset high");
+    vTaskDelay(pdMS_TO_TICKS(120));
+    return ESP_OK;
+}
+
+static esp_err_t i2c_init(void)
+{
+    if (def.sda < 0 || def.scl < 0) {
+        return ESP_OK;
+    }
+    const i2c_master_bus_config_t bus = {
+        .i2c_port = I2C_NUM_0, .sda_io_num = def.sda, .scl_io_num = def.scl,
+        .clk_source = I2C_CLK_SRC_DEFAULT, .glitch_ignore_cnt = 7, .flags.enable_internal_pullup = def.pullup,
+    };
+    ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus, &i2c_bus), TAG, "i2c bus");
+    if (def.has_expander) {
+        const i2c_device_config_t config = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = def.expander_address, .scl_speed_hz = 100000 };
+        ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(i2c_bus, &config, &expander), TAG, "expander");
+        ESP_RETURN_ON_ERROR(expander_write((uint8_t)def.expander_initial), TAG, "expander write");
+    }
+    const i2c_device_config_t config = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = def.touch_address, .scl_speed_hz = 400000 };
+    return i2c_master_bus_add_device(i2c_bus, &config, &touch);
+}
+
+static esp_err_t display_init(esp_lcd_panel_io_handle_t *io, esp_lcd_panel_handle_t *panel)
+{
+    const spi_bus_config_t bus = {
+        .sclk_io_num = def.sclk, .mosi_io_num = def.mosi, .miso_io_num = -1, .quadwp_io_num = -1, .quadhd_io_num = -1,
+        .max_transfer_sz = def.width * 40 * sizeof(uint16_t),
+    };
+    ESP_RETURN_ON_ERROR(spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO), TAG, "spi");
+    const esp_lcd_panel_io_spi_config_t io_config = {
+        .dc_gpio_num = def.dc, .cs_gpio_num = def.cs, .pclk_hz = def.pclk_hz,
+        .lcd_cmd_bits = 8, .lcd_param_bits = 8, .spi_mode = 0, .trans_queue_depth = 10,
+    };
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_config, io), TAG, "panel io");
+    const esp_lcd_panel_dev_config_t panel_config = {
+        .reset_gpio_num = -1, // reset pulsed by pulse_reset(), which also handles expander lines
+        .rgb_ele_order = def.bgr ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB,
+        .bits_per_pixel = 16,
+    };
+    ESP_RETURN_ON_ERROR(pulse_reset(def.lcd_reset), TAG, "lcd reset");
+    if (strcmp(def.display_driver, "ili9341") == 0) {
+        ESP_RETURN_ON_ERROR(esp_lcd_new_panel_ili9341(*io, &panel_config, panel), TAG, "ili9341");
+    } else {
+        ESP_RETURN_ON_ERROR(esp_lcd_new_panel_st7789(*io, &panel_config, panel), TAG, "st7789");
+    }
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(*panel), TAG, "panel reset");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(*panel), TAG, "panel init");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(*panel, def.invert), TAG, "invert");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(*panel, def.swap_xy), TAG, "swap");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(*panel, def.mirror_x, def.mirror_y), TAG, "mirror");
+    return esp_lcd_panel_disp_on_off(*panel, true);
+}
+
+static esp_err_t backlight_init(void)
+{
+    if (def.backlight_gpio < 0) {
+        return ESP_OK;
+    }
+    const ledc_timer_config_t timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE, .timer_num = BACKLIGHT_TIMER, .duty_resolution = BACKLIGHT_BITS,
+        .freq_hz = 10000, .clk_cfg = LEDC_AUTO_CLK,
+    };
+    ESP_RETURN_ON_ERROR(ledc_timer_config(&timer), TAG, "backlight timer");
+    const ledc_channel_config_t channel = {
+        .speed_mode = LEDC_LOW_SPEED_MODE, .channel = BACKLIGHT_CHANNEL, .timer_sel = BACKLIGHT_TIMER,
+        .gpio_num = def.backlight_gpio, .duty = 0, .flags.output_invert = def.backlight_active_low,
+    };
+    ESP_RETURN_ON_ERROR(ledc_channel_config(&channel), TAG, "backlight channel");
+    backlight_ready = true;
+    return ESP_OK;
+}
+
+void board_set_backlight(uint8_t percent)
+{
+    if (!backlight_ready) {
+        return;
+    }
+    if (percent > 100) {
+        percent = 100;
+    }
+    const uint32_t max_duty = (1u << BACKLIGHT_BITS) - 1;
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, BACKLIGHT_CHANNEL, max_duty * percent / 100);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, BACKLIGHT_CHANNEL);
+}
+
+// LVGL polls this; coordinates go in the panel's native frame and LVGL applies the rotation.
+static void touch_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
+{
+    uint8_t reg = TOUCH_REG_POINTS;
+    uint8_t buf[5];
+    data->state = LV_INDEV_STATE_REL;
+    if (i2c_master_transmit_receive(touch, &reg, 1, buf, sizeof(buf), 20) != ESP_OK || (buf[0] & 0x0F) == 0) {
+        return;
+    }
+    int x = ((buf[1] & 0x0F) << 8) | buf[2];
+    int y = ((buf[3] & 0x0F) << 8) | buf[4];
+    if (def.touch_swap_xy) {
+        const int t = x;
+        x = y;
+        y = t;
+    }
+    if (def.touch_mirror_x) {
+        x = def.width - 1 - x;
+    }
+    if (def.touch_mirror_y) {
+        y = def.height - 1 - y;
+    }
+    if (x < 0 || y < 0 || x >= def.width || y >= def.height) {
+        return;
+    }
+    data->point.x = x;
+    data->point.y = y;
+    data->state = LV_INDEV_STATE_PR;
+}
+
+static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t panel)
+{
+    const lvgl_port_cfg_t port = ESP_LVGL_PORT_INIT_CONFIG();
+    ESP_RETURN_ON_ERROR(lvgl_port_init(&port), TAG, "lvgl port");
+    const lvgl_port_display_cfg_t display_config = {
+        .io_handle = io, .panel_handle = panel,
+        .buffer_size = def.width * def.height / 8, .double_buffer = true,
+        .hres = def.width, .vres = def.height,
+        .flags = { .buff_spiram = true, .sw_rotate = def.rotation != 0 },
+    };
+    lv_disp_t *display = lvgl_port_add_disp(&display_config);
+    ESP_RETURN_ON_FALSE(display != NULL, ESP_FAIL, TAG, "lvgl display");
+
+    ESP_RETURN_ON_FALSE(lvgl_port_lock(0), ESP_FAIL, TAG, "lvgl lock");
+    static const lv_disp_rot_t rotations[] = { LV_DISP_ROT_NONE, LV_DISP_ROT_90, LV_DISP_ROT_180, LV_DISP_ROT_270 };
+    lv_disp_set_rotation(display, rotations[def.rotation / 90]);
+    static lv_indev_drv_t touch_driver;
+    lv_indev_drv_init(&touch_driver);
+    touch_driver.type = LV_INDEV_TYPE_POINTER;
+    touch_driver.disp = display;
+    touch_driver.read_cb = touch_read;
+    lv_indev_t *indev = lv_indev_drv_register(&touch_driver);
+    lvgl_port_unlock();
+    ESP_RETURN_ON_FALSE(indev != NULL, ESP_FAIL, TAG, "lvgl touch");
+    return ESP_OK;
+}
+
+board_serial_t board_serial(void)
+{
+    return def.serial;
+}
+
+esp_err_t board_init(void)
+{
+    esp_err_t err = load_definition();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "no usable board definition (%s); running without a display", esp_err_to_name(err));
+        return err;
+    }
+    const bool landscape_swap = def.rotation == 90 || def.rotation == 270;
+    info = (board_info_t){
+        .id = def.id, .name = def.name,
+        .width = landscape_swap ? def.height : def.width,
+        .height = landscape_swap ? def.width : def.height,
+        .has_speaker = def.speaker, .has_native_usb = def.native_usb,
+    };
+    ESP_LOGI(TAG, "definition %s: %s display, %s touch", def.id, def.display_driver, def.touch_driver);
+
+    esp_lcd_panel_io_handle_t io = NULL;
+    esp_lcd_panel_handle_t panel = NULL;
+    ESP_RETURN_ON_ERROR(i2c_init(), TAG, "i2c");
+    ESP_RETURN_ON_ERROR(pulse_reset(def.touch_reset), TAG, "touch reset");
+    ESP_RETURN_ON_ERROR(backlight_init(), TAG, "backlight");
+    ESP_RETURN_ON_ERROR(display_init(&io, &panel), TAG, "display");
+    return lvgl_init(io, panel);
+}
