@@ -398,3 +398,16 @@ Entry template:
   for byte as before.
 - Not tested: on a Mac (driver flow, `/api/typing` with Accessibility); the watcher pauses while the
   page is hidden, which the browser pane here is, so the test forced it visible.
+
+## 2026-10-18 - Sundar (Claude Code) - PR #7 merged; release v0.1.1
+
+- Merged PR #7 (assistant proposes fixes; the wizard re-checks by itself). Version 0.1.1
+  (`companion/Cargo.toml`), tagged `v0.1.1` with Sundar's go-ahead. What it brings over v0.1.0:
+  Tom's macOS fixes (layout follows the front window, Accessibility names the right app, assistant
+  sees USB driver and permission state, opens settings and the verified WCH installer), provider
+  quirks handled at run time with Advanced AI settings, a searchable model list, "no board"
+  explained on Linux and macOS, no pre-selection when native-USB boards tie, assistant fixes applied
+  with one click, and the wizard re-checking by itself. Firmware unchanged from v0.1.0 apart from
+  the rebuild.
+- Docs now point Mac users to v0.1.1 or later.
+- Release check results: in the entry that follows, or in the PR.

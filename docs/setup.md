@@ -6,8 +6,8 @@ part 2 is for people working on the code. When something goes wrong, see
 web app's setup assistant reads the same file.
 
 Tested on Arch Linux (X11, i3) and on macOS 26.6 (Apple silicon) with an ONX2432G028. On a Mac,
-the v0.1.0 release cannot follow the focused app and fails with newer OpenAI models: build the
-service from source (below) until the next release. Windows is not supported yet.
+use v0.1.1 or later: v0.1.0 cannot follow the focused app and fails with newer OpenAI models.
+Windows is not supported yet.
 
 ## What you need
 
