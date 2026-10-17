@@ -152,3 +152,12 @@ Entry template:
 - Not yet confirmed: what A/B/Shift C actually typed on the laptop; a single Delete tap timing out.
 - Open: layout not kept across reboots yet; approval prompts; the real companion (Rust) replaces
   the dummy; keys in an OS keyring; NVS encryption.
+
+## 2026-10-17 - Sundar (Claude Code) - Confirmations from the serial bench test
+
+- Tested (Sundar, by eye): A, B, Shift C typed `a`, `b`, `C` on the laptop over Bluetooth; a single
+  tap on a confirm key turned it amber and timed out by itself after ~3 s without sending.
+- Decided (Sundar): the layout follows the active app. For an app with no library the board shows
+  "Unsupported app: <name>" with a Configure button; Configure asks the companion service to run
+  its AI agent to set the app up. (Replaces the plan's automatic drafting on first use: the agent
+  now runs only when the person asks.)
