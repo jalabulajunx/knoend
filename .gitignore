@@ -1,0 +1,23 @@
+# ESP-IDF
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+
+# Rust
+companion/target/
+
+# Node / extension / Tauri UI
+node_modules/
+dist/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Private working notes (kept locally, not published)
+HANDOFF.md
+PLAN.md
+CLAUDE.md
