@@ -186,3 +186,9 @@ Entry template:
 - Open: firmware card screen for unsupported apps (now a 1-key layout + status text); the AI agent
   behind Configure (any provider: OpenAI-compatible incl. OpenRouter, Gemini, Ollama; plus
   Anthropic); reconnect after the board reboots not yet exercised.
+
+## 2026-10-17 - Sundar (Claude Code) - Branches merged to main
+
+- Decided (Sundar): merge `sundar/spec-v0`, `sundar/serial-packets` and `sundar/companion-core`
+  into `main` now; Tom reviews tomorrow and changes what he sees fit (spec/ included).
+- Also confirmed by Sundar: the VS Code "Palette" key opened the command palette (typed over BLE).
