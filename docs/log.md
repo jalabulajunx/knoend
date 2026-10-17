@@ -416,3 +416,11 @@ Entry template:
   with the 17 networks from the screenshot as a stand-in scan.
 - Docs now point Mac users to v0.1.1 or later.
 - Release check results: in the entry that follows, or in the PR.
+
+## 2026-10-18 - Sundar (Claude Code) - v0.1.1 published and checked
+
+- Release workflow for `v0.1.1` passed (firmware, Linux x86_64, macOS arm64 and x86_64, publish).
+- Checked from `releases/latest`: manifest version 0.1.1; bootloader, partition table, app image and
+  the three board definitions each match their SHA-256; 10 assets, not a draft or pre-release; the
+  Linux binary reports `openpager 0.1.1` and contains the new web app (model combo box, Wi-Fi rows).
+- Not yet done: installing a board from v0.1.1 end to end, and running the macOS binaries.
