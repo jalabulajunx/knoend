@@ -126,31 +126,35 @@ def pair(args):
 # ---- Wi-Fi (discovery, handshake, frames) ----
 
 def discover(config, seconds):
+    """Browses _openpager._tcp; resolves names afterwards (zeroconf forbids blocking calls in
+    its own callback thread)."""
     from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 
-    found = {}
+    service = "_openpager._tcp.local."
+    names = set()
 
     class Listener(ServiceListener):
         def add_service(self, zc, type_, name):
-            info = zc.get_service_info(type_, name, timeout=3000)
-            if info is None:
-                return
-            txt = {k.decode(): (v or b"").decode() for k, v in info.properties.items()}
-            addresses = info.parsed_addresses()
-            if addresses:
-                found[txt.get("id", "")] = (addresses[0], info.port, txt, name)
+            names.add(name)
 
         def update_service(self, zc, type_, name):
-            self.add_service(zc, type_, name)
+            names.add(name)
 
         def remove_service(self, zc, type_, name):
             pass
 
     zc = Zeroconf()
-    ServiceBrowser(zc, "_openpager._tcp.local.", Listener())
+    ServiceBrowser(zc, service, Listener())
+    found = {}
     end = time.time() + seconds
     while time.time() < end and not any(board in found for board in config["boards"]):
-        time.sleep(0.2)
+        time.sleep(0.5)
+        for name in list(names):
+            info = zc.get_service_info(service, name, timeout=3000)
+            if info is None or not info.parsed_addresses():
+                continue
+            txt = {k.decode(): (v or b"").decode() for k, v in info.properties.items()}
+            found[txt.get("id", "")] = (info.parsed_addresses()[0], info.port, txt, name)
     zc.close()
     for board, entry in found.items():
         print(f"Found {entry[3]} at {entry[0]}:{entry[1]} txt={entry[2]}"
@@ -213,7 +217,7 @@ async def listen(args):
     config = load_config()
     if not config["boards"]:
         sys.exit("No paired board. Run the pair step over USB first.")
-    target = discover(config, args.discover)
+    target = await asyncio.to_thread(discover, config, args.discover)  # zeroconf blocks; keep it off the loop
     if target is None:
         sys.exit("No paired board found on the network (mDNS _openpager._tcp).")
     board, address, port = target
@@ -250,7 +254,7 @@ async def attacks(args):
     import websockets
 
     config = load_config()
-    target = discover(config, args.discover)
+    target = await asyncio.to_thread(discover, config, args.discover)  # zeroconf blocks; keep it off the loop
     if target is None:
         sys.exit("No paired board found on the network.")
     board, address, port = target

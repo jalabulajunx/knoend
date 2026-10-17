@@ -119,3 +119,36 @@ Entry template:
   proves consistency with the spec text; it becomes a real cross-check when the C and Rust code
   reproduce it.
 - Open: where the companion stores keys per OS (keyring choice); NVS encryption on the board.
+
+## 2026-10-17 - Sundar (Claude Code) - Serial protocol and Wi-Fi link on the ONX
+
+- Changed (branch `sundar/serial-packets`, stacked on `sundar/spec-v0`; neither merged yet):
+  - Firmware speaks spec v0 over USB serial (`link_serial`, `protocol`, `ui`): identity, ping,
+    layout + ack (validated all-or-nothing), status, pair (serial only, key in NVS, up to 4
+    companions, never logged), errors; keys send HID or `openpager.key`; confirm keys need a second
+    tap within 3 s.
+  - Wi-Fi link (`link_wifi`): credentials arrive over serial (`openpager.wifi`, never logged), mDNS
+    `_openpager._tcp` + `openpager-<id>.local`, WebSocket `/ws`, handshake and session-bound
+    HMAC frames per spec section 4. Replies return on the transport they came from; taps go to all.
+  - Tools: `tools/serial_probe.py` (scripted serial checks + tap listener) and
+    `tools/dummy_companion.py` (pair over USB, listen over Wi-Fi, attack tests).
+- Tested (ONX2432G028, Arch Linux, home 2.4 GHz Wi-Fi):
+  - Serial (build `c90fed3`): 16/16 probe checks; all 15 board packets valid against the schema.
+    Taps: A, B, Shift C sent as HID; Hello and the long label sent `openpager.key`; Delete went
+    pending then sent on the second tap (twice).
+  - Wi-Fi (build `2756255`): Sundar ran `pair` (key + Wi-Fi over USB). The laptop found the board by
+    mDNS, both proofs verified, identity arrived over the authenticated link, the Amazon layout was
+    acked, ping answered. Taps on Search, Orders, Cart, Wish list arrived as keys 1-4 (seq 1-4);
+    Buy now arrived as key 9 seq 6 after its confirm tap (seq 5, no packet). Every frame's MAC
+    and counter verified and every packet passed the schema.
+  - Attacks: unknown companion, replayed handshake, tampered frame were each refused; the board's
+    log shows the intended reason for each (`not paired`, `proof does not verify`, `frame failed
+    authentication`), with a genuine session opening normally in between.
+  - Free internal RAM after start-up with BLE + Wi-Fi + LVGL: about 72 KB (min 71 KB).
+  - Opening the serial port still did not reboot the board (now 5 observations).
+- Bugs found and fixed on the way: replies held back until the next request (UART read waited for
+  a full 256-byte chunk); Wi-Fi retry loop every 2 s with no network stored; the dummy companion's
+  mDNS lookup ran inside zeroconf's callback and then inside the asyncio loop.
+- Not yet confirmed: what A/B/Shift C actually typed on the laptop; a single Delete tap timing out.
+- Open: layout not kept across reboots yet; approval prompts; the real companion (Rust) replaces
+  the dummy; keys in an OS keyring; NVS encryption.
