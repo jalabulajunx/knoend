@@ -409,5 +409,10 @@ Entry template:
   explained on Linux and macOS, no pre-selection when native-USB boards tie, assistant fixes applied
   with one click, and the wizard re-checking by itself. Firmware unchanged from v0.1.0 apart from
   the rebuild.
+- Wi-Fi list redone after Sundar's screenshot (radio buttons stretched across each row, names
+  pushed right and wrapping): the form's text-box style no longer applies to radios and
+  checkboxes; networks are compact rows in one scrolling box (name, four signal bars, a lock for
+  secured), strongest first, each name once. Checked in the browser at desktop and phone width
+  with the 17 networks from the screenshot as a stand-in scan.
 - Docs now point Mac users to v0.1.1 or later.
 - Release check results: in the entry that follows, or in the PR.

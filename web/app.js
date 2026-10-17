@@ -360,9 +360,44 @@ $("to-pair").addEventListener("click", () => { step(4); scanWifi(); });
 
 let chosenNetwork = null; // { ssid, secured } or "other"
 
-function bars(rssi) {
+/** Signal strength as four bars. */
+function signal(rssi) {
   const level = rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : 1;
-  return "\u2582\u2584\u2586\u2588".slice(0, level).padEnd(4, "\u00b7");
+  const el = document.createElement("span");
+  el.className = "signal";
+  el.setAttribute("aria-label", `signal ${level} of 4`);
+  for (let i = 1; i <= 4; i++) {
+    const bar = document.createElement("i");
+    if (i <= level) bar.className = "on";
+    el.append(bar);
+  }
+  return el;
+}
+
+const LOCK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 1 1 8 0v2h1v8H3V7h1zm2 0h4V5a2 2 0 1 0-4 0v2z"/></svg>';
+
+/** One row of the network list. */
+function networkRow(title, { rssi, channel, secured, other } = {}) {
+  const li = document.createElement("li");
+  if (other) li.className = "other";
+  const label = document.createElement("label");
+  const input = document.createElement("input");
+  input.type = "radio";
+  input.name = "network";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = title;
+  label.append(input, name);
+  if (!other) {
+    const strength = signal(rssi);
+    strength.title = `${rssi} dBm, channel ${channel}`;
+    const security = document.createElement("span");
+    security.className = "security";
+    if (secured) { security.innerHTML = LOCK; security.title = "secured"; } else security.textContent = "open";
+    label.append(strength, security);
+  }
+  li.append(label);
+  return { li, input };
 }
 
 function pickNetwork(choice) {
@@ -381,23 +416,19 @@ async function scanWifi() {
   button.disabled = true;
   $("wifi-note").textContent = "Asking the board to look for networks (about 5 seconds)...";
   try {
-    const { networks = [], error } = await api("/wifi/scan", { port: setup.port });
+    const { networks: heard = [], error } = await api("/wifi/scan", { port: setup.port });
+    // Strongest first, each name once (mesh systems and extenders repeat names).
+    const best = new Map();
+    for (const n of heard) {
+      if (n.ssid && (!best.has(n.ssid) || best.get(n.ssid).rssi < n.rssi)) best.set(n.ssid, n);
+    }
+    const networks = [...best.values()].sort((a, b) => b.rssi - a.rssi);
     for (const n of networks) {
-      const { li, input } = choice("network", n.ssid, n.ssid, "", false);
-      const label = li.querySelector("label");
-      const meta = document.createElement("span");
-      meta.className = "bars";
-      meta.textContent = bars(n.rssi);
-      meta.title = `${n.rssi} dBm, channel ${n.channel}`;
-      const lock = document.createElement("span");
-      lock.className = "lock";
-      lock.textContent = n.secured ? "secured" : "open";
-      label.querySelector(".sub").remove();
-      label.append(meta, lock);
+      const { li, input } = networkRow(n.ssid, n);
       input.addEventListener("change", () => pickNetwork(n));
       list.append(li);
     }
-    const { li, input } = choice("network", "", "Other network...", "A hidden network, or one not listed", false);
+    const { li, input } = networkRow("Other network...", { other: true });
     input.addEventListener("change", () => pickNetwork("other"));
     list.append(li);
     $("wifi-note").textContent = networks.length
@@ -406,7 +437,7 @@ async function scanWifi() {
     if (!networks.length) autoAssist(`The board's Wi-Fi scan found no networks${error ? `: ${error}` : ""}.`);
   } catch (e) {
     $("wifi-note").textContent = `Could not scan: ${e.message}. You can still type the name under "Other network".`;
-    const { li, input } = choice("network", "", "Other network...", "Type the name", false);
+    const { li, input } = networkRow("Other network: type the name...", { other: true });
     input.addEventListener("change", () => pickNetwork("other"));
     list.append(li);
   } finally {
