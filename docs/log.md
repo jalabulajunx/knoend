@@ -51,3 +51,31 @@ Entry template:
   - `spec/` v0 (packets, identity, library schema) to write with Tom.
   - Tom: FNK0104B profile; confirm native USB enumerates as Espressif `303a:xxxx`.
   - E-ink-style theme is scheduled later; colour is the default for now.
+
+## 2026-10-17 - Sundar (Claude Code) - Bluetooth LE keyboard on the ONX
+
+- Changed:
+  - `components/esp_hid_gap`: Espressif's GAP helper copied unchanged from ESP-IDF v5.4.4
+    `examples/bluetooth/esp_hid_device` (Unlicense OR CC0-1.0).
+  - `main/ble_keyboard.c`: BLE HID keyboard (Bluedroid), advertised as `OpenPager`. Report map from
+    the same example, widened to usages up to 0x73 so F13-F24 can be sent later without re-pairing.
+    One press + release per tap. Console line now ends `ble=<sent|not-connected|error>`.
+  - Key N types the digit N until layouts exist. Status bar shows the Bluetooth state.
+- Tested (ONX2432G028, Arch Linux, BlueZ + Blueman): build `a1ea8a8`. Paired with no prompt
+  (`BLE GAP AUTH SUCCESS`, laptop shows paired + bonded). Tapping 1-9 then holding 5 for ~5 s typed
+  `1234567895`; board log shows `KEY 1..9, 5` seq 1-10, all `ble=sent`.
+- Found on the way:
+  - The board's Bluetooth address is the base MAC + 2 (`80:B5:4E:DB:CD:BA`, base `...:B8`).
+  - A stale bond from the earlier prototype made the laptop reconnect every ~2 s with a key the board
+    no longer had (`remove bond, rsn 102`). Fix: remove the device on the computer and pair again.
+  - With numeric comparison (the helper's default), pairing never completed: Blueman is the active
+    agent, its confirm prompt went unanswered, SMP timed out every 30 s, and the computer refused key
+    reports on the unencrypted link (`GATT_INSUF_AUTHENTICATION`) although the board logged them as sent.
+  - Opening the serial port did not reboot the board on two more occasions.
+- Decided: pairing mode is "Just Works" for now (LE Secure Connections, bonding, IO capability none),
+  set in `ble_keyboard.c` after the helper's defaults. The link is encrypted; it gives up protection
+  against an active attacker during pairing. Revisit by showing the code on the board's screen.
+- Open:
+  - Show a pairing code on the board (and confirm on the board) to restore MITM protection.
+  - `spec/` v0 with Tom; data channel (BLE data service / Wi-Fi / serial) next on the ONX.
+  - macOS pairing on Tom's Mac not yet tried.
