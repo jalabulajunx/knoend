@@ -47,6 +47,11 @@ driver, a permission, a wrong board, a setting), do not stop at the fix:
 5. **Try it:** ask the assistant about the situation through the web app (or `POST /api/assist`)
    and check its answer uses the new evidence.
 
+**Never make a rebuild the fix.** If the person would have to edit code or recompile to get past
+something that varies outside our control (a provider's accepted parameters or address, a model
+name, a driver), make it a run-time behaviour (retry, detect) or a setting the web app can change,
+and say in the error which setting. A rebuild is only for our own bugs.
+
 ## Lessons that cost time
 
 - **"Compiles in CI" is not "works".** The macOS focus watcher passed CI but never followed

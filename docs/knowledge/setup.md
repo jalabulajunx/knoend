@@ -44,7 +44,14 @@ C3, C6) are not supported.
 - **No port listed.** Check, in order: the cable carries data (many USB-C cables are charge-only;
   try another); the board is powered (screen or LED on); on Linux, `dmesg` shows the CH340 or
   Espressif device; on macOS, see "USB device seen but no port" below. Try a different USB port,
-  avoiding hubs.
+  avoiding hubs. The wizard and `system_checks.usb_serial_devices` (Linux and macOS) show a
+  USB-serial chip that is plugged in but has no port, so "no cable/power" and "no driver" can be
+  told apart without commands.
+- **Linux: chip plugged in, no port.** `usb_serial_devices` shows `has_serial_port: false`. With
+  `drivers: ["usbfs"]` another program holds the chip: usually `brltty` (a Braille display service
+  that some distributions, Ubuntu among them, ship and which grabs CH340s); remove or stop it, then
+  replug. With no driver at all, the kernel module (`ch341`, `cp210x` or `cdc_acm`) is not loaded:
+  `sudo modprobe ch341`. (Widely reported; not yet seen on our machines.)
 - **Port listed but cannot be opened (permission denied).** On Linux the user must be in the group
   that owns the port (`uucp` on Arch, `dialout` on Debian/Ubuntu): `ls -l /dev/ttyUSB0`, then add the
   user to that group and log out and in. Also close anything else holding the port (serial
@@ -75,8 +82,9 @@ C3, C6) are not supported.
   blank or garbled.
 - **Boards on the S3's own USB look identical.** The Freenove FNK0104B, ESP32-S3-BOX-3 and Waveshare
   boards all show an Espressif `303a:1001` port, an ESP32-S3 and 16 MB flash, so the wizard cannot
-  tell them apart and ticks the first installable one. Ask the person which board they have (name on
-  the box or the back of the board) before installing. Seen 2026-10-17: a Freenove FNK0104B got the
+  tell them apart. Since 2026-10-18 the wizard does not pre-select when the top boards tie; it asks
+  the person to pick. Ask the person which board they have (name on the box or the back of the
+  board) before installing. Seen 2026-10-17: a Freenove FNK0104B got the
   BOX-3 definition; it ran (Wi-Fi, pairing, keys) with a dark screen. Once OpenPager runs, the board
   reports its definition and identify ranks that board first, even if it was the wrong one.
 
@@ -170,9 +178,19 @@ devices and whether each has a port, the WCH driver state, and whether openpager
 
 - **Configure fails** with "environment variable ... is not set" or 401/403: no API key, or a wrong
   one, for the chosen provider. Set it in the web app's AI settings.
-- **OpenAI test fails with 400 "temperature does not support 0.2 with this model".** Newer OpenAI
-  (reasoning) models accept only the default temperature. Fixed in the companion after v0.1.0: it
-  retries without the temperature. With v0.1.0, use a newer build or another model.
+- **The provider refuses a request setting** (400: "temperature does not support 0.2", "Unsupported
+  parameter: 'x'", "Use 'y' instead", Gemini's `Unknown name "x"`). Providers change what each
+  model accepts. Since 2026-10-18 the companion drops (or renames, when the error names the
+  replacement) the refused setting and retries by itself; confirmed against Gemini with an unknown
+  option. If a model needs something else, it is a setting, never a code change: web app > AI
+  settings > Advanced > request options, a JSON object added to every request, where `null` leaves a
+  setting out (`{"temperature": null, "reasoning_effort": "low"}`), and the API address for a
+  provider that moved or a proxy. They are saved in `agent.toml` as `[options]` and `omit`. With
+  v0.1.0 (first seen 2026-10-17 with OpenAI) only the temperature was handled.
+- **Every AI error now ends with "What to do:"** for its kind: 401/403 key refused; 404 model name or
+  address wrong (pick from the list, which comes from the provider); 429 rate limit or credit; 5xx
+  provider trouble; a connection error (address, internet, or Ollama not running). Follow that
+  before anything else.
 - **Very slow drafts with a local model.** Ollama on a CPU-only machine runs at a few tokens per
   second (about 2 minutes per draft on our test laptop); use a hosted provider for a responsive
   setup, or a machine with a supported GPU.

@@ -134,7 +134,7 @@ form input {
 
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 600px) { .row { grid-template-columns: 1fr; } }
-form select {
+form select, form textarea {
   display: block; width: 100%; margin-top: 4px; padding: 8px 10px; font: inherit;
   border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text);
 }
@@ -159,3 +159,7 @@ pre {
 .compact-choices label { padding: 8px 12px; align-items: center; }
 .bars { font-family: ui-monospace, monospace; letter-spacing: -1px; color: var(--accent); margin-left: auto; }
 .lock { color: var(--muted); font-size: 12px; margin-left: 8px; }
+form textarea { font-family: ui-monospace, monospace; font-size: 13px; resize: vertical; }
+#ai-advanced { margin: 8px 0; }
+#ai-advanced summary { cursor: pointer; color: var(--muted, inherit); }
+.no-port-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }

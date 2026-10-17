@@ -72,13 +72,21 @@
                 <option value="ollama">Ollama (local, no key)</option>
                 <option value="openai-compatible">Other OpenAI-compatible server</option>
               </select></label>
-            <label>Model <span id="ai-models-note" class="muted">(pick from the list or type a name)</span>
-              <input id="ai-model" maxlength="120" placeholder="model name" list="ai-models" autocomplete="off">
-              <datalist id="ai-models"></datalist></label>
+            <label>Model <span id="ai-models-note" class="muted"></span>
+              <select id="ai-model-pick"></select>
+              <input id="ai-model" maxlength="120" placeholder="type the model name" autocomplete="off" hidden></label>
           </div>
-          <label id="ai-base-wrap" hidden>Server URL <input id="ai-base" maxlength="200" placeholder="http://localhost:8000/v1"></label>
           <label id="ai-key-wrap">API key <span class="muted">(stored only on this computer; never shown again)</span>
             <input id="ai-key" type="password" maxlength="300"></label>
+          <label id="ai-base-wrap" hidden>Server URL <input id="ai-base" maxlength="200" placeholder="http://localhost:8000/v1"></label>
+          <details id="ai-advanced">
+            <summary>Advanced: if the test fails with a setting the model does not take</summary>
+            <p class="muted">Usually not needed: a setting the provider refuses is left out automatically. Change these only if the error tells you to.</p>
+            <label id="ai-base-alt-wrap">API address <span class="muted">(empty = the provider's usual address)</span>
+              <input id="ai-base-alt" maxlength="200" placeholder="https://..."></label>
+            <label>Request options <span class="muted">(JSON; a value of null means "leave out")</span>
+              <textarea id="ai-options" rows="3" maxlength="2000" spellcheck="false" placeholder='{"temperature": null, "reasoning_effort": "low"}'></textarea></label>
+          </details>
           <p id="ai-status" class="note"></p>
           <div class="actions"><button type="submit" class="primary">Save and test</button></div>
         </form>

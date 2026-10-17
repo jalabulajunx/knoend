@@ -164,13 +164,35 @@ async function scanPorts() {
   list.replaceChildren();
   $("identify").disabled = true;
   try {
-    const { ports } = await api("/ports");
+    const { ports, no_port: noPort = [], os, wch_driver: wch } = await api("/ports");
     if (!ports.length) {
       const li = document.createElement("li");
       li.className = "muted";
-      li.textContent = "No board found. Check the cable carries data (not charge-only), then look again.";
+      if (noPort.length) {
+        li.textContent = noPortAdvice(noPort[0], os, wch);
+        if (os === "macos" && noPort[0].bridge === "ch340") {
+          const buttons = document.createElement("div");
+          buttons.className = "no-port-actions";
+          const installed = wch && wch !== "not installed";
+          for (const [label, target] of installed ? [["Open Driver Extensions", "driver_settings"]]
+                                                  : [["Install the USB driver", "usb_driver"], ["Open Driver Extensions", "driver_settings"]]) {
+            const b = document.createElement("button");
+            b.className = "secondary";
+            b.textContent = label;
+            b.addEventListener("click", async () => {
+              try { li.firstChild.textContent = `${(await api("/open", { target })).done}. Then unplug the board, plug it in again and press "Look again".`; }
+              catch (e) { li.firstChild.textContent = `Could not open it: ${e.message}`; }
+            });
+            buttons.append(b);
+          }
+          li.replaceChildren(document.createTextNode(li.textContent), buttons);
+        }
+        autoAssist(`The board's USB chip (${noPort[0].usb_id}, ${noPort[0].bridge}) is plugged in but has no serial port: no driver claimed it.`);
+      } else {
+        li.textContent = "No board found. Check the cable carries data (not charge-only) and the board is powered, then look again.";
+        autoAssist("No USB serial port, and no USB-serial chip on the USB bus.");
+      }
       list.append(li);
-      autoAssist("No USB serial port was found for the board.");
     }
     for (const p of ports) {
       const usb = `${p.vid.toString(16).padStart(4, "0")}:${p.pid.toString(16).padStart(4, "0")}`;
@@ -185,6 +207,21 @@ async function scanPorts() {
   }
 }
 $("rescan").addEventListener("click", scanPorts);
+
+/** Why a USB-serial chip that is plugged in has no port, from what the computer reports. */
+function noPortAdvice(d, os, wch) {
+  const chip = `The board is plugged in (USB ${d.usb_id}, ${d.name || d.bridge}), but no driver has given it a port.`;
+  if (os === "macos" && d.bridge === "ch340") {
+    if (!wch || wch === "not installed") return `${chip} This chip needs WCH's driver on a Mac: install it (macOS asks for your password), then switch it on under Driver Extensions.`;
+    if (!/enabled/.test(wch)) return `${chip} WCH's driver is installed but not switched on (${wch}): switch on CH34xVCPDriver under Driver Extensions, then unplug and replug the board.`;
+    return `${chip} WCH's driver is on; unplug the board, plug it in again, and look again.`;
+  }
+  if (os === "linux") {
+    if ((d.drivers || []).includes("usbfs")) return `${chip} Another program holds it (often brltty, the Braille display service). Remove brltty or stop it, then unplug and replug the board.`;
+    if (!(d.drivers || []).length) return `${chip} The kernel's driver for it (${d.bridge === "ch340" ? "ch341" : d.bridge === "cp210x" ? "cp210x" : "cdc_acm"}) is not loaded: try "sudo modprobe ${d.bridge === "ch340" ? "ch341" : d.bridge === "cp210x" ? "cp210x" : "cdc_acm"}", then unplug and replug.`;
+  }
+  return `${chip} Unplug it, plug it in again, and look again; the assistant can help find out why.`;
+}
 
 $("identify").addEventListener("click", async () => {
   const status = $("identify-status");
@@ -228,7 +265,16 @@ function renderCandidates(candidates) {
     li.textContent = "No known board matches this hardware yet.";
     list.append(li);
   }
-  let picked = false;
+  // Boards that look the same over USB (native-USB S3 boards all do): let the person choose.
+  const installable = candidates.filter((c) => c.status === "supported" || c.status === "unverified");
+  const tie = installable.length > 1 && installable[0].score === installable[1].score;
+  if (tie) {
+    const li = document.createElement("li");
+    li.className = "note";
+    li.textContent = "These boards look identical over USB. Pick the one you have (its name is on the box or the back of the board).";
+    list.append(li);
+  }
+  let picked = tie;
   candidates.forEach((c) => {
     const installable = c.status === "supported" || c.status === "unverified";
     const prefix = c.status === "unverified"
@@ -383,31 +429,55 @@ document.querySelectorAll('input[name="mode"]').forEach((i) => i.addEventListene
 function providerFields() {
   const provider = $("ai-provider").value;
   $("ai-base-wrap").hidden = provider !== "openai-compatible";
+  $("ai-base-alt-wrap").hidden = provider === "openai-compatible";
   $("ai-key-wrap").hidden = provider === "ollama";
 }
-$("ai-provider").addEventListener("change", () => { providerFields(); loadModels(); });
+/** The API address: the main field for a generic server, the advanced one otherwise. */
+function baseUrl() {
+  return ($("ai-provider").value === "openai-compatible" ? $("ai-base").value : $("ai-base-alt").value).trim() || null;
+}
+$("ai-provider").addEventListener("change", () => {
+  // Another provider: its own address and options.
+  $("ai-base").value = ""; $("ai-base-alt").value = ""; $("ai-options").value = ""; $("ai-model").value = "";
+  providerFields(); loadModels();
+});
 
-/** Fills the model list from the provider (with the key just typed, if any; it is not saved). */
+const OTHER_MODEL = "__other__";
+
+/** Fills the model dropdown from the provider (with the key just typed, if any; it is not saved).
+ *  The chosen name lives in #ai-model; "Other" shows it for typing. */
 async function loadModels() {
   const note = $("ai-models-note");
-  const list = $("ai-models");
-  list.replaceChildren();
-  note.textContent = "(loading the provider's models...)";
+  const pick = $("ai-model-pick");
+  const option = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; return o; };
+  pick.replaceChildren(option("", "Loading the provider's models..."));
+  pick.disabled = true;
+  note.textContent = "";
+  let models = [];
   try {
-    const { models } = await api("/ai/models", { provider: $("ai-provider").value,
-      api_key: $("ai-key").value || null, base_url: $("ai-base").value || null });
-    for (const m of models) {
-      const option = document.createElement("option");
-      option.value = m;
-      list.append(option);
-    }
-    note.textContent = models.length ? `(${models.length} available; pick or type)` : "(the provider listed none; type a name)";
+    ({ models } = await api("/ai/models", { provider: $("ai-provider").value,
+      api_key: $("ai-key").value || null, base_url: baseUrl() }));
+    note.textContent = models.length ? `(${models.length} from the provider)` : "(the provider listed none)";
   } catch (e) {
-    note.textContent = `(could not list models: ${e.message}; type a name)`;
+    note.textContent = $("ai-key-wrap").hidden || $("ai-key").value || aiReady
+      ? `(could not list models: ${e.message})` : "(enter the API key to see the models)";
   }
+  const current = $("ai-model").value.trim();
+  pick.replaceChildren(...models.map((m) => option(m, m)), option(OTHER_MODEL, models.length ? "Other (type a name)" : "Type a model name"));
+  if (current && !models.includes(current)) pick.prepend(option(current, `${current} (not in the provider's list)`));
+  pick.value = current || (models.length ? (pick.firstChild.value) : OTHER_MODEL);
+  pick.disabled = false;
+  modelPicked();
 }
+function modelPicked() {
+  const other = $("ai-model-pick").value === OTHER_MODEL;
+  $("ai-model").hidden = !other;
+  if (!other) $("ai-model").value = $("ai-model-pick").value;
+}
+$("ai-model-pick").addEventListener("change", () => { modelPicked(); if (!$("ai-model").hidden) $("ai-model").focus(); });
 $("ai-key").addEventListener("change", loadModels);
 $("ai-base").addEventListener("change", loadModels);
+$("ai-base-alt").addEventListener("change", loadModels);
 
 function renderAi(info) {
   aiReady = !!info.configured && info.key !== "missing";
@@ -422,6 +492,11 @@ async function loadAi() {
   const info = await api("/ai");
   if (info.provider) $("ai-provider").value = info.provider;
   if (info.model) $("ai-model").value = info.model;
+  if (info.base_url) $(info.provider === "openai-compatible" ? "ai-base" : "ai-base-alt").value = info.base_url;
+  const options = { ...(info.options || {}) };
+  for (const name of info.omit || []) options[name] = null;
+  $("ai-options").value = Object.keys(options).length ? JSON.stringify(options) : "";
+  $("ai-advanced").open = !!(Object.keys(options).length || (info.base_url && info.provider !== "openai-compatible"));
   providerFields();
   renderAi(info);
   loadModels();
@@ -435,8 +510,12 @@ $("ai-form").addEventListener("submit", async (e) => {
   $("ai-status").className = "note";
   $("ai-status").textContent = "Saving and sending a one-word test request...";
   try {
+    let options = null;
+    if ($("ai-options").value.trim()) {
+      try { options = JSON.parse($("ai-options").value); } catch { throw new Error("request options are not valid JSON"); }
+    }
     const r = await api("/ai", { provider: $("ai-provider").value, model: $("ai-model").value || null,
-                                api_key: $("ai-key").value || null, base_url: $("ai-base").value || null });
+                                api_key: $("ai-key").value || null, base_url: baseUrl(), options });
     if (r.ok) {
       $("ai-status").className = "note success";
       $("ai-status").textContent = `Works: ${r.describe} answered.`;
@@ -444,6 +523,8 @@ $("ai-form").addEventListener("submit", async (e) => {
     } else {
       $("ai-status").className = "note error";
       $("ai-status").textContent = `Saved, but the test failed: ${r.error}`;
+      if (/Advanced/.test(r.error)) $("ai-advanced").open = true;
+      if (/ 404 /.test(r.error)) { $("ai-model").value = ""; loadModels(); }
     }
   } catch (err) {
     $("ai-status").className = "note error";

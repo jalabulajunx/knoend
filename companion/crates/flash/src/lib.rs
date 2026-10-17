@@ -4,6 +4,9 @@
 //! and SHA-256, and nothing is written unless every part verifies first.
 
 pub mod manifest;
+mod usb;
+
+pub use usb::{usb_serial_devices, UsbDevice};
 
 use std::time::Duration;
 
