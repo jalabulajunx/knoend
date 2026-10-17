@@ -26,9 +26,16 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
 
-    ESP_ERROR_CHECK(board_init());
-    ui_start();
-    board_set_backlight(100);
+    // Without a usable board definition there is no display, but Bluetooth, serial and Wi-Fi
+    // still run, so the companion can write a definition over USB.
+    const bool has_display = board_init() == ESP_OK;
+    if (has_display) {
+        ui_start();
+        board_set_backlight(100);
+    } else {
+        printf("BOARD no definition: running without a display\n");
+        fflush(stdout);
+    }
 
     ESP_ERROR_CHECK(ble_keyboard_start(DEVICE_NAME));
 

@@ -6,7 +6,9 @@
 //! applies (id, source, version, match) are overwritten here, and the result must pass the same
 //! validator as every other library. One retry is allowed, with the validator's errors.
 
+pub mod assistant;
 pub mod provider;
+pub mod secrets;
 
 use openpager_core::focus::{Focus, Os};
 use openpager_core::library::Library;

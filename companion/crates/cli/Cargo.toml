@@ -6,12 +6,19 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+axum = "0.8.9"
 clap = { version = "4.6.7", features = ["derive"] }
+futures-util = "0.3.34"
 openpager-agents = { version = "0.1.0", path = "../agents" }
 openpager-core = { version = "0.1.0", path = "../core" }
+openpager-flash = { version = "0.1.0", path = "../flash" }
 openpager-focus = { version = "0.1.0", path = "../focus" }
+openpager-input = { version = "0.1.0", path = "../input" }
 openpager-transport = { version = "0.1.0", path = "../transport" }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 rpassword = "7.5.4"
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "time", "sync"] }
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "time", "sync", "net"] }
+tokio-stream = { version = "0.1.19", features = ["sync"] }
 toml = "1.1.8"

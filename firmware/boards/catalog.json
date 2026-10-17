@@ -1,0 +1,25 @@
+{
+  "images": {
+    "universal-esp32s3": {
+      "build": "universal",
+      "note": "ESP32-S3 with octal PSRAM, 4 MB flash or more."
+    }
+  },
+  "boards": {
+    "onx2432g028": {
+      "name": "ONX2432G028 (Nextion Open G-series, 2.8\")",
+      "image": "universal-esp32s3",
+      "flash_size": "16MB",
+      "bridges": ["ch340"],
+      "status": "supported"
+    },
+    "fnk0104b": {
+      "name": "Freenove FNK0104B (2.8\")",
+      "image": "universal-esp32s3",
+      "flash_size": "16MB",
+      "bridges": ["espressif-native"],
+      "status": "coming",
+      "note": "Needs its board definition (firmware/boards/definitions/fnk0104b.json)."
+    }
+  }
+}

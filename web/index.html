@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="openpager-token" content="{{TOKEN}}">
+  <title>OpenPager</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="logo" aria-hidden="true"></span>OpenPager</div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-view="dashboard" aria-selected="true">Dashboard</button>
+      <button role="tab" data-view="setup" aria-selected="false">Set up a board</button>
+    </nav>
+    <span id="link-pill" class="pill">Starting</span>
+  </header>
+
+  <main>
+    <!-- Dashboard -->
+    <section id="view-dashboard" class="view">
+      <div class="grid2">
+        <article class="card">
+          <h2>Board</h2>
+          <p id="board-empty" class="muted">No board paired yet. <a href="#" data-goto="setup">Set one up</a>.</p>
+          <dl id="board-facts" class="facts" hidden>
+            <dt>Board</dt><dd id="f-profile"></dd>
+            <dt>Firmware</dt><dd id="f-firmware"></dd>
+            <dt>Address</dt><dd id="f-address"></dd>
+            <dt>ID</dt><dd id="f-id"></dd>
+          </dl>
+        </article>
+        <article class="card">
+          <h2>Now</h2>
+          <p class="now-app"><span class="muted">Focused app</span> <strong id="now-app">-</strong></p>
+          <p class="now-layout"><span class="muted">On the keys</span> <strong id="now-layout">-</strong> <span id="now-badge" class="badge" hidden></span></p>
+          <div id="keys-preview" class="keys" aria-label="Keys on the board"></div>
+          <p id="configuring" class="note" hidden></p>
+        </article>
+      </div>
+      <div class="grid2">
+        <article class="card">
+          <h2>AI drafts <span class="muted small">unreviewed</span></h2>
+          <ul id="drafts" class="list"><li class="muted">None yet. Tap Configure on the board for an app with no layout.</li></ul>
+        </article>
+        <article class="card">
+          <h2>Activity</h2>
+          <ol id="activity" class="log"></ol>
+        </article>
+      </div>
+    </section>
+
+    <!-- Setup wizard -->
+    <section id="view-setup" class="view" hidden>
+      <article class="card" id="mode-card">
+        <h2>How would you like to set up?</h2>
+        <ul class="choices">
+          <li><label><input type="radio" name="mode" value="ai"> <span><strong>Guided by AI <span class="badge ok-badge">Recommended</span></strong>
+            <span class="sub">If you'd rather not troubleshoot. When something goes wrong, the assistant looks at what happened and tells you the next step. Needs an API key for an AI provider (or a local model).</span></span></label></li>
+          <li><label><input type="radio" name="mode" value="manual"> <span><strong>I'll do it myself</strong>
+            <span class="sub">Same steps, no AI. Errors are shown as they are; you can still ask the assistant later.</span></span></label></li>
+        </ul>
+        <form id="ai-form" autocomplete="off" hidden>
+          <div class="row">
+            <label>Provider
+              <select id="ai-provider">
+                <option value="gemini">Google Gemini</option>
+                <option value="anthropic">Anthropic Claude</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="ollama">Ollama (local, no key)</option>
+                <option value="openai-compatible">Other OpenAI-compatible server</option>
+              </select></label>
+            <label>Model <span class="muted">(blank = provider default, if it has one)</span>
+              <input id="ai-model" maxlength="80" placeholder="model name"></label>
+          </div>
+          <label id="ai-base-wrap" hidden>Server URL <input id="ai-base" maxlength="200" placeholder="http://localhost:8000/v1"></label>
+          <label id="ai-key-wrap">API key <span class="muted">(stored only on this computer; never shown again)</span>
+            <input id="ai-key" type="password" maxlength="300"></label>
+          <p id="ai-status" class="note"></p>
+          <div class="actions"><button type="submit" class="primary">Save and test</button></div>
+        </form>
+      </article>
+
+      <ol class="steps" aria-label="Setup steps">
+        <li data-step="1" class="current">Find the board</li>
+        <li data-step="2">Choose firmware</li>
+        <li data-step="3">Install</li>
+        <li data-step="4">Pair and Wi-Fi</li>
+      </ol>
+
+      <article class="card step" data-step="1">
+        <h2>Find the board</h2>
+        <p>Plug the board into this computer with a USB data cable, then pick its port.</p>
+        <ul id="ports" class="choices"></ul>
+        <div class="actions">
+          <button id="rescan" class="secondary">Look again</button>
+          <button id="identify" class="primary" disabled>Identify</button>
+        </div>
+        <p id="identify-status" class="note" hidden></p>
+      </article>
+
+      <article class="card step" data-step="2" hidden>
+        <h2>Choose firmware</h2>
+        <p id="chip-summary" class="muted"></p>
+        <ul id="candidates" class="choices"></ul>
+        <label class="check"><input type="checkbox" id="erase"> Erase the board first <span class="muted">(removes everything on it, including Wi-Fi and pairing; use for a board that never ran OpenPager)</span></label>
+        <p class="muted small">Firmware source: <span id="fw-source"></span></p>
+        <div class="actions">
+          <button class="secondary" data-back="1">Back</button>
+          <button id="install" class="primary" disabled>Install</button>
+        </div>
+      </article>
+
+      <article class="card step" data-step="3" hidden>
+        <h2>Install</h2>
+        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="bar"></div></div>
+        <p id="flash-stage" class="note">Starting</p>
+        <ol id="flash-log" class="log compact"></ol>
+        <div class="actions">
+          <button class="secondary" data-back="2" id="flash-back" hidden>Back</button>
+          <button id="to-pair" class="primary" disabled>Next</button>
+        </div>
+      </article>
+
+      <article class="card step" data-step="4" hidden>
+        <h2>Pair and Wi-Fi</h2>
+        <p>The board and this computer agree on a secret key over the cable. Wi-Fi lets the board work away from the desk; your password goes to the board over the cable only and is not stored here.</p>
+        <form id="pair-form" autocomplete="off">
+          <label>Wi-Fi network <span class="muted">(2.4 GHz; leave empty to skip)</span>
+            <input id="ssid" name="ssid" maxlength="32"></label>
+          <label>Password
+            <input id="password" name="password" type="password" maxlength="64"></label>
+          <div class="actions">
+            <button type="button" class="secondary" data-back="3">Back</button>
+            <button type="submit" class="primary">Pair</button>
+          </div>
+        </form>
+        <ol id="pair-log" class="log compact"></ol>
+        <p id="pair-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
+      </article>
+
+      <article class="card" id="assistant">
+        <h2>Setup assistant <span id="assistant-by" class="muted small"></span></h2>
+        <form id="ask-form" class="ask">
+          <input id="ask-input" maxlength="500" placeholder="Describe what you see, or ask what to do next">
+          <button type="submit" class="secondary">Ask</button>
+        </form>
+        <div id="advice" hidden>
+          <p id="advice-text" class="advice"></p>
+          <div id="advice-actions" class="actions left"></div>
+          <details><summary class="muted small">What was sent to the AI</summary><pre id="advice-sent"></pre></details>
+        </div>
+        <p id="assistant-off" class="muted small" hidden>Set up an AI provider above to use the assistant.</p>
+      </article>
+    </section>
+  </main>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

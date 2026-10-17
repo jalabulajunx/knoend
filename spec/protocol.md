@@ -131,7 +131,10 @@ arrives.
 { "id": 18, "type": "openpager.key", "body": { "key": 2, "layout": "builtin.vscode", "seq": 31 } }
 ```
 
-Sent only for keys whose `send` is `event`. `seq` counts every tap since boot, so the companion can
+Sent for keys whose `send` is `event`, and also for `hid` keys tapped while no Bluetooth
+keyboard host is connected: then the body carries `"hid": { "modifiers": 3, "usage": 19 }` and the
+companion types that keystroke into the focused app itself (a board whose USB cannot be a keyboard,
+like the ONX2432G028, still works over Wi-Fi or USB serial). `seq` counts every tap since boot, so the companion can
 detect lost packets. One packet per tap (sent on release), however long the key is held.
 
 ### 3.5 `openpager.status`

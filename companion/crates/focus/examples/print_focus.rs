@@ -1,6 +1,6 @@
 //! Prints the focused app now, then each change, for 20 seconds: `cargo run --example print_focus`.
 fn main() {
-    let watcher = openpager_focus::X11Focus::connect().expect("X11");
+    let watcher = openpager_focus::Watcher::connect().expect("focus watcher");
     let mut last = watcher.current();
     println!("now: {last:?}");
     let start = std::time::Instant::now();

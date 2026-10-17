@@ -1,0 +1,75 @@
+name: Release
+
+# Push a tag like v0.2.0 to publish firmware (universal image + board definitions + manifest.json)
+# and the openpager service for Linux and macOS as a GitHub release. The service downloads
+# firmware from releases/latest, so the newest release is what users install.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4.4
+          target: esp32s3
+          path: firmware
+          command: idf.py -B build/universal build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install jsonschema
+      - run: sudo chown -R "$USER" firmware/build && python tools/release_firmware.py --version "${GITHUB_REF_NAME#v}" --out dist/firmware
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: dist/firmware
+
+  service:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --locked --release --target ${{ matrix.target }}
+        working-directory: companion
+      - run: |
+          mkdir -p out
+          tar -C companion/target/${{ matrix.target }}/release -czf out/openpager-${{ matrix.target }}.tar.gz openpager
+      - uses: actions/upload-artifact@v4
+        with:
+          name: service-${{ matrix.target }}
+          path: out
+
+  publish:
+    needs: [firmware, service]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+      - run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "OpenPager $GITHUB_REF_NAME" \
+            --notes "Firmware (universal ESP32-S3 image + board definitions) and the openpager service. Install: run \`openpager serve\` and follow the web app." \
+            assets/firmware/* assets/service-*/*
+        env:
+          GH_TOKEN: ${{ github.token }}

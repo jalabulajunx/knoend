@@ -104,11 +104,14 @@ static void act(int index)
     const ui_key_t *key = &layout.keys[index];
     const char *result = "none";
 
-    if (key->send == UI_SEND_HID) {
+    if (key->send == UI_SEND_HID && ble_keyboard_connected()) {
         const esp_err_t sent = ble_keyboard_tap(key->modifiers, key->usage);
-        result = sent == ESP_OK                  ? "hid-sent"
-                 : sent == ESP_ERR_INVALID_STATE ? "hid-not-connected"
-                                                 : "hid-error";
+        result = sent == ESP_OK ? "hid-sent" : "hid-error";
+    } else if (key->send == UI_SEND_HID) {
+        // No Bluetooth host: hand the keystroke to the companion (over Wi-Fi or USB), which types
+        // it on the computer. The ONX's USB-C cannot act as a keyboard itself.
+        protocol_send_keystroke(index + 1, layout.id, tap_count, key->modifiers, key->usage);
+        result = "hid-via-companion";
     } else if (key->send == UI_SEND_EVENT) {
         protocol_send_key(index + 1, layout.id, tap_count);
         result = "event-sent";
@@ -225,6 +228,9 @@ void ui_start(void)
 
 void ui_apply_layout(const ui_layout_t *new_layout)
 {
+    if (status_label == NULL) {
+        return; // no display (no board definition)
+    }
     if (!lvgl_port_lock(1000)) {
         ESP_LOGE(TAG, "could not take the LVGL lock to apply a layout");
         return;
@@ -240,6 +246,9 @@ void ui_apply_layout(const ui_layout_t *new_layout)
 
 void ui_show_status(const char *text, ui_status_level_t level, uint32_t ttl_seconds)
 {
+    if (status_label == NULL) {
+        return; // no display (no board definition)
+    }
     if (!lvgl_port_lock(1000)) {
         ESP_LOGE(TAG, "could not take the LVGL lock to show a status");
         return;

@@ -1,4 +1,7 @@
-# Name,   Type, SubType, Offset,  Size
-nvs,      data, nvs,     0x9000,  0x6000,
-phy_init, data, phy,     0xf000,  0x1000,
-factory,  app,  factory, 0x10000, 0x400000,
+# Name,   Type, SubType, Offset,   Size
+# Fits 4 MB flash, so one image runs on 4, 8 and 16 MB ESP32-S3 boards. nvs keeps its place, so
+# pairing keys and Wi-Fi settings survive firmware updates.
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+factory,  app,  factory, 0x10000,  0x300000,
+board,    data, 0x40,    0x310000, 0x1000,
