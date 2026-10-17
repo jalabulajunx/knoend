@@ -352,9 +352,11 @@ Entry template:
     `null` = leave out). "No board found" now tells "chip plugged in, no driver" from "nothing
     plugged in", on Linux (brltty/usbfs, missing module) and macOS (driver missing / not switched on,
     with the install and Driver Extensions buttons), also in manual mode. Boards that tie (native
-    USB) are no longer pre-selected. The model field is now a dropdown of the provider's models
-    (it was a type-ahead list that, pre-filled with the current model, showed only matching names
-    and looked empty), with "Other" to type a name; a 404 from the test reloads it.
+    USB) are no longer pre-selected. The model field is now a combo box: clicking it (or the arrow)
+    lists every model the provider offers, scrolled to the current one; typing filters anywhere in
+    the name; arrows + Enter pick; any name can still be typed. (The old `<datalist>` was pre-filled
+    with the current model, so it only ever offered that one and looked empty.) A 404 from the test
+    reopens the list.
   - `flash/src/usb.rs`: USB-serial chips with or without a port, Linux (sysfs, bound drivers) and
     macOS (moved from Tom's diagnostics); `/api/ports` returns them; Linux `system_checks` too.
   - WCH installer downloaded into a fresh 0700 folder (not a fixed temp name).

@@ -163,3 +163,13 @@ form textarea { font-family: ui-monospace, monospace; font-size: 13px; resize: v
 #ai-advanced { margin: 8px 0; }
 #ai-advanced summary { cursor: pointer; color: var(--muted, inherit); }
 .no-port-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.combo { position: relative; display: block; margin-top: 4px; }
+.combo input { width: 100%; padding-right: 34px; margin-top: 0; }
+.combo-toggle { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); border: 0; background: none;
+  color: inherit; padding: 4px 10px; cursor: pointer; font-size: 14px; }
+.combo-list { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 4px 0 0; padding: 4px 0; list-style: none;
+  max-height: 260px; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); }
+.combo-list li { padding: 6px 10px; cursor: pointer; font-size: 14px; }
+.combo-list li[role="option"]:hover, .combo-list li.active { background: var(--line); }
+.combo-list li[aria-selected="true"] { font-weight: 600; }

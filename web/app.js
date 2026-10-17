@@ -442,39 +442,91 @@ $("ai-provider").addEventListener("change", () => {
   providerFields(); loadModels();
 });
 
-const OTHER_MODEL = "__other__";
+/** The provider's models, for the model combo box (search as you type, or open the whole list). */
+let models = [];
 
-/** Fills the model dropdown from the provider (with the key just typed, if any; it is not saved).
- *  The chosen name lives in #ai-model; "Other" shows it for typing. */
+/** Fills the model list from the provider (with the key just typed, if any; it is not saved). */
 async function loadModels() {
   const note = $("ai-models-note");
-  const pick = $("ai-model-pick");
-  const option = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; return o; };
-  pick.replaceChildren(option("", "Loading the provider's models..."));
-  pick.disabled = true;
-  note.textContent = "";
-  let models = [];
+  note.textContent = "(loading the provider's models...)";
+  models = [];
   try {
     ({ models } = await api("/ai/models", { provider: $("ai-provider").value,
       api_key: $("ai-key").value || null, base_url: baseUrl() }));
-    note.textContent = models.length ? `(${models.length} from the provider)` : "(the provider listed none)";
+    note.textContent = models.length ? `(${models.length} from the provider; search or open the list)` : "(the provider listed none; type a name)";
   } catch (e) {
     note.textContent = $("ai-key-wrap").hidden || $("ai-key").value || aiReady
-      ? `(could not list models: ${e.message})` : "(enter the API key to see the models)";
+      ? `(could not list models: ${e.message}; type a name)` : "(enter the API key to see the models)";
   }
-  const current = $("ai-model").value.trim();
-  pick.replaceChildren(...models.map((m) => option(m, m)), option(OTHER_MODEL, models.length ? "Other (type a name)" : "Type a model name"));
-  if (current && !models.includes(current)) pick.prepend(option(current, `${current} (not in the provider's list)`));
-  pick.value = current || (models.length ? (pick.firstChild.value) : OTHER_MODEL);
-  pick.disabled = false;
-  modelPicked();
 }
-function modelPicked() {
-  const other = $("ai-model-pick").value === OTHER_MODEL;
-  $("ai-model").hidden = !other;
-  if (!other) $("ai-model").value = $("ai-model-pick").value;
+
+const combo = { query: null, active: -1 };
+function showModels(query) {
+  combo.query = query;
+  const list = $("ai-model-list");
+  const q = (query || "").toLowerCase();
+  const matches = models.filter((m) => m.toLowerCase().includes(q));
+  list.replaceChildren(...matches.slice(0, 300).map((m, i) => {
+    const li = document.createElement("li");
+    li.role = "option";
+    li.id = `ai-model-opt-${i}`;
+    li.textContent = m;
+    li.setAttribute("aria-selected", String(m === $("ai-model").value));
+    li.addEventListener("mousedown", (e) => { e.preventDefault(); chooseModel(m); });
+    return li;
+  }));
+  if (!matches.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = models.length ? "No model matches; this name will be used as typed." : "No list from the provider; type the model name.";
+    list.append(li);
+  }
+  combo.active = -1;
+  list.hidden = false;
+  $("ai-model").setAttribute("aria-expanded", "true");
+  const current = matches.indexOf($("ai-model").value);
+  if (current >= 0) highlight(current);
 }
-$("ai-model-pick").addEventListener("change", () => { modelPicked(); if (!$("ai-model").hidden) $("ai-model").focus(); });
+function hideModels() {
+  $("ai-model-list").hidden = true;
+  $("ai-model").setAttribute("aria-expanded", "false");
+  $("ai-model").removeAttribute("aria-activedescendant");
+}
+function highlight(i) {
+  const items = [...$("ai-model-list").querySelectorAll('[role="option"]')];
+  if (!items.length) return;
+  combo.active = (i + items.length) % items.length;
+  items.forEach((li, n) => li.classList.toggle("active", n === combo.active));
+  items[combo.active].scrollIntoView({ block: "nearest" });
+  $("ai-model").setAttribute("aria-activedescendant", items[combo.active].id);
+}
+function chooseModel(m) {
+  $("ai-model").value = m;
+  hideModels();
+}
+// Opening shows every model; typing filters (anywhere in the name, any case).
+$("ai-model").addEventListener("focus", () => showModels(""));
+$("ai-model").addEventListener("click", () => { if ($("ai-model-list").hidden) showModels(""); });
+$("ai-model").addEventListener("input", () => showModels($("ai-model").value));
+$("ai-model").addEventListener("blur", hideModels);
+$("ai-model-toggle").addEventListener("mousedown", (e) => {
+  e.preventDefault();
+  if ($("ai-model-list").hidden) { $("ai-model").focus(); showModels(""); } else hideModels();
+});
+$("ai-model").addEventListener("keydown", (e) => {
+  const open = !$("ai-model-list").hidden;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    if (!open) showModels("");
+    highlight(combo.active + (e.key === "ArrowDown" ? 1 : -1));
+  } else if (e.key === "Enter" && open && combo.active >= 0) {
+    e.preventDefault();
+    chooseModel($("ai-model-list").querySelectorAll('[role="option"]')[combo.active].textContent);
+  } else if (e.key === "Escape" && open) {
+    e.preventDefault();
+    hideModels();
+  }
+});
 $("ai-key").addEventListener("change", loadModels);
 $("ai-base").addEventListener("change", loadModels);
 $("ai-base-alt").addEventListener("change", loadModels);
@@ -524,7 +576,7 @@ $("ai-form").addEventListener("submit", async (e) => {
       $("ai-status").className = "note error";
       $("ai-status").textContent = `Saved, but the test failed: ${r.error}`;
       if (/Advanced/.test(r.error)) $("ai-advanced").open = true;
-      if (/ 404 /.test(r.error)) { $("ai-model").value = ""; loadModels(); }
+      if (/ 404 /.test(r.error)) loadModels().then(() => { $("ai-model").focus(); showModels(""); });
     }
   } catch (err) {
     $("ai-status").className = "note error";
