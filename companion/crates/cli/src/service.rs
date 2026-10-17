@@ -49,21 +49,34 @@ pub struct Shared {
     pub firmware_source: String,
     /// Types keystrokes for a board that cannot (no Bluetooth host); connected on first use.
     typist: Arc<std::sync::Mutex<Option<openpager_input::Typist>>>,
+    /// The last log lines, for the setup assistant's snapshot.
+    recent: std::sync::Mutex<std::collections::VecDeque<String>>,
 }
 
 impl Shared {
     pub fn new(firmware_source: String) -> Arc<Shared> {
         let (events, _) = broadcast::channel(256);
         Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())), firmware_source,
-                          typist: Arc::new(std::sync::Mutex::new(None)) })
+                          typist: Arc::new(std::sync::Mutex::new(None)),
+                          recent: std::sync::Mutex::new(std::collections::VecDeque::new()) })
     }
 
     /// Publishes an event to the web app and prints it for the terminal.
     pub fn emit(&self, kind: &str, data: Value) {
         if let Some(text) = data.get("text").and_then(Value::as_str) {
             println!("{text}");
+            if let Ok(mut recent) = self.recent.lock() {
+                recent.push_back(text.trim().to_string());
+                while recent.len() > 40 {
+                    recent.pop_front();
+                }
+            }
         }
         let _ = self.events.send(json!({"kind": kind, "data": data}));
+    }
+
+    pub fn recent(&self) -> Vec<String> {
+        self.recent.lock().map(|r| r.iter().cloned().collect()).unwrap_or_default()
     }
 
     async fn update(&self, change: impl FnOnce(&mut Status)) {

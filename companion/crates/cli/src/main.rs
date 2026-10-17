@@ -6,6 +6,7 @@
 //!   openpager devices / flash              find, identify and flash boards from a firmware release
 //!   openpager draft --class C --instance I  ask the configure agent for a library (no board needed)
 
+mod diagnostics;
 mod firmware;
 mod provision;
 mod service;
@@ -178,7 +179,7 @@ async fn flash(board: &str, port: &str, source: &str, erase: bool) -> Result<(),
 
 // ---- the configure agent ----
 
-fn agent_config() -> Result<AgentConfig, String> {
+pub fn agent_config() -> Result<AgentConfig, String> {
     AgentConfig::load(&config_dir().join("agent.toml"))
 }
 

@@ -53,6 +53,36 @@
 
     <!-- Setup wizard -->
     <section id="view-setup" class="view" hidden>
+      <article class="card" id="mode-card">
+        <h2>How would you like to set up?</h2>
+        <ul class="choices">
+          <li><label><input type="radio" name="mode" value="ai"> <span><strong>Guided by AI <span class="badge ok-badge">Recommended</span></strong>
+            <span class="sub">If you'd rather not troubleshoot. When something goes wrong, the assistant looks at what happened and tells you the next step. Needs an API key for an AI provider (or a local model).</span></span></label></li>
+          <li><label><input type="radio" name="mode" value="manual"> <span><strong>I'll do it myself</strong>
+            <span class="sub">Same steps, no AI. Errors are shown as they are; you can still ask the assistant later.</span></span></label></li>
+        </ul>
+        <form id="ai-form" autocomplete="off" hidden>
+          <div class="row">
+            <label>Provider
+              <select id="ai-provider">
+                <option value="gemini">Google Gemini</option>
+                <option value="anthropic">Anthropic Claude</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="ollama">Ollama (local, no key)</option>
+                <option value="openai-compatible">Other OpenAI-compatible server</option>
+              </select></label>
+            <label>Model <span class="muted">(blank = provider default, if it has one)</span>
+              <input id="ai-model" maxlength="80" placeholder="model name"></label>
+          </div>
+          <label id="ai-base-wrap" hidden>Server URL <input id="ai-base" maxlength="200" placeholder="http://localhost:8000/v1"></label>
+          <label id="ai-key-wrap">API key <span class="muted">(stored only on this computer; never shown again)</span>
+            <input id="ai-key" type="password" maxlength="300"></label>
+          <p id="ai-status" class="note"></p>
+          <div class="actions"><button type="submit" class="primary">Save and test</button></div>
+        </form>
+      </article>
+
       <ol class="steps" aria-label="Setup steps">
         <li data-step="1" class="current">Find the board</li>
         <li data-step="2">Choose firmware</li>
@@ -109,6 +139,20 @@
         </form>
         <ol id="pair-log" class="log compact"></ol>
         <p id="pair-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
+      </article>
+
+      <article class="card" id="assistant">
+        <h2>Setup assistant <span id="assistant-by" class="muted small"></span></h2>
+        <form id="ask-form" class="ask">
+          <input id="ask-input" maxlength="500" placeholder="Describe what you see, or ask what to do next">
+          <button type="submit" class="secondary">Ask</button>
+        </form>
+        <div id="advice" hidden>
+          <p id="advice-text" class="advice"></p>
+          <div id="advice-actions" class="actions left"></div>
+          <details><summary class="muted small">What was sent to the AI</summary><pre id="advice-sent"></pre></details>
+        </div>
+        <p id="assistant-off" class="muted small" hidden>Set up an AI provider above to use the assistant.</p>
       </article>
     </section>
   </main>

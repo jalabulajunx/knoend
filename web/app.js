@@ -127,7 +127,7 @@ function connectEvents() {
 
 // ---- setup wizard ----
 
-const setup = { step: 1, port: null, board: null, firmware: null };
+const setup = { step: 1, port: null, board: null, firmware: null, identified: null, mode: null };
 
 function step(n) {
   setup.step = n;
@@ -170,6 +170,7 @@ async function scanPorts() {
       li.className = "muted";
       li.textContent = "No board found. Check the cable carries data (not charge-only), then look again.";
       list.append(li);
+      autoAssist("No USB serial port was found for the board.");
     }
     for (const p of ports) {
       const usb = `${p.vid.toString(16).padStart(4, "0")}:${p.pid.toString(16).padStart(4, "0")}`;
@@ -196,6 +197,7 @@ $("identify").addEventListener("click", async () => {
     const [firmware] = await Promise.all([api("/firmware").catch(() => null)]);
     setup.firmware = firmware;
     $("fw-source").textContent = firmware ? `${firmware.source} (version ${firmware.manifest.version})` : "unavailable";
+    setup.identified = { chip: result.chip, chipError: result.chipError, running: result.running ? { firmware: result.running.firmware, profile: result.running.board?.profile } : null, candidates: result.candidates };
     const chip = result.chip;
     const running = result.running;
     $("chip-summary").textContent = [
@@ -209,6 +211,7 @@ $("identify").addEventListener("click", async () => {
   } catch (e) {
     status.className = "note error";
     status.textContent = `Could not identify the board: ${e.message}`;
+    autoAssist(`Identify failed: ${e.message}`);
   } finally {
     $("identify").disabled = false;
   }
@@ -272,6 +275,7 @@ function onFlash(p) {
     stage.className = "note error";
     stage.textContent = `Install failed: ${p.error}`;
     $("flash-back").hidden = false;
+    autoAssist(`Install failed: ${p.error}`);
   }
   if (p.text) logTo($("flash-log"), p.text);
 }
@@ -292,10 +296,126 @@ $("pair-form").addEventListener("submit", async (e) => {
     $("pair-done").hidden = false;
   } catch (err) {
     logTo($("pair-log"), `Pairing failed: ${err.message}`, "error");
+    autoAssist(`Pairing failed: ${err.message}`);
   } finally {
     $("password").value = "";
     button.disabled = false;
   }
+});
+
+// ---- setup mode and AI settings ----
+
+function storeGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function storeSet(key, value) { try { localStorage.setItem(key, value); } catch { /* private window */ } }
+
+let aiReady = false;
+
+function setMode(mode) {
+  setup.mode = mode;
+  storeSet("openpager.mode", mode);
+  document.querySelectorAll('input[name="mode"]').forEach((i) => (i.checked = i.value === mode));
+  $("ai-form").hidden = mode !== "ai";
+}
+document.querySelectorAll('input[name="mode"]').forEach((i) => i.addEventListener("change", () => setMode(i.value)));
+
+function providerFields() {
+  const provider = $("ai-provider").value;
+  $("ai-base-wrap").hidden = provider !== "openai-compatible";
+  $("ai-key-wrap").hidden = provider === "ollama";
+}
+$("ai-provider").addEventListener("change", providerFields);
+
+function renderAi(info) {
+  aiReady = !!info.configured && info.key !== "missing";
+  $("assistant-by").textContent = aiReady ? `using ${info.describe}` : "";
+  $("assistant-off").hidden = aiReady;
+  $("ask-form").hidden = !aiReady;
+  const keyText = { env: "key from the environment", saved: "key saved on this computer", "none-needed": "no key needed", missing: "no key yet" }[info.key] || "";
+  $("ai-status").textContent = info.configured ? `Current: ${info.describe}, ${keyText}.` : "Not set up yet.";
+}
+
+async function loadAi() {
+  const info = await api("/ai");
+  if (info.provider) $("ai-provider").value = info.provider;
+  if (info.model) $("ai-model").value = info.model;
+  providerFields();
+  renderAi(info);
+  return info;
+}
+
+$("ai-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const button = e.submitter;
+  button.disabled = true;
+  $("ai-status").className = "note";
+  $("ai-status").textContent = "Saving and sending a one-word test request...";
+  try {
+    const r = await api("/ai", { provider: $("ai-provider").value, model: $("ai-model").value || null,
+                                api_key: $("ai-key").value || null, base_url: $("ai-base").value || null });
+    if (r.ok) {
+      $("ai-status").className = "note success";
+      $("ai-status").textContent = `Works: ${r.describe} answered.`;
+      renderAi({ configured: true, key: r.key, describe: r.describe });
+    } else {
+      $("ai-status").className = "note error";
+      $("ai-status").textContent = `Saved, but the test failed: ${r.error}`;
+    }
+  } catch (err) {
+    $("ai-status").className = "note error";
+    $("ai-status").textContent = `Could not save: ${err.message}`;
+  } finally {
+    $("ai-key").value = "";
+    button.disabled = false;
+  }
+});
+
+// ---- setup assistant ----
+
+const ACTIONS = {
+  rescan: ["Look again", () => { step(1); scanPorts(); }],
+  identify: ["Identify the board", () => { step(1); $("identify").click(); }],
+  install: ["Install", () => { if (setup.board) { $("erase").checked = false; $("install").click(); } else step(1); }],
+  install_erase: ["Erase and install", () => { if (setup.board) { $("erase").checked = true; $("install").click(); } else step(1); }],
+  pair: ["Go to pairing", () => step(4)],
+  dashboard: ["Open the dashboard", () => show("dashboard")],
+};
+
+async function ask(question, error) {
+  if (!aiReady) {
+    $("assistant-off").hidden = false;
+    return;
+  }
+  const box = $("advice");
+  box.hidden = false;
+  $("advice-text").textContent = "Thinking...";
+  $("advice-actions").replaceChildren();
+  const context = { wizard_step: setup.step, port: setup.port, chosen_board: setup.board,
+                    identify_result: setup.identified, error: error || null, setup_mode: setup.mode };
+  try {
+    const r = await api("/assist", { question, context });
+    $("advice-text").textContent = r.answer;
+    $("advice-sent").textContent = JSON.stringify(r.sent, null, 2);
+    for (const id of r.actions) {
+      if (!ACTIONS[id]) continue;
+      const b = document.createElement("button");
+      b.className = "secondary";
+      b.textContent = ACTIONS[id][0];
+      b.addEventListener("click", ACTIONS[id][1]);
+      $("advice-actions").append(b);
+    }
+  } catch (e) {
+    $("advice-text").textContent = `The assistant could not answer: ${e.message}`;
+  }
+}
+
+/** In guided mode, every failure goes to the assistant with what was happening. */
+function autoAssist(error) {
+  if (setup.mode === "ai" && aiReady) ask("", error);
+}
+
+$("ask-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  ask($("ask-input").value);
 });
 
 // ---- start ----
@@ -310,4 +430,6 @@ $("pair-form").addEventListener("submit", async (e) => {
     $("link-pill").textContent = "Service not reachable";
   }
   loadDrafts().catch(() => {});
+  const info = await loadAi().catch(() => ({}));
+  setMode(storeGet("openpager.mode") || "ai"); // guided is the recommended default
 })();

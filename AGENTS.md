@@ -17,6 +17,14 @@ first line is `@AGENTS.md`.
 4. A decision that changes the architecture or a shared contract also gets a short record in
    `docs/decisions/` (what, why, alternatives rejected), linked from the log entry.
 
+## What we already know
+
+Before hardware, flashing, Wi-Fi, Bluetooth or setup work, read
+[`docs/knowledge/setup.md`](docs/knowledge/setup.md): board facts, every failure seen so far with
+its cause and fix, and how to approach problems nobody has seen yet. The companion's setup assistant
+uses the same file as its prompt, so **add what you learn there** (symptom, cause, fix, how it was
+confirmed), not only in the log.
+
 ## Working rules
 
 - **Verify before claiming.** Check the content of outputs, not just exit codes. Say plainly what is

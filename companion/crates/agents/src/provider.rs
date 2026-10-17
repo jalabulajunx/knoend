@@ -3,8 +3,8 @@
 //!     endpoint), Ollama, and any other compatible server;
 //!   - Anthropic Messages API.
 //!
-//! Configuration: `~/.config/openpager/agent.toml`. API keys are read from an environment variable
-//! named in the file (`api_key_env`), never stored in it.
+//! Configuration: `~/.config/openpager/agent.toml` (provider, model). API keys come from the
+//! environment, or from keys saved in the web app (`secrets.rs`), never from agent.toml.
 
 use std::path::Path;
 use std::time::Duration;
@@ -91,19 +91,35 @@ impl AgentConfig {
         }
     }
 
-    fn api_key(&self) -> Result<Option<String>, String> {
-        let var = match (&self.api_key_env, self.provider) {
+    /// The environment variable (or saved-secret name) this provider's key goes by; None for
+    /// providers that need no key.
+    pub fn api_key_name(&self) -> Option<String> {
+        Some(match (&self.api_key_env, self.provider) {
             (Some(var), _) => var.clone(),
-            (None, Provider::Ollama | Provider::OpenaiCompatible) => return Ok(None),
+            (None, Provider::Ollama | Provider::OpenaiCompatible) => return None,
             (None, Provider::Openai) => "OPENAI_API_KEY".into(),
             (None, Provider::Openrouter) => "OPENROUTER_API_KEY".into(),
             (None, Provider::Gemini) => "GEMINI_API_KEY".into(),
             (None, Provider::Anthropic) => "ANTHROPIC_API_KEY".into(),
-        };
-        match std::env::var(&var) {
-            Ok(key) if !key.is_empty() => Ok(Some(key)),
-            _ => Err(format!("environment variable {var} is not set")),
+        })
+    }
+
+    /// Where the key comes from: "env", "saved", "missing", or "none-needed".
+    pub fn key_source(&self) -> &'static str {
+        match self.api_key_name() {
+            None => "none-needed",
+            Some(name) if std::env::var(&name).is_ok_and(|v| !v.is_empty()) => "env",
+            Some(name) if crate::secrets::get(&name).is_some() => "saved",
+            Some(_) => "missing",
         }
+    }
+
+    fn api_key(&self) -> Result<Option<String>, String> {
+        let Some(var) = self.api_key_name() else { return Ok(None) };
+        if let Some(saved) = std::env::var(&var).ok().filter(|v| !v.is_empty()).or_else(|| crate::secrets::get(&var)) {
+            return Ok(Some(saved));
+        }
+        Err(format!("no API key: set {var}, or enter the key in the web app's AI settings"))
     }
 
     /// A short description for logs and the saved file: provider and model, never the key.

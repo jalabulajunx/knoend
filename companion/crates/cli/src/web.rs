@@ -55,6 +55,8 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/flash", post(flash))
         .route("/provision", post(provision))
         .route("/drafts", get(drafts))
+        .route("/ai", get(ai_settings).post(save_ai_settings))
+        .route("/assist", post(assist))
         .layer(middleware::from_fn_with_state(app.clone(), require_token));
     let router = Router::new()
         .route("/", get(index))
@@ -245,4 +247,79 @@ async fn drafts() -> ApiResult {
         }
     }
     Ok(Json(json!({"drafts": out})))
+}
+
+// ---- AI settings and the setup assistant ----
+
+fn agent_toml() -> std::path::PathBuf {
+    openpager_transport::pairing::config_dir().join("agent.toml")
+}
+
+/// Provider, model and where the key comes from. The key itself is never returned.
+async fn ai_settings() -> ApiResult {
+    match crate::agent_config() {
+        Ok(config) => Ok(Json(json!({
+            "configured": agent_toml().exists(),
+            "provider": format!("{:?}", config.provider).to_lowercase(),
+            "model": config.model().ok(),
+            "key": config.key_source(),
+            "describe": config.describe(),
+        }))),
+        Err(e) => Ok(Json(json!({"configured": false, "error": e}))),
+    }
+}
+
+#[derive(Deserialize)]
+struct AiRequest {
+    provider: String,
+    model: Option<String>,
+    api_key: Option<String>,
+    base_url: Option<String>,
+}
+
+/// Saves provider + model to agent.toml and the key to the local key store, then checks them with
+/// a tiny request.
+async fn save_ai_settings(Json(request): Json<AiRequest>) -> ApiResult {
+    let allowed = ["gemini", "openai", "openrouter", "anthropic", "ollama", "openai-compatible"];
+    if !allowed.contains(&request.provider.as_str()) {
+        return Err(fail(StatusCode::BAD_REQUEST, "unknown provider"));
+    }
+    let mut table = toml::Table::new();
+    table.insert("provider".into(), request.provider.clone().into());
+    for (name, value) in [("model", &request.model), ("base_url", &request.base_url)] {
+        if let Some(v) = value.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()) {
+            table.insert(name.into(), v.to_string().into());
+        }
+    }
+    let text = format!("# Written by the OpenPager web app. API keys are kept in secrets.json, not here.\n{}",
+                       toml::to_string(&table).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?);
+    std::fs::create_dir_all(agent_toml().parent().expect("parent")).ok();
+    std::fs::write(agent_toml(), text).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let config = crate::agent_config().map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
+    if let Some(key) = request.api_key.as_ref().map(|k| k.trim()).filter(|k| !k.is_empty()) {
+        let name = config.api_key_name().ok_or_else(|| fail(StatusCode::BAD_REQUEST, "this provider takes no API key"))?;
+        openpager_agents::secrets::save(&name, key).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    match openpager_agents::assistant::check(&config).await {
+        Ok(reply) => Ok(Json(json!({"ok": true, "describe": config.describe(), "key": config.key_source(), "reply": reply}))),
+        Err(e) => Ok(Json(json!({"ok": false, "describe": config.describe(), "key": config.key_source(), "error": e}))),
+    }
+}
+
+#[derive(Deserialize)]
+struct AssistRequest {
+    #[serde(default)]
+    question: String,
+    #[serde(default)]
+    context: Value,
+}
+
+/// Asks the setup assistant. Returns its advice, the buttons it suggests, and exactly what was sent.
+async fn assist(State(app): State<App>, Json(request): Json<AssistRequest>) -> ApiResult {
+    let config = crate::agent_config().map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
+    let snapshot = crate::diagnostics::snapshot(&app.shared, request.context).await;
+    let advice = openpager_agents::assistant::advise(&config, &request.question, &snapshot).await
+        .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(json!({"answer": advice.answer, "actions": advice.actions, "sent": snapshot, "by": config.describe()})))
 }
