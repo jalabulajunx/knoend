@@ -29,7 +29,7 @@ pub async fn manifest(source: &str) -> Result<Manifest, String> {
 /// Downloads and verifies every part of a board's image: (offset, bytes) ready to flash.
 pub async fn parts_for(source: &str, manifest: &Manifest, board: &str) -> Result<Vec<(u32, Vec<u8>)>, String> {
     let entry = manifest.boards.get(board).ok_or_else(|| format!("board {board} is not in the manifest"))?;
-    if entry.status != "supported" {
+    if entry.status != "supported" && entry.status != "unverified" {
         return Err(format!("{} has no firmware yet", entry.name));
     }
     let image = manifest.images.get(&entry.image).ok_or_else(|| format!("image {} missing", entry.image))?;

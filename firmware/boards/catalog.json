@@ -10,16 +10,40 @@
       "name": "ONX2432G028 (Nextion Open G-series, 2.8\")",
       "image": "universal-esp32s3",
       "flash_size": "16MB",
-      "bridges": ["ch340"],
+      "bridges": [
+        "ch340"
+      ],
       "status": "supported"
     },
     "fnk0104b": {
       "name": "Freenove FNK0104B (2.8\")",
       "image": "universal-esp32s3",
       "flash_size": "16MB",
-      "bridges": ["espressif-native"],
+      "bridges": [
+        "espressif-native"
+      ],
       "status": "coming",
       "note": "Needs its board definition (firmware/boards/definitions/fnk0104b.json)."
+    },
+    "waveshare_s3_touch_lcd_2": {
+      "name": "Waveshare ESP32-S3-Touch-LCD-2 (2\")",
+      "image": "universal-esp32s3",
+      "flash_size": "16MB",
+      "bridges": [
+        "espressif-native"
+      ],
+      "status": "unverified",
+      "note": "Definition written from Waveshare's wiki and demo code; not yet run on the board."
+    },
+    "esp32_s3_box_3": {
+      "name": "Espressif ESP32-S3-BOX-3",
+      "image": "universal-esp32s3",
+      "flash_size": "16MB",
+      "bridges": [
+        "espressif-native"
+      ],
+      "status": "unverified",
+      "note": "Definition written from Espressif's board-support code; not yet run on the board. Early TT21100-touch units not supported."
     }
   }
 }

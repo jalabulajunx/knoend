@@ -5,8 +5,13 @@ supports today, and what each would need. Every fact below comes from the page l
 pins are taken only from manufacturer pages or the manufacturer's open-source board support.
 
 **Today's universal image supports:** ESP32-S3 with **octal** PSRAM, 4 MB flash or more; **SPI**
-displays with ST7789 or ILI9341; **FocalTech-layout** touch (CST826, FT6336, and probably CST816);
-optional PCF8574 expander.
+displays with ST7789 or ILI9341 (with start-up commands from the definition); touch CST816, CST826,
+FT6336 (FocalTech layout) and **GT911**; optional PCF8574 expander; active-low or active-high reset.
+
+**Update, same day:** GT911, CST816, display start-up commands and active-high reset were added, and
+**unverified** definitions were written for the Waveshare ESP32-S3-Touch-LCD-2 (pins from Waveshare's
+demo code) and the ESP32-S3-BOX-3 (from Espressif's Apache-2.0 board support). The rows below are as
+first researched; those two boards now install as "unverified".
 
 ## Summary
 

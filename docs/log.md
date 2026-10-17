@@ -229,3 +229,22 @@ Entry template:
 - Open (UI, requested by Sundar): list models per provider instead of typing the name; scan and
   list Wi-Fi networks instead of typing the name. Also: first release (`v*` tag) not run yet;
   macOS behaviour on Tom's Mac; FNK0104B definition; dynamic tiles (PLAN backlog).
+
+## 2026-10-18 - Sundar (Claude Code) - Board research; GT911 and two unverified board definitions
+
+- Changed: `docs/boards/research.md` (12 popular ESP32-S3 touch boards vs the universal image, from
+  manufacturer pages and board-support code). Firmware: GT911 touch reader (written from its
+  register map; probes 0x5D and 0x14 after the display has started), `cst816` touch name,
+  `init_cmds` and `reset_active_high` in board definitions. Two definitions marked **unverified**:
+  `waveshare_s3_touch_lcd_2` (pins from Waveshare's demo zip, downloaded with Sundar's OK, read for
+  pin numbers only) and `esp32_s3_box_3` (from Espressif's Apache-2.0 esp-bsp). New board status
+  "unverified" in the catalog, manifest and wizard (installable, clearly marked, ranked after a
+  supported match on equal evidence).
+- Tested (ONX2432G028): the new firmware with the normal ONX definition (display, colours,
+  app-following and keys confirmed by Sundar); a temporary definition using the `cst816` name and an
+  extra start-up command (0x13) loaded and worked, then the normal definition was restored. GT911,
+  active-high reset and both new definitions are untested (no such hardware here).
+- Found: the release script and validator refused the S3-BOX-3 definition while one source note was
+  longer than the schema's 300 characters.
+- Open: run the two unverified boards (or any GT911 board); RGB-panel boards (4.3-7") need an RGB
+  driver and a larger layout; Hynitron CST328/CST3530 for the Waveshare 2.8.

@@ -23,9 +23,18 @@ When you learn something new on the bench, add it here (symptom, cause, fix, how
 | --- | --- | --- | --- | --- |
 | ONX2432G028 (Nextion Open G-series) | CH340K serial chip (USB `1a86:7522`) | UART0, 115200 | **No**: the S3's own USB pins go to the mic connector | ST7789 display, CST826 touch at 0x15, PCF8574 expander at 0x38, 16 MB flash, 8 MB octal PSRAM |
 | Freenove FNK0104B | the ESP32-S3's own USB (Espressif `303a:xxxx`) | USB-Serial-JTAG | Yes (not built yet) | ILI9341 display, FT6336 touch at 0x38; definition not written yet |
+| Waveshare ESP32-S3-Touch-LCD-2 (**unverified**) | the S3's own USB | USB-Serial-JTAG | Yes | ST7789T3 SPI 240x320 (colour inversion on), CST816D touch at 0x15, backlight GPIO 1 |
+| Espressif ESP32-S3-BOX-3 (**unverified**) | the S3's own USB | USB-Serial-JTAG | Yes | ILI9342C (ILI9341 driver + init commands) 320x240, BGR, mirrored x+y; GT911 touch at 0x5D or 0x14; active-high reset shared by display and touch on GPIO 48 |
 
-Any ESP32-S3 board with octal PSRAM and at least 4 MB flash can run the universal image once it has
-a definition. Quad-PSRAM boards need a second image variant (not built yet). Other chips (ESP32,
+**Unverified** boards have definitions written from the maker's documentation but nobody has run
+them yet. If one shows a blank, rotated, mirrored or wrongly coloured screen, or touch lands in the
+wrong place, the definition values are the first suspect (see "After flashing"); report what you
+saw so the definition can be corrected and promoted to supported. More boards and what they would
+need: `docs/boards/research.md`.
+
+Supported drivers: displays ST7789 and ILI9341 over SPI (plus start-up commands from the definition);
+touch CST816, CST826, FT6336 (FocalTech register layout) and GT911. Any ESP32-S3 board with octal
+PSRAM, at least 4 MB flash and these parts can run the universal image once it has a definition. Quad-PSRAM boards need a second image variant (not built yet). Other chips (ESP32,
 C3, C6) are not supported.
 
 ## Symptoms, causes, fixes
@@ -70,6 +79,9 @@ C3, C6) are not supported.
 - **Screen stays dark, but the serial log shows READY.** Look for `BOARD no definition`: the
   definition is missing or invalid; reinstall with the right board. If the definition loaded
   (`board: definition <id>`), the backlight pin or display wiring in the definition is wrong.
+- **GT911 touch not found or touch dead on a GT911 board.** The GT911 picks its I2C address (0x5D or
+  0x14) when it is reset; the firmware tries both after the display has started (some boards share
+  the reset line). Early ESP32-S3-BOX-3 units use a TT21100 instead, which is not supported.
 - **Picture rotated, mirrored or colours swapped.** Definition values: `rotation`,
   `mirror_x`/`mirror_y`/`swap_xy`, `bgr`, `invert`. Touch landing on the wrong key: the touch
   `swap_xy`/`mirror_*` values. The ONX's verified values are in

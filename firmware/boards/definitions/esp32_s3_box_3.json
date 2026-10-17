@@ -1,0 +1,140 @@
+{
+  "id": "esp32_s3_box_3",
+  "name": "Espressif ESP32-S3-BOX-3",
+  "chip": "esp32s3",
+  "serial": "usb-serial-jtag",
+  "native_usb": true,
+  "speaker": true,
+  "i2c": {
+    "sda": 8,
+    "scl": 18,
+    "pullup": true
+  },
+  "display": {
+    "driver": "ili9341",
+    "sclk": 7,
+    "mosi": 6,
+    "dc": 4,
+    "cs": 5,
+    "reset": 48,
+    "reset_active_high": true,
+    "width": 320,
+    "height": 240,
+    "pclk_hz": 40000000,
+    "bgr": true,
+    "invert": false,
+    "mirror_x": true,
+    "mirror_y": true,
+    "swap_xy": false,
+    "rotation": 0,
+    "backlight": {
+      "gpio": 47
+    },
+    "init_cmds": [
+      {
+        "cmd": 200,
+        "data": [
+          255,
+          147,
+          66
+        ]
+      },
+      {
+        "cmd": 192,
+        "data": [
+          14,
+          14
+        ]
+      },
+      {
+        "cmd": 197,
+        "data": [
+          208
+        ]
+      },
+      {
+        "cmd": 193,
+        "data": [
+          2
+        ]
+      },
+      {
+        "cmd": 180,
+        "data": [
+          2
+        ]
+      },
+      {
+        "cmd": 224,
+        "data": [
+          0,
+          3,
+          8,
+          6,
+          19,
+          9,
+          57,
+          57,
+          72,
+          2,
+          10,
+          8,
+          23,
+          23,
+          15
+        ]
+      },
+      {
+        "cmd": 225,
+        "data": [
+          0,
+          40,
+          41,
+          1,
+          13,
+          3,
+          63,
+          51,
+          82,
+          4,
+          15,
+          14,
+          55,
+          56,
+          15
+        ]
+      },
+      {
+        "cmd": 177,
+        "data": [
+          0,
+          27
+        ]
+      },
+      {
+        "cmd": 58,
+        "data": [
+          85
+        ]
+      },
+      {
+        "cmd": 183,
+        "data": [
+          6
+        ]
+      }
+    ]
+  },
+  "touch": {
+    "driver": "gt911",
+    "address": 93,
+    "max_x": 320,
+    "max_y": 240
+  },
+  "sources": [
+    "https://github.com/espressif/esp-bsp/tree/master/bsp/esp-box-3 (Apache-2.0, Espressif Systems), read 2026-10-18",
+    "esp-box-3.h, display.h: pins, 320x240, BGR, 40 MHz, SPI display, GT911 at 0x5D or 0x14",
+    "esp-box-3.c: ILI9342C init commands (minus sleep-out, display-on and address mode), mirror x+y, active-high reset shared with touch",
+    "Early units with a TT21100 touch controller are not supported"
+  ]
+}

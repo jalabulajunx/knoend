@@ -1,0 +1,43 @@
+{
+  "id": "waveshare_s3_touch_lcd_2",
+  "name": "Waveshare ESP32-S3-Touch-LCD-2",
+  "chip": "esp32s3",
+  "serial": "usb-serial-jtag",
+  "native_usb": true,
+  "speaker": false,
+  "i2c": {
+    "sda": 48,
+    "scl": 47,
+    "pullup": true
+  },
+  "display": {
+    "driver": "st7789",
+    "sclk": 39,
+    "mosi": 38,
+    "dc": 42,
+    "cs": 45,
+    "reset": -1,
+    "width": 240,
+    "height": 320,
+    "pclk_hz": 80000000,
+    "bgr": false,
+    "invert": true,
+    "mirror_x": false,
+    "mirror_y": false,
+    "swap_xy": false,
+    "rotation": 90,
+    "backlight": {
+      "gpio": 1
+    }
+  },
+  "touch": {
+    "driver": "cst816",
+    "address": 21,
+    "max_x": 240,
+    "max_y": 320
+  },
+  "sources": [
+    "https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-2 (ESP32-S3R8, ST7789T3, CST816D)",
+    "https://files.waveshare.com/wiki/ESP32-S3-Touch-LCD-2/ESP32-S3-Touch-LCD-2-Demo.zip (pins, backlight GPIO 1, CST816 at 0x15, invert on, RGB order; read 2026-10-18)"
+  ]
+}
