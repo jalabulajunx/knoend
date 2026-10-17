@@ -192,3 +192,14 @@ Entry template:
 - Decided (Sundar): merge `sundar/spec-v0`, `sundar/serial-packets` and `sundar/companion-core`
   into `main` now; Tom reviews tomorrow and changes what he sees fit (spec/ included).
 - Also confirmed by Sundar: the VS Code "Palette" key opened the command palette (typed over BLE).
+
+## 2026-10-17 - Sundar (Claude Code) - End of day: handover state
+
+- Changed: `docs/status.md`, a one-page map of what is on `main`, what is not started, and how to
+  run it. The team's shared plan document was refreshed from the private plan (status table,
+  decisions since Oct 15, who it is for, rules, a checklist for Tom).
+- State: everything listed as "works" in `docs/status.md` was tested on the ONX today (see the
+  entries above). Not started: FNK0104B, macOS/Windows focus, web app, local API, flashing,
+  extension, simulator, agent-CLI hooks.
+- Open for tomorrow: Tom reviews `spec/` and the code; firmware card for unsupported apps; layout
+  kept across reboots; Eon Era access (promised at kickoff) not yet confirmed.

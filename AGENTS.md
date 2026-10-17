@@ -8,7 +8,8 @@ first line is `@AGENTS.md`.
 
 ## Start and end of every session
 
-1. **Read [`docs/log.md`](docs/log.md)**, at least the last few entries, before changing anything.
+1. **Read [`docs/status.md`](docs/status.md)** (what is on main) and the last few entries of
+   [`docs/log.md`](docs/log.md) before changing anything.
 2. **Append an entry to `docs/log.md`** before you finish: date, who (person + agent), what changed,
    what was tested and on which hardware or OS, decisions made, and open questions. Use the
    template at the top of the log.
