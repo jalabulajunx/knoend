@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "esp_check.h"
+#include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
 #include "esp_hid_gap.h"
 #include "esp_hidd.h"
@@ -129,6 +130,18 @@ esp_err_t ble_keyboard_start(const char *name)
 
     ESP_RETURN_ON_ERROR(esp_hid_gap_init(HIDD_BLE_MODE), TAG, "gap init");
     ESP_RETURN_ON_ERROR(esp_hid_ble_gap_adv_init(ESP_HID_APPEARANCE_KEYBOARD, name), TAG, "adv init");
+
+    // Pairing mode: "Just Works" (LE Secure Connections, bonded, no MITM). The helper above asks
+    // for numeric comparison, but the board does not show the code yet and desktop agents leave
+    // the prompt unanswered, so pairing never completed. The link is still encrypted; what this
+    // gives up is protection against an active attacker during pairing itself. Revisit once the
+    // board can show the code on screen.
+    esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_BOND;
+    esp_ble_io_cap_t io_cap = ESP_IO_CAP_NONE;
+    ESP_RETURN_ON_ERROR(esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, 1),
+                        TAG, "auth req");
+    ESP_RETURN_ON_ERROR(esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &io_cap, 1),
+                        TAG, "io cap");
     ESP_RETURN_ON_ERROR(esp_ble_gatts_register_callback(esp_hidd_gatts_event_handler), TAG, "gatts");
     return esp_hidd_dev_init(&config, ESP_HID_TRANSPORT_BLE, hid_event, &hid_dev);
 }
