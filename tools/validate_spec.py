@@ -153,6 +153,22 @@ def check_packet_file(path):
     return 1 if problems else 0
 
 
+def check_board_definitions():
+    """Every firmware/boards/definitions/*.json must pass board.schema.json and match its file name."""
+    validator = load_schema("board.schema.json")
+    problems = 0
+    for path in sorted((ROOT / "firmware" / "boards" / "definitions").glob("*.json")):
+        data = json.loads(path.read_text())
+        errors = [e.message for e in validator.iter_errors(data)]
+        if data.get("id") != path.stem:
+            errors.append(f"id {data.get('id')!r} does not match the file name")
+        problems += bool(errors)
+        print(f"{'ok  ' if not errors else 'FAIL'} {path.relative_to(ROOT)}")
+        for error in errors:
+            print(f"       {error}")
+    return problems
+
+
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--packets":
         return check_packet_file(sys.argv[2])
@@ -173,6 +189,7 @@ def main():
         reason = errors[0] if errors else "accepted, but it should be rejected"
         print(f"{status} {path.relative_to(ROOT)}  (rejected: {reason})" if errors
               else f"{status} {path.relative_to(ROOT)}  ({reason})")
+    failures += check_board_definitions()
     print(f"\n{len(valid)} valid, {len(invalid)} invalid examples checked; {failures} problem(s)")
     return 1 if failures else 0
 

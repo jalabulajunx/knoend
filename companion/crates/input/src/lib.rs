@@ -7,9 +7,14 @@ mod x11;
 #[cfg(target_os = "linux")]
 pub use x11::Typist;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::Typist;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 mod unsupported;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub use unsupported::Typist;
 
 /// The layout-independent name of a key, from its USB HID usage ID (US positions for punctuation).

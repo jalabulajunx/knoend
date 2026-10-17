@@ -106,6 +106,17 @@ C3, C6) are not supported.
   desktop agent (e.g. Blueman on Linux) shows a confirmation, accept it. The board's Bluetooth
   address is its base MAC + 2.
 
+### macOS
+
+- **Keys typed by the companion do nothing on a Mac.** macOS only lets programs type into other apps
+  with the Accessibility permission: System Settings > Privacy & Security > Accessibility, add the
+  app that runs `openpager` (Terminal, or the `openpager` binary), then restart it. The companion
+  reports this instead of failing silently. (Written without a Mac to test on; confirm on one.)
+- **"openpager" cannot be opened because the developer cannot be verified.** The binary is not
+  signed yet: right-click > Open once, or `xattr -d com.apple.quarantine openpager`.
+- **Two ports per board** (`/dev/cu.*` and `/dev/tty.*`): the companion lists only the `cu.*` one,
+  which is the one to use.
+
 ### The AI pieces
 
 - **Configure fails** with "environment variable ... is not set" or 401/403: no API key, or a wrong

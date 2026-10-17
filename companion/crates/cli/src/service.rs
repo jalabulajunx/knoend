@@ -88,9 +88,24 @@ impl Shared {
     }
 }
 
-pub fn builtin_libraries() -> PathBuf {
-    std::env::var_os("OPENPAGER_BUILTIN").map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../libraries/builtin")))
+mod builtin {
+    include!(concat!(env!("OUT_DIR"), "/builtin.rs"));
+}
+
+/// Built-in libraries are compiled in; `OPENPAGER_BUILTIN` (a folder) overrides them, for
+/// working on libraries without rebuilding.
+fn load_builtin(catalog: &mut Catalog) -> Vec<String> {
+    let mut problems = Vec::new();
+    if std::env::var_os("OPENPAGER_BUILTIN").is_some() {
+        return problems;
+    }
+    for (name, text) in builtin::BUILTIN {
+        match Library::parse(text) {
+            Ok(library) => catalog.add(PathBuf::from(format!("builtin:{name}")), library),
+            Err(e) => problems.push(format!("built-in {name}: {e}")),
+        }
+    }
+    problems
 }
 
 pub fn ai_libraries() -> PathBuf {
@@ -105,9 +120,13 @@ enum Event {
 }
 
 pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
-    let mut dirs = vec![builtin_libraries(), config_dir().join("libraries"), ai_libraries()];
+    let mut dirs: Vec<PathBuf> = std::env::var_os("OPENPAGER_BUILTIN").map(PathBuf::from).into_iter().collect();
+    dirs.extend([config_dir().join("libraries"), ai_libraries()]);
     dirs.extend(extra_libraries);
     let (mut catalog, rejected) = Catalog::load(&dirs);
+    for problem in load_builtin(&mut catalog) {
+        println!("  skipped {problem}");
+    }
     println!("Libraries: {} loaded from {:?}", catalog.len(), dirs);
     for r in &rejected {
         println!("  skipped {}: {}", r.path.display(), r.reason);
