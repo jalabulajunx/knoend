@@ -195,3 +195,43 @@ pub async fn complete(config: &AgentConfig, system: &str, messages: &[Message]) 
     reply["choices"][0]["message"]["content"].as_str().map(str::to_string)
         .filter(|t| !t.is_empty()).ok_or_else(|| "empty reply from the model".into())
 }
+
+/// Model names the provider offers, sorted. `key` overrides the saved/env key for this one request
+/// (used by the web app before the key is saved).
+pub async fn list_models(config: &AgentConfig, key: Option<&str>) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
+    let base = config.base_url()?;
+    let key = match key.filter(|k| !k.is_empty()) {
+        Some(k) => Some(k.to_string()),
+        None => config.api_key().ok().flatten(),
+    };
+    let request = if config.provider == Provider::Anthropic {
+        client.get(format!("{base}/v1/models?limit=100"))
+            .header("x-api-key", key.unwrap_or_default())
+            .header("anthropic-version", "2023-06-01")
+    } else {
+        let mut r = client.get(format!("{base}/models"));
+        if let Some(key) = key {
+            r = r.bearer_auth(key);
+        }
+        r
+    };
+    let response = request.send().await.map_err(|e| format!("could not reach {:?}: {e}", config.provider))?;
+    let status = response.status();
+    let reply: Value = response.json().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("{:?} returned {status}: {}", config.provider,
+                           reply["error"]["message"].as_str().unwrap_or("check the API key")));
+    }
+    let mut models: Vec<String> = reply["data"].as_array().into_iter().flatten()
+        .filter_map(|m| m["id"].as_str())
+        .map(|id| id.trim_start_matches("models/").to_string())
+        .collect();
+    // Keep chat models: drop embedding, image, speech, moderation and similar endpoints.
+    const NOT_CHAT: &[&str] = &["embed", "imagen", "image", "tts", "speech", "whisper", "transcribe", "audio",
+                                "realtime", "moderation", "dall-e", "veo", "aqa", "learnlm"];
+    models.retain(|m| { let l = m.to_lowercase(); !NOT_CHAT.iter().any(|w| l.contains(w)) });
+    models.sort();
+    models.dedup();
+    Ok(models)
+}

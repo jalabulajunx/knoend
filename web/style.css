@@ -153,3 +153,9 @@ pre {
   max-height: 240px; overflow: auto; font-size: 12px; background: var(--bg);
   border: 1px solid var(--line); border-radius: 8px; padding: 10px;
 }
+
+.row-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.small-button { padding: 4px 10px !important; font-size: 13px !important; }
+.compact-choices label { padding: 8px 12px; align-items: center; }
+.bars { font-family: ui-monospace, monospace; letter-spacing: -1px; color: var(--accent); margin-left: auto; }
+.lock { color: var(--muted); font-size: 12px; margin-left: 8px; }

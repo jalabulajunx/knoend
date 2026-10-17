@@ -230,6 +230,25 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "openpager.wifi.networks"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "re"
+        ],
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/wifiNetworks"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -736,6 +755,51 @@
       "properties": {
         "ok": {
           "type": "boolean"
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "wifiNetworks": {
+      "type": "object",
+      "required": [
+        "networks"
+      ],
+      "properties": {
+        "networks": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": [
+              "ssid",
+              "rssi",
+              "secured"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "ssid": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "rssi": {
+                "type": "integer",
+                "minimum": -127,
+                "maximum": 0
+              },
+              "channel": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 14
+              },
+              "secured": {
+                "type": "boolean"
+              }
+            }
+          }
         },
         "error": {
           "type": "string",

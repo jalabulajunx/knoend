@@ -54,8 +54,10 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/identify", post(identify))
         .route("/flash", post(flash))
         .route("/provision", post(provision))
+        .route("/wifi/scan", post(wifi_scan))
         .route("/drafts", get(drafts))
         .route("/ai", get(ai_settings).post(save_ai_settings))
+        .route("/ai/models", post(ai_models))
         .route("/assist", post(assist))
         .layer(middleware::from_fn_with_state(app.clone(), require_token));
     let router = Router::new()
@@ -322,4 +324,34 @@ async fn assist(State(app): State<App>, Json(request): Json<AssistRequest>) -> A
     let advice = openpager_agents::assistant::advise(&config, &request.question, &snapshot).await
         .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
     Ok(Json(json!({"answer": advice.answer, "actions": advice.actions, "sent": snapshot, "by": config.describe()})))
+}
+
+#[derive(Deserialize)]
+struct ModelsRequest {
+    provider: String,
+    api_key: Option<String>,
+    base_url: Option<String>,
+}
+
+/// The models a provider offers, for the web app's model list. A key given here is used for this
+/// request only and not stored.
+async fn ai_models(Json(request): Json<ModelsRequest>) -> ApiResult {
+    let config: openpager_agents::AgentConfig = toml::from_str(&format!(
+        "provider = {:?}\n{}", request.provider,
+        request.base_url.filter(|u| !u.trim().is_empty()).map(|u| format!("base_url = {:?}\n", u.trim())).unwrap_or_default()
+    )).map_err(|e| fail(StatusCode::BAD_REQUEST, e.to_string()))?;
+    let models = openpager_agents::provider::list_models(&config, request.api_key.as_deref().map(str::trim)).await
+        .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(json!({"models": models})))
+}
+
+/// Wi-Fi networks the board on this port can hear.
+async fn wifi_scan(State(app): State<App>, Json(request): Json<PortRequest>) -> ApiResult {
+    let _serial = app.shared.serial.clone().try_lock_owned()
+        .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;
+    let port = request.port.clone();
+    let networks = tokio::task::spawn_blocking(move || crate::provision::scan_wifi(&port)).await
+        .map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(networks))
 }

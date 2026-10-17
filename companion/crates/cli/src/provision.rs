@@ -24,22 +24,38 @@ fn hello(pairings: &Pairings) -> Value {
     })
 }
 
-/// Asks whatever is on `port` for its OpenPager identity. None: not OpenPager firmware (or not
-/// answering), so the caller falls back to the chip's boot ROM.
-pub fn probe(port: &str) -> Option<Value> {
-    let mut link = SerialLink::open(port).ok()?;
-    // Opening the port can reset some boards (the ONX's CH340 auto-reset); a board that restarts
-    // announces itself, so take that announcement if it comes, and ask only if it does not.
-    let deadline = Instant::now() + Duration::from_millis(2500);
-    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+/// After opening the port: the ONX's CH340 auto-reset may have restarted the board, and a request
+/// sent before its serial reader starts is lost. A restarted board announces itself; wait for that
+/// (plus a moment), or for 1.5 s of quiet meaning it did not restart. Returns the announcement.
+fn settle(link: &mut SerialLink) -> Option<Value> {
+    let deadline = Instant::now() + Duration::from_millis(4000);
+    let mut quiet_until = Instant::now() + Duration::from_millis(1500);
+    while let Some(left) = deadline.min(quiet_until).checked_duration_since(Instant::now()) {
         let Some(line) = link.read_line(left) else { break };
+        quiet_until = Instant::now() + Duration::from_millis(1500);
         if let Ok(packet) = serde_json::from_str::<openpager_core::protocol::Packet>(&line) {
             if packet.kind == "openpager.identity" {
+                link.drain(Duration::from_millis(300));
                 return Some(packet.body);
             }
         }
     }
-    link.request("openpager.identity", hello(&Pairings::load()), "openpager.identity", Duration::from_secs(2))
+    None
+}
+
+/// Sends a request and waits for its reply; sends it once more if the first goes unanswered.
+fn ask(link: &mut SerialLink, kind: &str, body: Value, reply: &str, wait: Duration) -> Result<openpager_core::protocol::Packet, String> {
+    link.request(kind, body.clone(), reply, wait).or_else(|_| link.request(kind, body, reply, wait))
+}
+
+/// Asks whatever is on `port` for its OpenPager identity. None: not OpenPager firmware (or not
+/// answering), so the caller falls back to the chip's boot ROM.
+pub fn probe(port: &str) -> Option<Value> {
+    let mut link = SerialLink::open(port).ok()?;
+    if let Some(announced) = settle(&mut link) {
+        return Some(announced);
+    }
+    ask(&mut link, "openpager.identity", hello(&Pairings::load()), "openpager.identity", Duration::from_secs(2))
         .ok().filter(|p| p.kind == "openpager.identity").map(|p| p.body)
 }
 
@@ -49,9 +65,9 @@ pub fn probe(port: &str) -> Option<Value> {
 pub fn provision(port: &str, wifi: Option<(&str, &str)>, log: &mut dyn FnMut(String)) -> Result<Provisioned, String> {
     let mut pairings = Pairings::load();
     let mut link = SerialLink::open(port)?;
-    link.drain(Duration::from_millis(1500));
+    settle(&mut link);
 
-    let identity = link.request("openpager.identity", hello(&pairings), "openpager.identity", Duration::from_secs(4))?;
+    let identity = ask(&mut link, "openpager.identity", hello(&pairings), "openpager.identity", Duration::from_secs(3))?;
     let board = identity.body["deviceId"].as_str().ok_or("board sent no deviceId")?.to_string();
     let profile = identity.body["board"]["profile"].as_str().unwrap_or("?").to_string();
     let firmware = identity.body["firmware"].as_str().unwrap_or("?").to_string();
@@ -100,4 +116,15 @@ pub fn provision(port: &str, wifi: Option<(&str, &str)>, log: &mut dyn FnMut(Str
         return Ok(Provisioned { board, profile, firmware, ip });
     }
     Err("the board did not join Wi-Fi within 30 s (check the network name and password; 2.4 GHz only)".into())
+}
+
+/// Networks the board on `port` can hear (it scans; 2.4 GHz only). Over serial only.
+pub fn scan_wifi(port: &str) -> Result<Value, String> {
+    let mut link = SerialLink::open(port)?;
+    settle(&mut link);
+    let reply = ask(&mut link, "openpager.wifi.scan", json!({}), "openpager.wifi.networks", Duration::from_secs(8))?;
+    if reply.kind == "openpager.error" {
+        return Err(reply.body["message"].as_str().unwrap_or("the board refused the scan").to_string());
+    }
+    Ok(reply.body)
 }
