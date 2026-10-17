@@ -161,3 +161,28 @@ Entry template:
   "Unsupported app: <name>" with a Configure button; Configure asks the companion service to run
   its AI agent to set the app up. (Replaces the plan's automatic drafting on first use: the agent
   now runs only when the person asks.)
+
+## 2026-10-17 - Sundar (Claude Code) - Rust companion: layout follows the focused app
+
+- Changed (branch `sundar/companion-core`, stacked on `sundar/serial-packets`): Rust workspace in
+  `companion/` with `openpager-core` (libraries, validation against the spec schema, matching,
+  library -> layout), `openpager-transport` (mDNS discovery, Wi-Fi handshake + frames, serial
+  pairing, key store `~/.config/openpager/companion.json` mode 600), `openpager-focus` (X11
+  `_NET_ACTIVE_WINDOW` events, WM_CLASS) and the `openpager` binary (`pair`, `run`).
+  First built-in library: `libraries/builtin/vscode.toml`.
+- Tested:
+  - `cargo test`: 11 tests. The spec's example libraries build exactly the spec's hand-written
+    layout packets (a deliberate F5->F6 change made the test fail, then was reverted); invalid
+    libraries rejected for the intended reasons; the Rust MAC/proof code reproduces
+    `spec/examples/wifi-session.json`, which the Python tools generated (two independent
+    implementations agree).
+  - On the board (firmware `2756255`, Arch/i3): `openpager pair` over USB (Wi-Fi step skipped; the
+    board already had the network), then `openpager run` found and authenticated the board over
+    Wi-Fi. Over ~15 app switches (Claude, VS Code, Xfce terminal, Firefox, Antigravity) each switch
+    pushed exactly one layout: VS Code got its library, the others the "Unsupported app: <name>"
+    screen with a Configure key. Configure reached the service. Sundar: "super responsive and
+    slick" (switch latency not measured in numbers).
+- Decided: window titles are never logged or sent anywhere; only the app's WM_CLASS is used.
+- Open: firmware card screen for unsupported apps (now a 1-key layout + status text); the AI agent
+  behind Configure (any provider: OpenAI-compatible incl. OpenRouter, Gemini, Ollama; plus
+  Anthropic); reconnect after the board reboots not yet exercised.

@@ -1,0 +1,10 @@
+[package]
+name = "openpager-focus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+openpager-core = { version = "0.1.0", path = "../core" }
+x11rb = "0.14.0"
