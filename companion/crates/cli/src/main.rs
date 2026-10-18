@@ -246,11 +246,18 @@ pub async fn configure(focus: &Focus, save: bool) -> Result<(PathBuf, Library), 
 
 /// Drafts keys for the website in `focus` from the page's controls (the extension lists them; the
 /// person must have turned board buttons on for the site), then saves them.
-pub async fn configure_site(browser: &browser::Browser, focus: &Focus) -> Result<(PathBuf, Library), String> {
+pub async fn configure_site(shared: &service::Shared, focus: &Focus) -> Result<(PathBuf, Library), String> {
+    let browser = &shared.browser;
     let web = focus.web.as_ref().ok_or("no website is focused")?;
     let site = openpager_agents::site::site_of(&web.host);
     let config = agent_config()?;
-    let inventory = browser.request(serde_json::json!({"type": "inventory"}), std::time::Duration::from_secs(10)).await?;
+    let read = || browser.request(serde_json::json!({"type": "inventory"}), std::time::Duration::from_secs(10));
+    let mut inventory = read().await?;
+    if inventory["error"] == "not-granted" {
+        shared.ask_site_permission(&site).await?;
+        shared.board_status(format!("Configuring {site}: reading the page..."));
+        inventory = read().await?;
+    }
     if inventory["ok"] != true {
         return Err(match inventory["error"].as_str() {
             Some("not-granted") => format!("turn on board buttons for {site} in the OpenPager extension first"),

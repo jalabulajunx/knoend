@@ -496,3 +496,20 @@ Entry template:
   article navigated to a random article.
 - Not tested: MPRIS commands (headless Firefox does not register a player until something plays;
   needs Sundar's board), the popup button end to end, Configure on the board for a site.
+
+## 2026-10-18 - Sundar (Claude Code) - Site keys from the board
+
+- Sundar: making keys for a site should be done from the board, not (only) the extension.
+- Already there: on a site with no keys the board shows Configure, which runs the same drafting.
+- Changed: when Configure or a page key needs a site that is not allowed yet, the service asks the
+  extension (`grant`), which opens an OpenPager page next to the site with Allow / Not now (browsers
+  only grant on a click); the board says "Allow <site> in your browser". On Allow it returns to the
+  page and carries on (reads the page and drafts keys, or repeats the key). Spec: `grant` message.
+- Tested (headless Firefox): the grant request opens `grant.html` next to the page with the site's
+  origin. Not tested: pressing Allow / Not now (BiDi cannot evaluate in extension pages; Firefox's
+  permission prompt cannot be clicked headless), the whole flow from the board.
+- Mistake while testing: a stand-in service sent one `grant` to whichever extension connected last,
+  which may have been Sundar's own Firefox (an "OpenPager: allow this site" tab; it closes itself
+  after two minutes). The test now targets only the test browser's connection.
+- Open (for Tom's dynamic grid): a way to redo keys from the board on a site that already has them
+  (all 9 slots used), e.g. a last page that always offers "Make keys again".

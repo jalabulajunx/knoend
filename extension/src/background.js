@@ -97,7 +97,9 @@ async function onMessage(message) {
     if (serviceRunning) reportTab();
     return;
   }
-  if (message.type === "act") {
+  if (message.type === "grant") {
+    send({ type: "result", request: message.request, ...(await askToGrant(message.request)) });
+  } else if (message.type === "act") {
     send({ type: "result", request: message.request, ...(await act(message.action)) });
   } else if (message.type === "inventory") {
     send({ type: "inventory", request: message.request, ...(await inventory()) });
@@ -124,6 +126,34 @@ async function act(action) {
   } catch (e) {
     return { ok: false, error: String(e.message || e).slice(0, 120) };
   }
+}
+
+// ---- the board asks for a site that is not allowed yet ----
+
+const grants = new Map();  // request -> { resolve, pageTab, grantTab }
+
+/** Opens a small page asking to allow the active site; resolves when the person answers (or after
+ *  two minutes). Returns to the page afterwards. */
+async function askToGrant(request) {
+  const tab = await activeTab();
+  if (!tab || !isWeb(tab.url)) return { ok: false, error: "not-active" };
+  if (await granted(tab.url)) return { ok: true };
+  const origin = new URL(tab.url).origin;
+  const page = api.runtime.getURL(`grant.html?origin=${encodeURIComponent(origin)}&request=${encodeURIComponent(request)}`);
+  const grantTab = await api.tabs.create({ url: page, index: tab.index + 1, openerTabId: tab.id });
+  return new Promise((resolve) => {
+    grants.set(request, { resolve, pageTab: tab.id, grantTab: grantTab.id });
+    setTimeout(() => settleGrant(request, false), 120000);
+  });
+}
+
+async function settleGrant(request, ok) {
+  const pending = grants.get(request);
+  if (!pending) return;
+  grants.delete(request);
+  await api.tabs.update(pending.pageTab, { active: true }).catch(() => {});
+  await api.tabs.remove(pending.grantTab).catch(() => {});
+  pending.resolve(ok ? { ok: true } : { ok: false, error: "not-granted" });
 }
 
 async function inventory() {
@@ -271,6 +301,8 @@ function pageInventory() {
 api.runtime.onMessage.addListener((message, sender, reply) => {
   if (message && message.type === "status") {
     reply({ host: !!port, service: serviceRunning, hostError, configure: configureStatus });
+  } else if (message && message.type === "grant-result") {
+    settleGrant(message.request, !!message.granted);
   } else if (message && message.type === "configure") {
     configureStatus = { ok: true, text: "Reading the page and asking the AI for keys (about 10 seconds)...", done: false };
     send({ type: "configure" });

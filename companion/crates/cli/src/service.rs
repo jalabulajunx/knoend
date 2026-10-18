@@ -57,6 +57,8 @@ pub struct Shared {
     pub browser: Arc<crate::browser::Browser>,
     /// Media players (MPRIS on Linux); None where there are none to read.
     pub media: Option<Arc<openpager_media::Players>>,
+    /// The service loop's inbox, so background jobs can put a line on the board's status bar.
+    inbox: std::sync::OnceLock<mpsc::Sender<Event>>,
 }
 
 impl Shared {
@@ -66,7 +68,8 @@ impl Shared {
                           typist: Arc::new(std::sync::Mutex::new(None)),
                           recent: std::sync::Mutex::new(std::collections::VecDeque::new()),
                           browser: Arc::new(crate::browser::Browser::default()),
-                          media: openpager_media::Players::connect().ok().map(Arc::new) })
+                          media: openpager_media::Players::connect().ok().map(Arc::new),
+                          inbox: std::sync::OnceLock::new() })
     }
 
     /// Publishes an event to the web app and prints it for the terminal.
@@ -81,6 +84,26 @@ impl Shared {
             }
         }
         let _ = self.events.send(json!({"kind": kind, "data": data}));
+    }
+
+    /// Shows `text` on the board's status bar (highlighted), from any task.
+    pub fn board_status(&self, text: String) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.try_send(Event::Status(text));
+        }
+    }
+
+    /// Asks the browser to let the board act on the active site (the extension opens a page with
+    /// an Allow button; browsers only grant on a click). Waits up to two minutes for the answer.
+    pub async fn ask_site_permission(&self, site: &str) -> Result<(), String> {
+        self.board_status(format!("Allow {site} in your browser (OpenPager tab)"));
+        let answer = self.browser.request(json!({"type": "grant"}), Duration::from_secs(125)).await?;
+        if answer["ok"] == true {
+            Ok(())
+        } else {
+            self.board_status(format!("{site} not allowed: the board cannot act there"));
+            Err(format!("{site} was not allowed in the browser"))
+        }
     }
 
     pub fn recent(&self) -> Vec<String> {
@@ -128,6 +151,8 @@ enum Event {
     Players(Vec<NowPlaying>),
     /// The extension's popup asked to configure the focused site.
     ConfigureSite,
+    /// A line for the board's status bar from a background job.
+    Status(String),
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
@@ -149,6 +174,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     shared.update(|s| s.libraries = count).await;
 
     let (events, mut inbox) = mpsc::channel::<Event>(64);
+    let _ = shared.inbox.set(events.clone());
     spawn_focus_watcher(events.clone(), shared.clone());
     {
         let (tabs_tx, mut tabs_rx) = mpsc::channel(16);
@@ -264,6 +290,9 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     if let Some(target) = on_board_packet(&packet, current.as_ref(), &catalog, &players, &mut sender, &shared).await {
                         start_configure(target, &events, &shared).await;
                     }
+                }
+                Event::Status(text) => {
+                    let _ = sender.send("openpager.status", json!({"text": board_text(&text, 80), "level": "attention", "ttl": 20})).await;
                 }
                 Event::ConfigureSite => match effective(&focus, &tab).filter(|f| f.web.is_some()) {
                     Some(target) => {
@@ -468,7 +497,7 @@ async fn start_configure(target: Focus, events: &mpsc::Sender<Event>, shared: &A
     shared.update(|s| s.configuring = Some(name)).await;
     tokio::spawn(async move {
         let result = if target.web.is_some() {
-            crate::configure_site(&shared.browser, &target).await
+            crate::configure_site(&shared, &target).await
         } else {
             crate::configure(&target, true).await
         };
@@ -562,8 +591,15 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, catalog: &Catal
                     if library_key.action.is_web() {
                         let (shared, label) = (shared.clone(), library_key.label.clone());
                         let action = serde_json::to_value(&library_key.action).unwrap_or_default();
+                        let site = focus.and_then(|f| f.web.as_ref()).map(|w| openpager_agents::site::site_of(&w.host)).unwrap_or_default();
                         tokio::spawn(async move {
-                            let text = match shared.browser.request(json!({"type": "act", "action": action}), Duration::from_secs(5)).await {
+                            let act = || shared.browser.request(json!({"type": "act", "action": action.clone()}), Duration::from_secs(5));
+                            let mut answer = act().await;
+                            // Not allowed yet: ask in the browser, then do it.
+                            if answer.as_ref().is_ok_and(|r| r["error"] == "not-granted") && shared.ask_site_permission(&site).await.is_ok() {
+                                answer = act().await;
+                            }
+                            let text = match answer {
                                 Ok(r) if r["ok"] == true => format!("  {label}: done in the browser"),
                                 Ok(r) => format!("  {label}: the browser could not do it ({})", r["error"].as_str().unwrap_or("unknown")),
                                 Err(e) => format!("  {label}: {e}"),

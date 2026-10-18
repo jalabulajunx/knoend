@@ -44,6 +44,7 @@ Service to extension:
 | --- | --- | --- |
 | `act` | `request`, `action` (see 4) | Carry out a key's action in the active tab. |
 | `inventory` | `request` | Describe the active page's controls (only on a granted site). |
+| `grant` | `request` | The board wants to act on the active site, which is not allowed yet: open the extension's "Allow" page next to it and answer (`result`) once the person chose, within two minutes. |
 | `service` | `running` (bool) | Sent by the host itself when the service is (not) reachable. |
 | `configure-status` | `ok`, `text` | How `configure` ended (keys made, or why not). |
 
@@ -108,7 +109,9 @@ inventory.
 
 - At install the extension holds `tabs` and `nativeMessaging` only: it can see which site is
   active, nothing on the page.
-- Board buttons are turned on per site (extension popup, or the web app). That asks the browser for
+- Board buttons are turned on per site (extension popup; or, when a board key or Configure needs a
+  site that is not allowed, a small extension page the extension opens next to it with Allow / Not
+  now, since browsers only accept a permission request from a click in the browser). That asks the browser for
   the site's host permission (`https://example.com/*`); only then may the extension read the
   inventory or act there. Turning a site off removes the permission.
 - The service sends the URL host to the AI drafting agent, never the full URL; the inventory goes to
