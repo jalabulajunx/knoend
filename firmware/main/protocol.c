@@ -204,6 +204,8 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
         strcpy(layout.id, id);
         strcpy(layout.name, name);
         layout.reviewed = !cJSON_IsFalse(reviewed);
+        const char *detail = get_string(body, "detail", UI_DETAIL_BYTES - 1);
+        snprintf(layout.detail, sizeof(layout.detail), "%s", detail != NULL ? detail : "");
     }
 
     const cJSON *key;
@@ -239,6 +241,12 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
         }
         if (error[0] == '\0') {
             strcpy(target->label, label);
+            // An icon name the board does not know is ignored (the label still shows).
+            const char *icon = get_string(key, "icon", UI_ICON_BYTES - 1);
+            target->icon[0] = '\0';
+            if (icon != NULL && strspn(icon, "abcdefghijklmnopqrstuvwxyz0123456789_") == strlen(icon)) {
+                strcpy(target->icon, icon);
+            }
             target->confirm = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(key, "confirm"));
         }
     }

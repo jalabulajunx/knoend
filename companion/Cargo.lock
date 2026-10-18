@@ -2115,6 +2115,7 @@ dependencies = [
  "futures-util",
  "openpager-agents",
  "openpager-core",
+ "openpager-desktop",
  "openpager-flash",
  "openpager-focus",
  "openpager-input",
@@ -2150,6 +2151,14 @@ dependencies = [
  "serde_json",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "openpager-desktop"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "zbus",
 ]
 
 [[package]]

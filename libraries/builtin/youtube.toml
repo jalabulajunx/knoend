@@ -12,30 +12,37 @@ web = ["youtube.com"]
 
 [[key]]
 label = "Search"
+icon = "search"
 action = { kind = "focus", selector = "input[name=\"search_query\"]" }
 
 [[key]]
 label = "Home"
+icon = "home"
 action = { kind = "open", url = "/" }
 
 [[key]]
 label = "Subscriptions"
+icon = "subscriptions"
 action = { kind = "open", url = "/feed/subscriptions" }
 
 [[key]]
 label = "History"
+icon = "history"
 action = { kind = "open", url = "/feed/history" }
 
 [[key]]
 label = "Shorts"
+icon = "movie"
 action = { kind = "open", url = "/shorts" }
 
 [[key]]
 label = "You"
+icon = "person"
 speak = "Your library"
 action = { kind = "open", url = "/feed/you" }
 
 [[key]]
 label = "Play/Pause"
+icon = "play_arrow"
 speak = "Play or pause"
 action = { kind = "media", command = "toggle" }

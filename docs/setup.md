@@ -107,6 +107,21 @@ then walks you through the setup:
 You can now unplug the board from the computer and power it from any USB charger on the same
 network. The service finds it by mDNS.
 
+### Keep it running
+
+`./openpager serve` stops when its terminal closes. To run it in the background from now on,
+started at login and restarted if it stops:
+
+```bash
+./openpager service install
+```
+
+On Linux this is a systemd user service (`journalctl --user -u openpager -f` shows its log); on a
+Mac, a LaunchAgent (log in `~/Library/Logs/openpager.log`; allow `openpager` itself under
+Accessibility so it can type keys). `./openpager service status` and `./openpager service uninstall`
+check and remove it. Stop any `openpager serve` you started by hand first: two copies fight over the
+board.
+
 ### 4. Use it
 
 - **Switch apps.** The board's layout follows the focused window. VS Code has a built-in layout.

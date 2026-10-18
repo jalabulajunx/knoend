@@ -577,3 +577,108 @@ Entry template:
   over the site keys). Not tested: the full-screen report itself: headless Firefox cannot go full
   screen even with `full-screen-api.allow-trusted-requests-only` off, and there is no Xvfb here (not
   installed; would ask first). Needs Sundar's Slides test.
+
+## 2026-10-18 - Sundar (Claude Code) - Icons on the board; desktop notifications; Claude desktop prep
+
+- Sundar: presenting worked (the Slides remote). Next: Claude desktop and other app-specific
+  dynamic keys, and icons instead of text on keys (Material Icons). He chose to have me do the icons
+  end to end (firmware included; Tom's grid rework merges with it) and to turn on accessibility now.
+- Icons:
+  - `spec/icons.txt`: 132 Material Icons names (Apache-2.0, google/material-design-icons), the one
+    list for firmware, companion and AI. `tools/build_icons.py` renders them from the Material Icons
+    font (32x32, 4-bit alpha) into `firmware/components/icons/` with Google's LICENSE and a NOTICE.
+  - Spec: optional `icon` on layout keys (packet schema) and library keys; unknown names are
+    rejected by the library validator and ignored by the board (label only).
+  - Firmware: keys with a known icon draw it (white) with a small label under it; others as before.
+    Image +66 KB (app 1.75 MB, 44% of the partition free).
+  - Companion: layouts carry icons; media row and Configure key have icons; both drafting agents
+    get the icon list and choose icons (Gemini on Wikipedia: search, shuffle, home, chat, history,
+    public, schedule, explore, dark_mode). Built-in VS Code, YouTube (browse, video) and Slides
+    remote have icons.
+- Desktop notifications: new crate `openpager-desktop`; the service monitors `Notify` calls on the
+  session D-Bus (read only) and puts notifications from Claude, Codex, Antigravity, ChatGPT and
+  Cursor on the board's status bar (alert, 60 s). Tested with `notify-send` (app name, desktop entry,
+  summary and body arrive).
+- Claude desktop: it is Electron (`/usr/lib/claude-desktop`) and exposes nothing on the
+  accessibility bus while session accessibility is off. With Sundar's go-ahead: `org.a11y.Status
+  IsEnabled` set true (gsettings `toolkit-accessibility` was already true). Claude desktop must be
+  restarted once to expose its tree; the accessibility adapter (working / waiting / approval,
+  pressing its buttons, sending a message) comes after that.
+- Tested on the ONX2432G028: icon firmware flashed (`idf.py flash`, hashes verified); the board came
+  back and reconnected over Wi-Fi. Not yet seen by Sundar on the board.
+- Generated icon preview checked (all 132 render as the Material designs).
+
+## 2026-10-18 - Sundar (Claude Code) - Background service install
+
+- After Sundar restarted Claude desktop, `openpager serve` (started inside the previous Claude Code
+  session) was gone: no notifications or layouts reached the board. Sundar: running in the background
+  should be part of installing the service.
+- Changed: `openpager service install|uninstall|status`: a systemd user service on Linux
+  (`openpager.service`, `Restart=always`, starts at login, journal log) and a LaunchAgent on macOS
+  (`KeepAlive`, log in `~/Library/Logs/openpager.log`; Accessibility must then allow the `openpager`
+  binary itself). Setup guide and knowledge base updated.
+- Tested: unit tests for the unit/plist text; the generated unit passes `systemd-analyze --user
+  verify`; `service status` reports "not installed". Not installed on Sundar's machine yet (he runs
+  `serve` in a terminal; switching is his call). LaunchAgent untested (no Mac).
+- Notifications design note (Sundar asked why the board kept the app's keys): notifications go to the
+  status line and do not change keys; while Claude is in front it usually sends none, so its waiting
+  state needs the accessibility adapter. Proposed: an agent notification also turns one key into
+  "<app> needs you" (tap to switch to it).
+
+## 2026-10-18 - Sundar (Claude Code) - Claude Code asks through the board (hooks)
+
+- Sundar: tapping a Claude notification should show what Claude wants; Claude's "needs input"
+  in Accept Edits and Manual modes must reach the board so he can act there.
+- Found: after restarting Claude desktop with session accessibility on, the app is on the
+  accessibility bus but only as two empty frames (Electron exposes page content only when launched
+  with `--force-renderer-accessibility`). Chose Claude Code's hooks instead (Sundar: install for all
+  his sessions). From the hooks docs: PermissionRequest decision `behavior` allow/deny,
+  `updatedPermissions` (echo a `permission_suggestions` entry = always allow), `interrupt`; no output
+  leaves the normal flow; in the desktop app hooks run alongside its dialog, first answer applies.
+- Changed: `openpager hook permission|notification` (run by the hooks; relays over
+  `$XDG_RUNTIME_DIR/openpager/agents.sock`, 0600; waits up to 300 s; prints nothing on any problem);
+  service shows a request as layout `system.approve` (Allow, Always when offered, Deny, Stop; Allow
+  needs a second tap for destructive commands; status line "Claude: <tool> <command or file>"),
+  queues several, withdraws a request answered on screen (hook gone) within a second, then restores
+  the app's keys; agent notifications (idle, needs input, completed) go to the status line.
+  `openpager claude-hooks install|uninstall` edits `~/.claude/settings.json` (backup first; other
+  settings untouched; installing twice changes nothing). Installed on Sundar's machine.
+- Tested: unit tests (install/uninstall keep other hooks, summaries, destructive check); the hook
+  against a stand-in service prints the documented JSON for allow, always (with the suggestion as
+  `updatedPermissions`), deny and stop, and nothing when no service listens. Not tested: on the
+  board with a real Claude session (needs the new service build and a new session).
+- Overlap with Tom's terminal-aware work: the same hooks serve the Claude CLI; the board side
+  (`system.approve`) and `openpager hook` are shared, terminal-specific keys stay his.
+
+## 2026-10-18 - Sundar (Claude Code) - Permission requests explained on the board
+
+- Sundar's photo: the request reached the board (Allow / Always / Deny / Stop) but the status line
+  showed "Claude needs you - Pair OpenPager...": he could not tell what he was allowing, once or
+  always. Cause: a Claude notification (desktop, or the Notification hook) replaced the request's
+  status text and expired after 60 s.
+- Changed: layouts may carry `detail` (spec: packet schema, up to 240 characters); the firmware shows
+  it in place of the middle row (slots 4-6 hidden). A permission request's detail: the tool and its
+  full input, the agent's description, "Allow = this time only", and what Always remembers and where,
+  from the agent's suggestion (e.g. "Always = allow Bash(ls:*) from now on in this project").
+  Notifications no longer overwrite the status line while a request is pending.
+- Tested: unit test for the detail text; spec validator; firmware built (app 1.75 MB) and flashed to
+  the ONX (hashes verified). Seen on the board: see the next entry.
+
+## 2026-10-18 - Sundar (Claude Code) - Readable request details; requests answered in the app leave the board
+
+- Sundar: the details worked but did not fit ("a small scroll could have helped by readjusting the
+  button heights"); and a request answered with keyboard/mouse in Claude stayed on the board whenever
+  he was on Claude.
+- Changed (firmware, flashed to the ONX, hashes verified): with a detail, the top and bottom rows
+  shrink to two thirds (label only, 14 px) and the detail panel takes the rest (about 104 px of the
+  ONX's 200 px grid), wraps, and scrolls with a swipe (starts at the top for each new detail).
+- Cause of the stuck request: Claude Code does not stop a PermissionRequest hook when the person
+  answers in its own window, so the hook kept waiting (up to 300 s). Changed: `claude-hooks install`
+  also adds PostToolUse, Stop and UserPromptSubmit hooks (`openpager hook event`, 5 s, report only).
+  A session cannot move on while its permission question is open, so the same session finishing that
+  tool (same tool and input), stopping, taking a new prompt or going idle withdraws its request and
+  brings the app's keys back. Installing again no longer replaces the first settings backup (it had,
+  once, on Sundar's machine: the backup now holds the first OpenPager hooks, not the original; uninstall
+  still removes only ours).
+- Tested: unit tests (settling rule: same session and tool/input, stop, other sessions ignored). Not
+  yet on the board: needs Sundar to restart `openpager serve` and a new Claude Code session.

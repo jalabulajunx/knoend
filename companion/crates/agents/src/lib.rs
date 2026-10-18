@@ -42,6 +42,7 @@ linux = ["example"]
 [[key]]
 label = "Save"              # at most 14 characters so it fits on the key
 speak = "Save file"         # optional, spoken aloud, at most 80 characters
+icon = "save"               # optional: one name from the icon list given with the app
 action = { kind = "shortcut", keys = "Primary+S" }
 
 Rules:
@@ -54,7 +55,9 @@ Rules:
   leave that key out: fewer correct keys are better than nine guesses.
 - Any key that deletes, sends, submits, closes without saving or buys something must have
   confirm = true.
-- Put the most used actions first."#;
+- Put the most used actions first.
+- Give each key the icon that best shows its action, from the icon list only; leave icon out if
+  none fits."#;
 
 fn user_prompt(focus: &Focus) -> String {
     let os = match focus.os {
@@ -62,8 +65,8 @@ fn user_prompt(focus: &Focus) -> String {
         Os::Macos => "macOS",
         Os::Windows => "Windows",
     };
-    format!("Application: {}\nWindow class: {}\nWindow instance: {}\nOperating system: {os}\n",
-            focus.display_name(), focus.app, focus.instance)
+    format!("Application: {}\nWindow class: {}\nWindow instance: {}\nOperating system: {os}\nIcon list: {}\n",
+            focus.display_name(), focus.app, focus.instance, openpager_core::library::icon_names().join(" "))
 }
 
 /// A slug for ids and file names: lowercase letters, digits and dashes.

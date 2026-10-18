@@ -155,6 +155,10 @@ enum Event {
     ConfigureSite,
     /// A line for the board's status bar from a background job.
     Status(String),
+    /// A desktop notification from an app the board follows (Claude, Codex, ...).
+    Notified(openpager_desktop::Notification),
+    /// A coding agent's hook: a permission request or a notification.
+    Agent(crate::agent_hooks::AgentEvent),
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
@@ -198,6 +202,21 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     if let Some(media) = shared.media.clone() {
         spawn_media_watcher(media, events.clone());
     }
+    spawn_notification_watcher(events.clone());
+    {
+        let (agents_tx, mut agents_rx) = mpsc::channel(16);
+        tokio::spawn(crate::agent_hooks::serve(agents_tx));
+        let events = events.clone();
+        tokio::spawn(async move {
+            while let Some(e) = agents_rx.recv().await {
+                if events.send(Event::Agent(e)).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    // Permission requests from coding agents, oldest first; the board shows the first.
+    let mut approvals: std::collections::VecDeque<Approval> = std::collections::VecDeque::new();
 
     // What the OS says is focused, and the browser's active tab; `effective` joins them.
     let mut focus: Option<Focus> = None;
@@ -245,11 +264,31 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         // ping every 10 s and treat 25 s without any packet as a lost link.
         let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
         heartbeat.tick().await;
+        let mut second = tokio::time::interval(Duration::from_secs(1));
+        if let Some(a) = approvals.front() {
+            show_approval(&mut sender, a, &mut shown, &shared).await;
+        }
         let mut last_heard = tokio::time::Instant::now();
 
         loop {
             let event = tokio::select! {
                 event = inbox.recv() => match event { Some(e) => e, None => return },
+                _ = second.tick() => {
+                    // A request answered elsewhere (the agent's own prompt) leaves the board.
+                    let before = approvals.len();
+                    approvals.retain(|a| !a.answer.is_closed());
+                    if approvals.len() != before {
+                        println!("  permission request answered elsewhere; withdrawn from the board");
+                        shown = None;
+                        match approvals.front() {
+                            Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
+                            None => if let Some(f) = effective(&focus, &tab) {
+                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                            },
+                        }
+                    }
+                    continue;
+                }
                 _ = heartbeat.tick() => {
                     if last_heard.elapsed() > Duration::from_secs(25) {
                         Event::LinkDown("no reply from the board for 25 s".into())
@@ -296,12 +335,80 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                     }
                 }
+                Event::Board(packet) if packet.kind == "openpager.key" && packet.body["layout"] == APPROVE => {
+                    let key = packet.body["key"].as_u64().unwrap_or(0);
+                    let decision = match key {
+                        1 => Some(crate::agent_hooks::Decision::Allow),
+                        2 if approvals.front().is_some_and(|a| a.can_remember) => Some(crate::agent_hooks::Decision::AlwaysAllow),
+                        3 => Some(crate::agent_hooks::Decision::Deny),
+                        7 => Some(crate::agent_hooks::Decision::Stop),
+                        _ => None,
+                    };
+                    if let (Some(decision), Some(front)) = (decision, approvals.pop_front()) {
+                        println!("  answered on the board: {decision:?} ({})", front.summary);
+                        let _ = front.answer.send(decision);
+                        shown = None;
+                        match approvals.front() {
+                            Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
+                            None => if let Some(f) = effective(&focus, &tab) {
+                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                            },
+                        }
+                    }
+                }
                 Event::Board(packet) => {
                     let current = effective(&focus, &tab);
                     if let Some(target) = on_board_packet(&packet, current.as_ref(), &shown_actions, &players, &mut sender, &shared).await {
                         let scope = site_scope(&catalog, &target);
                         start_configure(target, scope, &events, &shared).await;
                     }
+                }
+                Event::Agent(crate::agent_hooks::AgentEvent::Permission { request, answer }) => {
+                    let summary = crate::agent_hooks::summary(&request);
+                    println!("Permission request: {summary}");
+                    approvals.push_back(Approval { request: request.clone(), summary, detail: crate::agent_hooks::detail(&request), destructive: crate::agent_hooks::destructive(&request),
+                                                   can_remember: request["permission_suggestions"].as_array().is_some_and(|s| !s.is_empty()),
+                                                   answer });
+                    if approvals.len() == 1 {
+                        show_approval(&mut sender, approvals.front().unwrap(), &mut shown, &shared).await;
+                    }
+                }
+                Event::Agent(crate::agent_hooks::AgentEvent::Notification(n)) => {
+                    // Answered in Claude's own window? Then the request leaves the board.
+                    let before = approvals.len();
+                    approvals.retain(|a| !crate::agent_hooks::settles(&n, &a.request));
+                    if approvals.len() != before {
+                        println!("  permission request settled in the app; withdrawn from the board");
+                        shown = None;
+                        match approvals.front() {
+                            Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
+                            None => if let Some(f) = effective(&focus, &tab) {
+                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                            },
+                        }
+                    }
+                    if n["hook_event_name"] != "Notification" {
+                        continue;
+                    }
+                    let kind = n["notification_type"].as_str().unwrap_or("");
+                    // Permission prompts arrive as PermissionRequest already.
+                    if !matches!(kind, "permission_prompt" | "auth_success" | "elicitation_complete" | "elicitation_response") {
+                        let message = n["message"].as_str().unwrap_or("needs your attention");
+                        println!("Agent notification ({kind}): {message}");
+                        let text = board_text(&format!("Claude: {message}"), 80);
+                        if approvals.is_empty() {
+                            let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
+                        }
+                    }
+                }
+                Event::Notified(n) => {
+                    println!("Notification from {}: {}", n.app, n.summary);
+                    let text = board_text(&format!("{}: {}", n.app, if n.summary.is_empty() { &n.body } else { &n.summary }), 80);
+                    // A pending permission request keeps the status line (it is what the notification is about).
+                    if approvals.is_empty() {
+                        let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
+                    }
+                    shared.emit("notification", json!({"app": n.app, "summary": n.summary}));
                 }
                 Event::Status(text) => {
                     let _ = sender.send("openpager.status", json!({"text": board_text(&text, 80), "level": "attention", "ttl": 20})).await;
@@ -449,6 +556,9 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
 /// board already shows exactly this.
 async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, players: &[NowPlaying],
               shown: &mut Option<String>, shown_actions: &mut HashMap<u8, KeyRef>, shared: &Shared) {
+    if shown.as_deref().is_some_and(|s| s.starts_with(APPROVE_SIGNATURE)) {
+        return; // a permission request is on the board; it stays until answered
+    }
     let player = openpager_media::for_focus(players, &focus.app, &focus.instance);
     let mut actions: HashMap<u8, KeyRef> = HashMap::new();
     let (mut body, mut status) = match catalog.find(focus) {
@@ -462,6 +572,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
                         if let Action::Media { command: MediaCommand::Toggle, .. } = key.action {
                             if let Some(k) = body.keys.iter_mut().find(|k| k.key == slot) {
                                 k.label = if player.playing() { "Pause".into() } else { "Play".into() };
+                                k.icon = Some(if player.playing() { "pause" } else { "play_arrow" }.into());
                             }
                         }
                     }
@@ -486,15 +597,16 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     // controls do), unless the layout has media keys of its own.
     if let Some(player) = player.filter(|p| p.playing() || (p.status == "Paused" && !p.title.is_empty())) {
         if !actions.values().any(|k| matches!(k.action, Action::Media { .. })) {
-            let row = [(7u8, player.can_go_previous, "Prev", "Previous track", MediaCommand::Previous),
-                       (8, true, if player.playing() { "Pause" } else { "Play" }, "Play or pause", MediaCommand::Toggle),
-                       (9, player.can_go_next, "Next", "Next track", MediaCommand::Next)];
-            for (slot, offered, label, speak, command) in row {
+            let row = [(7u8, player.can_go_previous, "Prev", "Previous track", "skip_previous", MediaCommand::Previous),
+                       (8, true, if player.playing() { "Pause" } else { "Play" }, "Play or pause",
+                        if player.playing() { "pause" } else { "play_arrow" }, MediaCommand::Toggle),
+                       (9, player.can_go_next, "Next", "Next track", "skip_next", MediaCommand::Next)];
+            for (slot, offered, label, speak, icon, command) in row {
                 if !offered {
                     continue;
                 }
                 body.keys.retain(|k| k.key != slot);
-                body.keys.push(LayoutKey { key: slot, label: label.into(), speak: Some(speak.into()), confirm: false, send: Send::Event(true) });
+                body.keys.push(LayoutKey { key: slot, label: label.into(), speak: Some(speak.into()), icon: Some(icon.into()), confirm: false, send: Send::Event(true) });
                 actions.insert(slot, KeyRef { label: label.into(), action: Action::Media { command, selector: None } });
             }
             body.keys.sort_by_key(|k| k.key);
@@ -563,6 +675,44 @@ async fn draft_new_page(catalog: &Catalog, focus: &Focus, drafted: &DraftedPages
     start_configure(focus.clone(), site_scope(catalog, focus), events, shared).await;
 }
 
+/// Layout id of a coding agent's permission request on the board.
+const APPROVE: &str = "system.approve";
+const APPROVE_SIGNATURE: &str = "approve|";
+
+/// A coding agent waiting for the person's answer.
+struct Approval {
+    /// The hook's event (session, tool, input), to tell when it was answered elsewhere.
+    request: Value,
+    summary: String,
+    detail: String,
+    destructive: bool,
+    /// The agent offered a rule to remember ("always allow").
+    can_remember: bool,
+    answer: tokio::sync::oneshot::Sender<crate::agent_hooks::Decision>,
+}
+
+/// Shows a permission request: Allow, Always (when the agent offers it), Deny, Stop.
+async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, shown: &mut Option<String>, shared: &Shared) {
+    let key = |slot: u8, label: &str, speak: &str, icon: &str, confirm: bool| LayoutKey {
+        key: slot, label: label.into(), speak: Some(speak.into()), icon: Some(icon.into()), confirm, send: Send::Event(true) };
+    let mut keys = vec![key(1, "Allow", "Allow", "check", approval.destructive)];
+    if approval.can_remember {
+        keys.push(key(2, "Always", "Always allow this", "done_all", approval.destructive));
+    }
+    keys.push(key(3, "Deny", "Deny", "close", false));
+    keys.push(key(7, "Stop", "Deny and stop Claude", "stop_circle", false));
+    let detail: String = approval.detail.chars().map(|c| if c == '\n' || c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).take(240).collect();
+    let body = LayoutBody { layout: APPROVE.into(), name: "Claude needs you".into(), source: "default".into(), reviewed: true, keys,
+                            detail: Some(detail) };
+    println!("  -> permission request on the board [{}]", approval.summary);
+    if sender.send("openpager.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
+        let level = if approval.destructive { "alert" } else { "attention" };
+        let _ = sender.send("openpager.status", json!({"text": board_text(&approval.summary, 80), "level": level})).await;
+        *shown = Some(format!("{APPROVE_SIGNATURE}{}", approval.summary));
+        shared.update(|s| s.layout = Some(json!({"id": APPROVE, "name": "Claude needs you", "summary": approval.summary}))).await;
+    }
+}
+
 /// What one key on the board does now.
 #[derive(Debug, Clone)]
 pub struct KeyRef {
@@ -611,6 +761,22 @@ async fn start_configure(target: Focus, scope: Scope, events: &mpsc::Sender<Even
     });
 }
 
+/// Apps whose desktop notifications reach the board: coding and chat agents that finish work or
+/// wait for the person while they look elsewhere.
+const NOTIFYING_APPS: &[&str] = &["claude", "codex", "antigravity", "chatgpt", "cursor"];
+
+/// Forwards notifications from `NOTIFYING_APPS` (Linux; nothing elsewhere).
+fn spawn_notification_watcher(events: mpsc::Sender<Event>) {
+    std::thread::spawn(move || {
+        let result = openpager_desktop::watch_notifications(|n| {
+            !n.from_any(NOTIFYING_APPS) || events.blocking_send(Event::Notified(n)).is_ok()
+        });
+        if let Err(e) = result {
+            println!("Desktop notifications not followed: {e}");
+        }
+    });
+}
+
 /// Polls the media players every second and reports when anything shown changes.
 fn spawn_media_watcher(media: Arc<openpager_media::Players>, events: mpsc::Sender<Event>) {
     std::thread::spawn(move || {
@@ -632,11 +798,12 @@ fn unsupported_layout(focus: &Focus) -> LayoutBody {
     let mut name: String = format!("Unsupported: {}", focus.display_name());
     name.truncate(128);
     LayoutBody {
+        detail: None,
         layout: UNSUPPORTED.into(),
         name,
         source: "default".into(),
         reviewed: true,
-        keys: vec![LayoutKey { key: CONFIGURE_SLOT, label: "Configure".into(), speak: Some("Configure this app".into()), confirm: false, send: Send::Event(true) }],
+        keys: vec![LayoutKey { key: CONFIGURE_SLOT, label: "Configure".into(), speak: Some("Configure this app".into()), icon: Some("auto_awesome".into()), confirm: false, send: Send::Event(true) }],
     }
 }
 

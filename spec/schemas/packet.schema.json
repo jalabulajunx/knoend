@@ -454,6 +454,11 @@
                 "type": "string",
                 "maxLength": 80
               },
+              "icon": {
+                "description": "A name from spec/icons.txt; a board that does not know it shows the label alone.",
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,40}$"
+              },
               "confirm": {
                 "type": "boolean"
               },
@@ -504,6 +509,11 @@
               }
             }
           }
+        },
+        "detail": {
+          "description": "Text shown in place of the middle row of keys, e.g. what a permission request is for.",
+          "type": "string",
+          "maxLength": 240
         }
       }
     },

@@ -13,40 +13,49 @@ web = ["youtube.com/watch"]
 
 [[key]]
 label = "Play/Pause"
+icon = "play_arrow"
 speak = "Play or pause"
 action = { kind = "media", command = "toggle" }
 
 [[key]]
 label = "Back 10s"
+icon = "replay_10"
 action = { kind = "media", command = "back" }
 
 [[key]]
 label = "Fwd 10s"
+icon = "forward_10"
 speak = "Forward ten seconds"
 action = { kind = "media", command = "forward" }
 
 [[key]]
 label = "Mute"
+icon = "volume_off"
 action = { kind = "shortcut", keys = "M" }
 
 [[key]]
 label = "Next"
+icon = "skip_next"
 speak = "Next video"
 action = { kind = "media", command = "next", selector = ".ytp-next-button" }
 
 [[key]]
 label = "Fullscreen"
+icon = "fullscreen"
 action = { kind = "shortcut", keys = "F" }
 
 [[key]]
 label = "Captions"
+icon = "closed_caption"
 action = { kind = "shortcut", keys = "C" }
 
 [[key]]
 label = "Theater"
+icon = "crop_square"
 speak = "Theater mode"
 action = { kind = "shortcut", keys = "T" }
 
 [[key]]
 label = "Search"
+icon = "search"
 action = { kind = "focus", selector = "input[name=\"search_query\"]" }

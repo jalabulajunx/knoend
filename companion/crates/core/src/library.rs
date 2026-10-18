@@ -97,9 +97,19 @@ pub struct LibraryKey {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speak: Option<String>,
+    /// A Material Icons name from `spec/icons.txt`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub confirm: bool,
     pub action: Action,
+}
+
+const ICONS: &str = include_str!("../../../../spec/icons.txt");
+
+/// The icon names a key may use (`spec/icons.txt`).
+pub fn icon_names() -> Vec<&'static str> {
+    ICONS.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -167,6 +177,14 @@ impl Library {
 
     fn semantic_problems(&self) -> Vec<String> {
         let mut problems = Vec::new();
+        let icons = icon_names();
+        for key in &self.keys {
+            if let Some(icon) = &key.icon {
+                if !icons.contains(&icon.as_str()) {
+                    problems.push(format!("key {:?}: unknown icon {icon:?} (see spec/icons.txt)", key.label));
+                }
+            }
+        }
         let slots = self.slots();
         let mut sorted = slots.clone();
         sorted.sort_unstable();

@@ -14,40 +14,49 @@ windows = ["Code.exe"]
 
 [[key]]
 label = "Palette"
+icon = "menu"
 speak = "Command palette"
 action = { kind = "shortcut", keys = "Primary+Shift+P" }
 
 [[key]]
 label = "Quick open"
+icon = "insert_drive_file"
 action = { kind = "shortcut", keys = "Primary+P" }
 
 [[key]]
 label = "Find in files"
+icon = "search"
 action = { kind = "shortcut", keys = "Primary+Shift+F" }
 
 [[key]]
 label = "Sidebar"
+icon = "view_list"
 speak = "Toggle sidebar"
 action = { kind = "shortcut", keys = "Primary+B" }
 
 [[key]]
 label = "Save"
+icon = "save"
 action = { kind = "shortcut", keys = "Primary+S" }
 
 [[key]]
 label = "Go to line"
+icon = "arrow_downward"
 action = { kind = "shortcut", keys = "Ctrl+G" }
 
 [[key]]
 label = "Source control"
+icon = "code"
 action = { kind = "shortcut", keys = "Ctrl+Shift+G" }
 
 [[key]]
 label = "Terminal"
+icon = "terminal"
 speak = "Toggle terminal"
 action = { kind = "shortcut", keys = "Ctrl+Backquote" }
 
 [[key]]
 label = "Run"
+icon = "play_arrow"
 speak = "Start debugging"
 action = { kind = "shortcut", keys = "F5" }

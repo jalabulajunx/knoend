@@ -13,44 +13,53 @@ web = ["docs.google.com/presentation@fullscreen"]
 
 [[key]]
 label = "Prev"
+icon = "chevron_left"
 speak = "Previous slide"
 action = { kind = "shortcut", keys = "Left" }
 
 [[key]]
 label = "Next"
+icon = "chevron_right"
 speak = "Next slide"
 action = { kind = "shortcut", keys = "Right" }
 
 [[key]]
 label = "Exit"
+icon = "close"
 speak = "Stop presenting"
 action = { kind = "shortcut", keys = "Escape" }
 
 [[key]]
 label = "First"
+icon = "first_page"
 speak = "First slide"
 action = { kind = "shortcut", keys = "Home" }
 
 [[key]]
 label = "Last"
+icon = "last_page"
 speak = "Last slide"
 action = { kind = "shortcut", keys = "End" }
 
 [[key]]
 label = "Laser"
+icon = "highlight"
 speak = "Laser pointer"
 action = { kind = "shortcut", keys = "L" }
 
 [[key]]
 label = "Black"
+icon = "crop_square"
 speak = "Black screen"
 action = { kind = "shortcut", keys = "B" }
 
 [[key]]
 label = "White"
+icon = "light_mode"
 speak = "White screen"
 action = { kind = "shortcut", keys = "W" }
 
 [[key]]
 label = "Captions"
+icon = "closed_caption"
 action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
