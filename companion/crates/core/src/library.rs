@@ -58,7 +58,36 @@ pub enum Action {
     Shortcut { keys: String },
     Open { url: String },
     Element { selector: String },
+    /// Focus a field on the page, ready to type (browser extension).
+    Focus { selector: String },
+    /// Control the page's main video or audio (browser extension); `selector` names the player's
+    /// own button for next/previous.
+    Media {
+        command: MediaCommand,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selector: Option<String>,
+    },
     Command { name: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MediaCommand {
+    Toggle,
+    Play,
+    Pause,
+    Next,
+    Previous,
+    Mute,
+    Forward,
+    Back,
+}
+
+impl Action {
+    /// Whether the browser extension carries this action out (on the active tab).
+    pub fn is_web(&self) -> bool {
+        matches!(self, Action::Open { .. } | Action::Element { .. } | Action::Focus { .. } | Action::Media { .. })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

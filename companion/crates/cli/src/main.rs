@@ -5,7 +5,11 @@
 //!   openpager run                          the service without the web app
 //!   openpager devices / flash              find, identify and flash boards from a firmware release
 //!   openpager draft --class C --instance I  ask the configure agent for a library (no board needed)
+//!   openpager browser install              let the browser extension reach openpager
+//!
+//! A browser that starts this binary as its native messaging host (spec/browser.md) gets the host.
 
+mod browser;
 mod diagnostics;
 mod firmware;
 mod macos_help;
@@ -83,9 +87,33 @@ enum Command {
         #[arg(long)]
         save: bool,
     },
+    /// Let the OpenPager browser extension reach this computer's openpager (Chrome, Chromium,
+    /// Edge, Brave, Firefox).
+    Browser {
+        #[command(subcommand)]
+        action: BrowserAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum BrowserAction {
+    /// Register openpager with every browser found here.
+    Install,
+    /// Remove those registrations.
+    Uninstall,
+    /// Act as the native messaging host (browsers start it this way themselves).
+    Host,
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if browser::started_by_browser(&args) {
+        if let Err(message) = browser::run_host() {
+            eprintln!("openpager: {message}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Pair { port } => pair(&port),
@@ -101,8 +129,21 @@ fn main() {
         Command::Devices { firmware } => tokio::runtime::Runtime::new().expect("tokio").block_on(devices(&firmware)),
         Command::Flash { board, port, firmware, erase } =>
             tokio::runtime::Runtime::new().expect("tokio").block_on(flash(&board, &port, &firmware, erase)),
+        Command::Browser { action: BrowserAction::Install } => browser::install().map(|done| {
+            for line in done {
+                println!("{line}");
+            }
+            println!("Now add the OpenPager extension to the browser (see extension/README.md).");
+        }),
+        Command::Browser { action: BrowserAction::Uninstall } => {
+            for line in browser::uninstall() {
+                println!("{line}");
+            }
+            Ok(())
+        }
+        Command::Browser { action: BrowserAction::Host } => browser::run_host(),
         Command::Draft { class, instance, save } => tokio::runtime::Runtime::new().expect("tokio")
-            .block_on(draft(Focus { os: Os::current(), app: class, instance, title: String::new() }, save)),
+            .block_on(draft(Focus { os: Os::current(), app: class, instance, title: String::new(), web: None }, save)),
     };
     if let Err(message) = result {
         eprintln!("openpager: {message}");

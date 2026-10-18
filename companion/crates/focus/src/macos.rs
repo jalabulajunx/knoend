@@ -30,7 +30,7 @@ impl Watcher {
             if bundle.is_empty() && name.is_empty() {
                 return None;
             }
-            Some(Focus { os: Os::Macos, app: bundle, instance: name, title: String::new() })
+            Some(Focus { os: Os::Macos, app: bundle, instance: name, title: String::new(), web: None })
         })
     }
 

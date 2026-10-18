@@ -424,3 +424,35 @@ Entry template:
   the three board definitions each match their SHA-256; 10 assets, not a draft or pre-release; the
   Linux binary reports `openpager 0.1.1` and contains the new web app (model combo box, Wi-Fi rows).
 - Not yet done: installing a board from v0.1.1 end to end, and running the macOS binaries.
+
+## 2026-10-18 - Sundar (Claude Code) - Browser extension: site-aware keys (first slice)
+
+- Division of work agreed with Tom: Tom takes the dynamic board grid and pagination, per-app button
+  editing in the web app, and terminal-aware buttons from running CLIs (mostly on his Mac); Sundar
+  takes the Chrome/Firefox extension with website-aware keys, then app-specific dynamic UIs (Claude
+  desktop waiting state, Codex, Antigravity, presentations, media players). Live key state (labels,
+  badges) without re-sending a layout is a shared contract to agree next.
+- Changed (branch `sundar/browser-extension`):
+  - `spec/browser.md` (new): extension <-> native messaging host <-> service; tab, act, inventory,
+    result messages; page inventory (controls only); actions; per-site permission. Decision:
+    [`decisions/2026-10-18-browser-link-native-messaging.md`](decisions/2026-10-18-browser-link-native-messaging.md).
+  - `spec/schemas/library.schema.json` + core: actions `focus` and `media`; libraries match sites by
+    `match.web` (host or parent domain; `name.*` for any ending), before the app's own library.
+  - `cli/src/browser.rs`: the service listens on `$XDG_RUNTIME_DIR/openpager/browser.sock` (0600, in
+    a 0700 folder); `openpager` acts as the native host when a browser starts it; `openpager browser
+    install|uninstall` registers it for Chrome, Chromium, Edge, Brave and Firefox. A board key whose
+    action is a web action is sent to the extension; the result is logged.
+  - `extension/` (new): MV3 for Chrome and Firefox from one source (`tools/build_extension.py`):
+    tab reporting, popup with per-site on/off, page actions and inventory. Chrome id fixed by a
+    public key (private key kept off the repo).
+  - Built-in YouTube layout (`libraries/builtin/youtube.toml`).
+- Tested (Arch Linux): Rust tests incl. framing, browser detection, web matching. The helper relayed
+  a stand-in browser's messages to the real service. Chrome 152 headless with the extension loaded
+  via `Extensions.loadUnpacked` and the real `openpager` host, against a stand-in service: hello and
+  tab reports on navigation; inventory of a YouTube watch page = 35 controls with selectors and the
+  site's shortcuts (k, m, c, t, f); media pause/forward/mute, focus search, open `/feed/trending`
+  all ok; missing element -> `not-found`; `//evil.example/` -> `bad-action`.
+- Found: Google Chrome 137+ ignores `--load-extension`; Edge loaded it once, then blocked it.
+- Not tested: a real board key reaching the page (needs the extension in Sundar's own browser),
+  Firefox, the popup's permission prompt. Next: drafting a site's keys from its inventory, teach
+  mode, live key state (with Tom).

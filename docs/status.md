@@ -24,6 +24,14 @@ How to set it up: [`setup.md`](setup.md). Day-by-day detail, including what was 
 | Installing from the published release (v0.1.0; v0.1.1 adds the Mac fixes and onboarding work) through the web app | `companion/crates/cli/src/firmware.rs` | default firmware source |
 | CI: spec, companion on Linux + macOS, firmware build | `.github/workflows/ci.yml` | every push and PR |
 
+## Browser extension (first slice, branch `sundar/browser-extension`)
+
+| Piece | Where | Try it |
+| --- | --- | --- |
+| Extension for Chrome and Firefox: active site, per-site buttons, page actions, page inventory | `extension/`, `spec/browser.md` | `python3 tools/build_extension.py`; see `extension/README.md` |
+| Native messaging host + service socket; `openpager browser install` | `companion/crates/cli/src/browser.rs` | `openpager browser install` |
+| Site layouts (`match.web`); built-in YouTube | `libraries/builtin/youtube.toml` | YouTube in the browser, buttons on |
+
 ## Built, not yet tested
 
 - GT911 touch, display start-up commands, active-high reset; the ESP32-S3-BOX-3 and Waveshare

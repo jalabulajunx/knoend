@@ -43,7 +43,7 @@ impl Watcher {
         }
         let title = self.conn.get_property(false, window, self.wm_name, self.utf8, 0, 256).ok()
             .and_then(|c| c.reply().ok()).map(|r| String::from_utf8_lossy(&r.value).to_string()).unwrap_or_default();
-        Some(Focus { os: Os::Linux, app, instance, title })
+        Some(Focus { os: Os::Linux, app, instance, title, web: None })
     }
 
     /// Blocks until the focused app changes (title changes within the same app are ignored),

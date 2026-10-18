@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use openpager_core::catalog::Catalog;
-use openpager_core::focus::Focus;
+use openpager_core::focus::{Focus, WebPage};
 use openpager_core::layout;
 use openpager_core::library::Library;
 use openpager_core::protocol::{LayoutBody, LayoutKey, Packet, Send};
@@ -51,6 +51,8 @@ pub struct Shared {
     typist: Arc<std::sync::Mutex<Option<openpager_input::Typist>>>,
     /// The last log lines, for the setup assistant's snapshot.
     recent: std::sync::Mutex<std::collections::VecDeque<String>>,
+    /// The browser extension link (`spec/browser.md`).
+    pub browser: Arc<crate::browser::Browser>,
 }
 
 impl Shared {
@@ -58,7 +60,8 @@ impl Shared {
         let (events, _) = broadcast::channel(256);
         Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())), firmware_source,
                           typist: Arc::new(std::sync::Mutex::new(None)),
-                          recent: std::sync::Mutex::new(std::collections::VecDeque::new()) })
+                          recent: std::sync::Mutex::new(std::collections::VecDeque::new()),
+                          browser: Arc::new(crate::browser::Browser::default()) })
     }
 
     /// Publishes an event to the web app and prints it for the terminal.
@@ -114,6 +117,8 @@ pub fn ai_libraries() -> PathBuf {
 
 enum Event {
     Focus(Option<Focus>),
+    /// The browser's active tab (None: no browser window focused, or the extension went away).
+    Tab(Option<WebPage>),
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
@@ -136,16 +141,34 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
 
     let (events, mut inbox) = mpsc::channel::<Event>(64);
     spawn_focus_watcher(events.clone(), shared.clone());
+    {
+        let (tabs_tx, mut tabs_rx) = mpsc::channel(16);
+        tokio::spawn(crate::browser::serve(shared.browser.clone(), tabs_tx));
+        let events = events.clone();
+        tokio::spawn(async move {
+            while let Some(tab) = tabs_rx.recv().await {
+                if events.send(Event::Tab(tab)).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
 
+    // What the OS says is focused, and the browser's active tab; `effective` joins them.
     let mut focus: Option<Focus> = None;
+    let mut tab: Option<WebPage> = None;
     loop {
         let pairings = Pairings::load();
         if pairings.boards.is_empty() {
             shared.update(|s| { s.link = "no-pairing".into(); s.board = None; }).await;
             // Keep following focus while waiting, so the dashboard shows it.
-            if let Ok(Some(Event::Focus(Some(f)))) = tokio::time::timeout(Duration::from_secs(2), inbox.recv()).await {
+            match tokio::time::timeout(Duration::from_secs(2), inbox.recv()).await {
+                Ok(Some(Event::Focus(Some(f)))) => focus = Some(f),
+                Ok(Some(Event::Tab(t))) => tab = t,
+                _ => {}
+            }
+            if let Some(f) = effective(&focus, &tab) {
                 shared.update(|s| s.app = Some(f.display_name().to_string())).await;
-                focus = Some(f);
             }
             continue;
         }
@@ -154,7 +177,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             Ok(link) => link,
             Err(e) => {
                 println!("{e}; retrying in 5 s");
-                drain_focus(&mut inbox, &mut focus, &shared).await;
+                drain_focus(&mut inbox, &mut focus, &mut tab, &shared).await;
                 continue;
             }
         };
@@ -162,8 +185,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let board_status = board.clone();
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
-        if let Some(f) = &focus {
-            show(&mut sender, &catalog, f, &mut shown, &shared).await;
+        if let Some(f) = effective(&focus, &tab) {
+            show(&mut sender, &catalog, &f, &mut shown, &shared).await;
         }
 
         // A board that restarts never closes its old connection, so silence is the only sign:
@@ -190,15 +213,29 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             }
             match event {
                 Event::Focus(Some(f)) => {
+                    focus = Some(f);
+                    let f = effective(&focus, &tab).expect("focus");
                     println!("Focus: {} ({})", f.display_name(), f.instance);
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
                     show(&mut sender, &catalog, &f, &mut shown, &shared).await;
-                    focus = Some(f);
                 }
                 Event::Focus(None) => {}
+                Event::Tab(t) => {
+                    let changed = t.as_ref().map(|p| (&p.host, p.granted)) != tab.as_ref().map(|p| (&p.host, p.granted));
+                    tab = t;
+                    let browser_focused = focus.as_ref().is_some_and(|f| crate::browser::is_browser(&f.app, &f.instance));
+                    if changed && browser_focused {
+                        let f = effective(&focus, &tab).expect("focus");
+                        println!("Site: {}", f.display_name());
+                        let name = f.display_name().to_string();
+                        shared.update(|s| s.app = Some(name)).await;
+                        show(&mut sender, &catalog, &f, &mut shown, &shared).await;
+                    }
+                }
                 Event::Board(packet) => {
-                    if let Some(target) = on_board_packet(&packet, focus.as_ref(), &mut sender, &shared).await {
+                    let current = effective(&focus, &tab);
+                    if let Some(target) = on_board_packet(&packet, current.as_ref(), &catalog, &mut sender, &shared).await {
                         let events = events.clone();
                         let name = target.display_name().to_string();
                         shared.update(|s| s.configuring = Some(name)).await;
@@ -217,7 +254,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             catalog.add(path, library);
                             let count = catalog.len();
                             shared.update(|s| s.libraries = count).await;
-                            if focus.as_ref().is_some_and(|f| f.app == target.app && f.instance == target.instance) {
+                            if effective(&focus, &tab).is_some_and(|f| f.app == target.app && f.instance == target.instance && f.web == target.web) {
                                 shown = None;
                                 show(&mut sender, &catalog, &target, &mut shown, &shared).await;
                             }
@@ -241,14 +278,27 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     }
 }
 
+/// The focused app, with the browser's active site attached when the app is a browser.
+fn effective(focus: &Option<Focus>, tab: &Option<WebPage>) -> Option<Focus> {
+    let mut f = focus.clone()?;
+    if crate::browser::is_browser(&f.app, &f.instance) {
+        f.web = tab.clone();
+    }
+    Some(f)
+}
+
 /// While not connected, keep the latest focus without blocking the reconnect for long.
-async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus>, shared: &Shared) {
+async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus>, tab: &mut Option<WebPage>, shared: &Shared) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     while let Ok(Some(event)) = tokio::time::timeout_at(deadline, inbox.recv()).await {
-        if let Event::Focus(Some(f)) = event {
+        match event {
+            Event::Focus(Some(f)) => *focus = Some(f),
+            Event::Tab(t) => *tab = t,
+            _ => continue,
+        }
+        if let Some(f) = effective(focus, tab) {
             let name = f.display_name().to_string();
             shared.update(|s| s.app = Some(name)).await;
-            *focus = Some(f);
         }
     }
 }
@@ -349,7 +399,8 @@ fn unsupported_layout(focus: &Focus) -> LayoutBody {
 }
 
 /// Handles a packet from the board; returns the app to configure when Configure was tapped.
-async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, sender: &mut wifi::WifiSender, shared: &Shared) -> Option<Focus> {
+async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, catalog: &Catalog, sender: &mut wifi::WifiSender,
+                         shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
         "openpager.layout.ack" if packet.body["ok"] != true => println!("  board rejected layout: {}", packet.body),
         "openpager.key" => {
@@ -372,8 +423,32 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, sender: &mut wi
                 }
                 return None;
             }
+            // A key whose action happens on the web page: the browser extension carries it out.
+            if let Some(library) = catalog.get(layout) {
+                if let Some((library_key, _)) = library.keys.iter().zip(library.slots()).find(|(_, slot)| u64::from(*slot) == key) {
+                    if library_key.action.is_web() {
+                        let (shared, label) = (shared.clone(), library_key.label.clone());
+                        let action = serde_json::to_value(&library_key.action).unwrap_or_default();
+                        tokio::spawn(async move {
+                            let text = match shared.browser.request(json!({"type": "act", "action": action}), Duration::from_secs(5)).await {
+                                Ok(r) if r["ok"] == true => format!("  {label}: done in the browser"),
+                                Ok(r) => format!("  {label}: the browser could not do it ({})", r["error"].as_str().unwrap_or("unknown")),
+                                Err(e) => format!("  {label}: {e}"),
+                            };
+                            shared.emit("web-action", json!({"text": text}));
+                        });
+                        return None;
+                    }
+                }
+            }
             if layout == UNSUPPORTED && key == u64::from(CONFIGURE_SLOT) {
                 let target = focus?.clone();
+                if let Some(web) = &target.web {
+                    // Drafting keys for a website needs the page inventory (next step); say so.
+                    let text = format!("Keys for {} are not drafted yet: add them from the extension", web.host);
+                    let _ = sender.send("openpager.status", json!({"text": text, "level": "attention", "ttl": 10})).await;
+                    return None;
+                }
                 println!("  Configure requested for {}", target.display_name());
                 let text = format!("Configuring {}: drafting keys...", target.display_name());
                 let _ = sender.send("openpager.status", json!({"text": text, "level": "attention"})).await;

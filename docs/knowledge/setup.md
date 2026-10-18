@@ -173,6 +173,20 @@ devices and whether each has a port, the WCH driver state, and whether openpager
   `SDKROOT=$(xcrun --sdk macosx26.5 --show-sdk-path)` (the SDK matching the tools; see
   `ls /Library/Developer/CommandLineTools/SDKs`), or remove the stray SDK.
 
+### The browser extension
+
+- **Popup says "not set up".** The browser could not start openpager: `openpager browser install` was
+  not run, or the browser was not restarted afterwards, or the openpager binary moved (the
+  registration names its full path; run install again). Chrome only lets the extension id
+  `echibclfkpicikodohehemgjefbpakpj` start it; a copy loaded with another id cannot connect.
+- **Popup says "openpager not running".** Start `openpager serve`; the extension reconnects by itself.
+- **The board does not change for a site.** The site needs a layout (`match.web`), and the focused
+  window must be the browser. A key that acts on the page answers "not-granted" until board buttons
+  are turned on for that site in the popup.
+- **Testing in Chrome:** Google Chrome 137 and later ignore `--load-extension`; load it from
+  `chrome://extensions` (Developer mode), or in automation with DevTools' `Extensions.loadUnpacked`
+  (`--remote-debugging-pipe --enable-unsafe-extension-debugging`).
+
 ### The AI pieces
 
 - **The assistant can propose a change, the person applies it.** Besides buttons, its reply may
