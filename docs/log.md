@@ -534,3 +534,32 @@ Entry template:
 - Tested: Rust tests (routes, page kinds, page-scoped drafts). Live: the service sees Sundar's
   Firefox player on the Navidrome album route (paused, next/prev available). Not tested: the media
   row and per-page drafting on the board (needs Firefox focused on Navidrome).
+
+## 2026-10-18 - Sundar (Claude Code) - Google Slides keys did nothing; Chrome re-check; open items
+
+- Sundar drafted keys on a Google Slides presentation: all keys reported "done in the browser",
+  none had an effect, and Present never started. Causes: Google's editors act on the mouse going
+  down/up, not on a bare `click()`; and presenting goes full screen, which browsers only allow on a
+  real key press or click by the person.
+- Changed: `element` keys now dispatch a whole press (pointerdown, mousedown, pointerup, mouseup,
+  click at the element's centre). The site-drafting prompt gets the operating system, prefers an
+  app's documented keyboard shortcuts (Docs, Slides, Sheets, Gmail, Figma, Notion, GitHub) over
+  toolbar clicks, and must use a shortcut for anything that presents, goes full screen or opens a file
+  picker (shortcuts are typed as real key presses by the board or the service).
+- Tested: headless Firefox, a local page with a button that only listens for `mousedown` (like
+  Google's toolbar): before, no effect; now it fires once, and an ordinary button still gets exactly
+  one click. Gemini, given a stand-in Slides control list (ids from Sundar's draft, names guessed):
+  Present = Ctrl+F5, New slide = Ctrl+M, Comment = Ctrl+Alt+M, Undo/Redo = Ctrl+Z/Ctrl+Y, the rest
+  presses. Not tested: real Google Slides (needs Sundar's signed-in browser; delete
+  `libraries/ai/site-docs-google-com.toml` and its entry in `sites.json`, then configure again).
+- Chrome re-check of the current extension build (headless, `Extensions.loadUnpacked`): inventory of
+  34 controls on YouTube, media/focus/open actions and refusals as in Firefox.
+- Open items:
+  - **macOS has no MPRIS**: media keys, the media row and "Playing:" status are Linux-only; on a Mac
+    media keys fall back to the extension (seek, mute and pause work; play from a script is refused;
+    nothing is shown as playing). Needs a macOS Now Playing source (Tom's Mac; to agree who).
+  - Redo keys from the board on a site that already has keys: needs a place on Tom's paged grid.
+  - Firefox: keeping the extension across restarts needs Mozilla signing (Sundar's account); Chrome:
+    Web Store listing (US$5, review) or Developer mode. The web app should guide both.
+  - Not yet tried on the board: media row, per-page drafts, the Allow tab, Chrome/Edge/Brave with
+    MPRIS.

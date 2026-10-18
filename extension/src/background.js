@@ -178,7 +178,17 @@ async function pageAction(action) {
     if (!el) return { ok: false, error: "not-found" };
     el.scrollIntoView({ block: "nearest" });
     if (action.kind === "element") {
-      el.click();
+      // A whole press, not just "click": many web apps (Google Docs, Slides, Sheets) act on the
+      // mouse going down and up and ignore a bare click event.
+      const r = el.getBoundingClientRect();
+      const at = { bubbles: true, cancelable: true, composed: true, view: window, button: 0,
+                   clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+      const pointer = { ...at, pointerId: 1, pointerType: "mouse", isPrimary: true };
+      el.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1 }));
+      el.dispatchEvent(new MouseEvent("mousedown", { ...at, buttons: 1 }));
+      el.dispatchEvent(new PointerEvent("pointerup", pointer));
+      el.dispatchEvent(new MouseEvent("mouseup", at));
+      el.dispatchEvent(new MouseEvent("click", at));
     } else {
       el.focus();
       if (typeof el.select === "function") el.select();

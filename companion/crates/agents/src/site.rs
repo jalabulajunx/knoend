@@ -56,6 +56,11 @@ Rules:
   one (id, aria-label, data-testid) for the same thing: positions break when the page changes.
 - Do not add play/pause/next/previous keys for music or video: the keypad adds those by itself
   while something plays.
+- Web apps with their own documented keyboard shortcuts (Google Docs, Slides, Sheets, Gmail, Figma,
+  Notion, GitHub...) respond to them more reliably than to clicks on toolbar buttons: when the app
+  has a documented shortcut for an action on the stated operating system, use kind = "shortcut".
+- Anything that starts a presentation, goes full screen, or opens a file picker MUST be a shortcut:
+  browsers refuse those from a click made by a program.
 - Never use a selector that is not in the list. Fewer correct keys are better than nine guesses.
 - Any key that deletes, sends, submits, posts, pays or buys must have confirm = true.
 - Put the most used actions first."#;
@@ -138,7 +143,7 @@ fn unknown_selectors(library: &Library, items: &[Value]) -> Vec<String> {
 }
 
 /// Drafts and validates a site library; one retry with the validator's errors.
-pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, scope: &Scope, items: &[Value]) -> Result<Draft, String> {
+pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, os: &str, scope: &Scope, items: &[Value]) -> Result<Draft, String> {
     if items.is_empty() {
         return Err("the page listed no controls to build keys from".into());
     }
@@ -149,7 +154,8 @@ pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, s
              Choose what this page adds; repeat a site key only if it is essential here.",
             if site_keys.is_empty() { "none".into() } else { site_keys.join(", ") }),
     };
-    let prompt = format!("Website: {}\nPage: {}\n{purpose}\nControls on this page:\n{}\n", site_of(host), route, describe(items));
+    let prompt = format!("Website: {}\nPage: {}\nOperating system: {os}\n{purpose}\nControls on this page:\n{}\n",
+                         site_of(host), route, describe(items));
     let mut messages = vec![Message::user(prompt)];
     let mut last_error = String::new();
     for attempt in 1..=2 {
