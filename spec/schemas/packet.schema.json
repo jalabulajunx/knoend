@@ -509,6 +509,11 @@
               }
             }
           }
+        },
+        "detail": {
+          "description": "Text shown in place of the middle row of keys, e.g. what a permission request is for.",
+          "type": "string",
+          "maxLength": 240
         }
       }
     },

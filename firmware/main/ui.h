@@ -7,6 +7,7 @@
 #define UI_KEYS        9
 #define UI_LABEL_BYTES 97 // 24 characters of UTF-8, plus NUL
 #define UI_ICON_BYTES  41 // a Material Icons name from spec/icons.txt, plus NUL
+#define UI_DETAIL_BYTES 241 // 240 characters of text, plus NUL
 
 typedef enum {
     UI_SEND_NONE,  // blank slot
@@ -27,6 +28,8 @@ typedef struct {
     char id[65];
     char name[129];
     bool reviewed;
+    // Text shown in place of the middle row (slots 4-6), e.g. what a permission request is for.
+    char detail[UI_DETAIL_BYTES];
     ui_key_t keys[UI_KEYS]; // index 0 = slot 1
 } ui_layout_t;
 

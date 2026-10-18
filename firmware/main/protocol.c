@@ -204,6 +204,8 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
         strcpy(layout.id, id);
         strcpy(layout.name, name);
         layout.reviewed = !cJSON_IsFalse(reviewed);
+        const char *detail = get_string(body, "detail", UI_DETAIL_BYTES - 1);
+        snprintf(layout.detail, sizeof(layout.detail), "%s", detail != NULL ? detail : "");
     }
 
     const cJSON *key;

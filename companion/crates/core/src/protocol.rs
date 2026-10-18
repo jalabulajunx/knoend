@@ -37,6 +37,9 @@ pub struct LayoutKey {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LayoutBody {
+    /// Text the board shows in place of the middle row (e.g. what a permission request is for).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
     pub layout: String,
     pub name: String,
     pub source: String,

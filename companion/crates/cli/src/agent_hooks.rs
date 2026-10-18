@@ -148,6 +148,45 @@ pub fn summary(request: &Value) -> String {
     format!("Claude: {tool} {detail}").trim().to_string()
 }
 
+/// What the board explains under a request: the tool and its full input, what Allow does, and
+/// what Always would remember and where (from the agent's own suggestion).
+pub fn detail(request: &Value) -> String {
+    let tool = request["tool_name"].as_str().unwrap_or("a tool");
+    let input = &request["tool_input"];
+    let what = ["command", "file_path", "path", "url", "pattern"].iter().find_map(|k| input[*k].as_str()).unwrap_or("");
+    let mut text = format!("{tool}: {what}");
+    if let Some(why) = input["description"].as_str().filter(|d| !d.is_empty() && *d != what) {
+        text += &format!("\n({why})");
+    }
+    text += "\nAllow = this time only.";
+    if let Some(s) = request["permission_suggestions"].as_array().and_then(|s| s.first()) {
+        let place = match s["destination"].as_str() {
+            Some("session") => "for this session",
+            Some("localSettings") => "in this project",
+            Some("projectSettings") => "in this project, for everyone",
+            Some("userSettings") => "in every project",
+            _ => "",
+        };
+        let remember = match s["type"].as_str() {
+            Some("addRules") => {
+                let rules: Vec<String> = s["rules"].as_array().into_iter().flatten().map(|r| {
+                    let tool = r["toolName"].as_str().unwrap_or("?");
+                    match r["ruleContent"].as_str() {
+                        Some(content) => format!("{tool}({content})"),
+                        None => format!("any {tool}"),
+                    }
+                }).collect();
+                format!("allow {} from now on", rules.join(", "))
+            }
+            Some("setMode") => format!("switch to {} mode", s["mode"].as_str().unwrap_or("?")),
+            Some("addDirectories") => "add these folders".into(),
+            _ => "remember this choice".into(),
+        };
+        text += &format!(" Always = {remember} {place}.");
+    }
+    text
+}
+
 /// Whether a request looks destructive enough to need a second tap to allow.
 pub fn destructive(request: &Value) -> bool {
     let command = request["tool_input"]["command"].as_str().unwrap_or("").to_ascii_lowercase();
@@ -257,5 +296,8 @@ mod tests {
         let edit = json!({"tool_name": "Edit", "tool_input": {"file_path": "/home/u/p/src/main.rs"}});
         assert_eq!(summary(&edit), "Claude: Edit main.rs");
         assert!(!destructive(&edit));
+        let with = json!({"tool_name": "Bash", "tool_input": {"command": "ls /tmp", "description": "List"},
+            "permission_suggestions": [{"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "ls:*"}], "behavior": "allow", "destination": "localSettings"}]});
+        assert_eq!(detail(&with), "Bash: ls /tmp\n(List)\nAllow = this time only. Always = allow Bash(ls:*) from now on in this project.");
     }
 }

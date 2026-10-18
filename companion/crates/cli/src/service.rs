@@ -366,7 +366,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Event::Agent(crate::agent_hooks::AgentEvent::Permission { request, answer }) => {
                     let summary = crate::agent_hooks::summary(&request);
                     println!("Permission request: {summary}");
-                    approvals.push_back(Approval { summary, destructive: crate::agent_hooks::destructive(&request),
+                    approvals.push_back(Approval { summary, detail: crate::agent_hooks::detail(&request), destructive: crate::agent_hooks::destructive(&request),
                                                    can_remember: request["permission_suggestions"].as_array().is_some_and(|s| !s.is_empty()),
                                                    answer });
                     if approvals.len() == 1 {
@@ -380,13 +380,18 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         let message = n["message"].as_str().unwrap_or("needs your attention");
                         println!("Agent notification ({kind}): {message}");
                         let text = board_text(&format!("Claude: {message}"), 80);
-                        let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
+                        if approvals.is_empty() {
+                            let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
+                        }
                     }
                 }
                 Event::Notified(n) => {
                     println!("Notification from {}: {}", n.app, n.summary);
                     let text = board_text(&format!("{}: {}", n.app, if n.summary.is_empty() { &n.body } else { &n.summary }), 80);
-                    let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
+                    // A pending permission request keeps the status line (it is what the notification is about).
+                    if approvals.is_empty() {
+                        let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
+                    }
                     shared.emit("notification", json!({"app": n.app, "summary": n.summary}));
                 }
                 Event::Status(text) => {
@@ -661,6 +666,7 @@ const APPROVE_SIGNATURE: &str = "approve|";
 /// A coding agent waiting for the person's answer.
 struct Approval {
     summary: String,
+    detail: String,
     destructive: bool,
     /// The agent offered a rule to remember ("always allow").
     can_remember: bool,
@@ -677,7 +683,9 @@ async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, shown
     }
     keys.push(key(3, "Deny", "Deny", "close", false));
     keys.push(key(7, "Stop", "Deny and stop Claude", "stop_circle", false));
-    let body = LayoutBody { layout: APPROVE.into(), name: "Claude needs you".into(), source: "default".into(), reviewed: true, keys };
+    let detail: String = approval.detail.chars().map(|c| if c == '\n' || c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).take(240).collect();
+    let body = LayoutBody { layout: APPROVE.into(), name: "Claude needs you".into(), source: "default".into(), reviewed: true, keys,
+                            detail: Some(detail) };
     println!("  -> permission request on the board [{}]", approval.summary);
     if sender.send("openpager.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
         let level = if approval.destructive { "alert" } else { "attention" };
@@ -772,6 +780,7 @@ fn unsupported_layout(focus: &Focus) -> LayoutBody {
     let mut name: String = format!("Unsupported: {}", focus.display_name());
     name.truncate(128);
     LayoutBody {
+        detail: None,
         layout: UNSUPPORTED.into(),
         name,
         source: "default".into(),

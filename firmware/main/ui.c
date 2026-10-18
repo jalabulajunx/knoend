@@ -36,6 +36,8 @@ static lv_obj_t *key_buttons[UI_KEYS];
 static lv_obj_t *key_labels[UI_KEYS];
 static lv_obj_t *key_icons[UI_KEYS];
 static lv_obj_t *status_bar;
+static lv_obj_t *detail_box;   // over the middle row when the layout has a detail
+static lv_obj_t *detail_label;
 static lv_obj_t *status_label;
 
 static uint32_t tap_count;
@@ -157,7 +159,20 @@ static void key_event(lv_event_t *event)
 
 static void draw_keys_locked(void)
 {
+    const bool detail = layout.detail[0] != '\0';
+    if (detail) {
+        lv_label_set_text(detail_label, layout.detail);
+        lv_obj_clear_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
+    }
     for (int i = 0; i < UI_KEYS; i++) {
+        // The middle row gives way to the detail text.
+        if (detail && i / GRID_COLS == 1) {
+            lv_obj_add_flag(key_buttons[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(key_buttons[i], LV_OBJ_FLAG_HIDDEN);
+        }
         const ui_key_t *key = &layout.keys[i];
         const bool blank = key->send == UI_SEND_NONE;
         lv_obj_set_style_bg_color(key_buttons[i], lv_color_hex(blank ? COLOR_KEY_BLANK : COLOR_KEY), 0);
@@ -228,6 +243,24 @@ void ui_start(void)
         key_labels[i] = label;
         key_icons[i] = icon;
     }
+
+    detail_box = lv_obj_create(screen);
+    lv_obj_remove_style_all(detail_box);
+    lv_obj_set_size(detail_box, board->width - 2 * GRID_GAP, key_h);
+    lv_obj_set_pos(detail_box, GRID_GAP, GRID_GAP + (key_h + GRID_GAP));
+    lv_obj_set_style_bg_opa(detail_box, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(detail_box, lv_color_hex(COLOR_KEY_BLANK), 0);
+    lv_obj_set_style_radius(detail_box, 8, 0);
+    lv_obj_set_style_pad_all(detail_box, 6, 0);
+    lv_obj_clear_flag(detail_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
+    detail_label = lv_label_create(detail_box);
+    lv_obj_set_width(detail_label, lv_pct(100));
+    lv_label_set_long_mode(detail_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_height(detail_label, key_h - 12);
+    lv_obj_set_style_text_font(detail_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(detail_label, lv_color_white(), 0);
+    lv_obj_align(detail_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
     status_bar = lv_obj_create(screen);
     lv_obj_remove_style_all(status_bar);

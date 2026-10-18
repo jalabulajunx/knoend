@@ -26,6 +26,7 @@ pub fn build(library: &Library, os: Os) -> Result<LayoutBody, String> {
         Source::User => "user",
     };
     Ok(LayoutBody {
+        detail: None,
         layout: library.pack.id.clone(),
         name: library.pack.name.clone(),
         source: source.to_string(),

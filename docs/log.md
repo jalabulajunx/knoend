@@ -649,3 +649,17 @@ Entry template:
   board with a real Claude session (needs the new service build and a new session).
 - Overlap with Tom's terminal-aware work: the same hooks serve the Claude CLI; the board side
   (`system.approve`) and `openpager hook` are shared, terminal-specific keys stay his.
+
+## 2026-10-18 - Sundar (Claude Code) - Permission requests explained on the board
+
+- Sundar's photo: the request reached the board (Allow / Always / Deny / Stop) but the status line
+  showed "Claude needs you - Pair OpenPager...": he could not tell what he was allowing, once or
+  always. Cause: a Claude notification (desktop, or the Notification hook) replaced the request's
+  status text and expired after 60 s.
+- Changed: layouts may carry `detail` (spec: packet schema, up to 240 characters); the firmware shows
+  it in place of the middle row (slots 4-6 hidden). A permission request's detail: the tool and its
+  full input, the agent's description, "Allow = this time only", and what Always remembers and where,
+  from the agent's suggestion (e.g. "Always = allow Bash(ls:*) from now on in this project").
+  Notifications no longer overwrite the status line while a request is pending.
+- Tested: unit test for the detail text; spec validator; firmware built (app 1.75 MB) and flashed to
+  the ONX (hashes verified). Seen on the board: see the next entry.
