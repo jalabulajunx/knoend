@@ -173,6 +173,23 @@ devices and whether each has a port, the WCH driver state, and whether openpager
   `SDKROOT=$(xcrun --sdk macosx26.5 --show-sdk-path)` (the SDK matching the tools; see
   `ls /Library/Developer/CommandLineTools/SDKs`), or remove the stray SDK.
 
+### Coding agents asking on the board
+
+- **Claude Code's approvals and "needs input" on the board:** `openpager claude-hooks install` adds
+  a PermissionRequest and a Notification hook to `~/.claude/settings.json` (backup:
+  `settings.json.before-openpager`; `openpager claude-hooks uninstall` removes them). They apply to
+  new Claude Code sessions in the terminal and in the desktop app. A request shows on the board as
+  Allow / Always / Deny / Stop with the tool and command on the status line; destructive commands
+  need a second tap. Claude's own prompt stays: whichever is answered first applies; a request
+  answered on screen leaves the board within a second; with no service running, the hook says
+  nothing and Claude asks as usual.
+- **Nothing reaches the board from Claude:** the session was started before the hooks were installed
+  (restart it), or the running `openpager serve` is older than the hooks (no `agents.sock` in
+  `$XDG_RUNTIME_DIR/openpager/`): restart it.
+- **Claude desktop's own screen is not readable yet:** with session accessibility on, the Electron app
+  still exposes only its window frames; reading its content needs it launched with
+  `--force-renderer-accessibility`. The hooks make that unnecessary for Claude Code sessions.
+
 ### Running in the background
 
 - **Board stops following apps after the computer or Claude Code restarts.** `openpager serve` was

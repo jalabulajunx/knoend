@@ -7,9 +7,12 @@
 //!   openpager draft --class C --instance I  ask the configure agent for a library (no board needed)
 //!   openpager browser install              let the browser extension reach openpager
 //!   openpager service install              run `serve` in the background, from login
+//!   openpager claude-hooks install         Claude Code asks through the board too
+//!   openpager hook permission|notification run by Claude Code's hooks
 //!
 //! A browser that starts this binary as its native messaging host (spec/browser.md) gets the host.
 
+mod agent_hooks;
 mod background;
 mod browser;
 mod diagnostics;
@@ -100,6 +103,21 @@ enum Command {
         #[command(subcommand)]
         action: ServiceAction,
     },
+    /// Let Claude Code ask for permission (and say it needs you) on the board as well.
+    ClaudeHooks {
+        #[command(subcommand)]
+        action: HooksAction,
+    },
+    /// Run by a coding agent's hook (reads the event on stdin): `permission` or `notification`.
+    Hook { kind: String },
+}
+
+#[derive(Subcommand)]
+enum HooksAction {
+    /// Add OpenPager's hooks to ~/.claude/settings.json (a backup is kept next to it).
+    Install,
+    /// Remove them.
+    Uninstall,
 }
 
 #[derive(Subcommand)]
@@ -159,6 +177,11 @@ fn main() {
             Ok(())
         }
         Command::Browser { action: BrowserAction::Host } => browser::run_host(),
+        Command::Hook { kind } => agent_hooks::run_hook(&kind),
+        Command::ClaudeHooks { action } => match action {
+            HooksAction::Install => agent_hooks::install(),
+            HooksAction::Uninstall => agent_hooks::uninstall(),
+        }.map(|lines| lines.into_iter().for_each(|l| println!("{l}"))),
         Command::Service { action } => {
             let lines = match action {
                 ServiceAction::Install => background::install(),

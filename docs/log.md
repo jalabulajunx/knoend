@@ -624,3 +624,28 @@ Entry template:
   status line and do not change keys; while Claude is in front it usually sends none, so its waiting
   state needs the accessibility adapter. Proposed: an agent notification also turns one key into
   "<app> needs you" (tap to switch to it).
+
+## 2026-10-18 - Sundar (Claude Code) - Claude Code asks through the board (hooks)
+
+- Sundar: tapping a Claude notification should show what Claude wants; Claude's "needs input"
+  in Accept Edits and Manual modes must reach the board so he can act there.
+- Found: after restarting Claude desktop with session accessibility on, the app is on the
+  accessibility bus but only as two empty frames (Electron exposes page content only when launched
+  with `--force-renderer-accessibility`). Chose Claude Code's hooks instead (Sundar: install for all
+  his sessions). From the hooks docs: PermissionRequest decision `behavior` allow/deny,
+  `updatedPermissions` (echo a `permission_suggestions` entry = always allow), `interrupt`; no output
+  leaves the normal flow; in the desktop app hooks run alongside its dialog, first answer applies.
+- Changed: `openpager hook permission|notification` (run by the hooks; relays over
+  `$XDG_RUNTIME_DIR/openpager/agents.sock`, 0600; waits up to 300 s; prints nothing on any problem);
+  service shows a request as layout `system.approve` (Allow, Always when offered, Deny, Stop; Allow
+  needs a second tap for destructive commands; status line "Claude: <tool> <command or file>"),
+  queues several, withdraws a request answered on screen (hook gone) within a second, then restores
+  the app's keys; agent notifications (idle, needs input, completed) go to the status line.
+  `openpager claude-hooks install|uninstall` edits `~/.claude/settings.json` (backup first; other
+  settings untouched; installing twice changes nothing). Installed on Sundar's machine.
+- Tested: unit tests (install/uninstall keep other hooks, summaries, destructive check); the hook
+  against a stand-in service prints the documented JSON for allow, always (with the suggestion as
+  `updatedPermissions`), deny and stop, and nothing when no service listens. Not tested: on the
+  board with a real Claude session (needs the new service build and a new session).
+- Overlap with Tom's terminal-aware work: the same hooks serve the Claude CLI; the board side
+  (`system.approve`) and `openpager hook` are shared, terminal-specific keys stay his.
