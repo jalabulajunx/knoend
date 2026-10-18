@@ -169,9 +169,15 @@ devices and whether each has a port, the WCH driver state, and whether openpager
   `cargo build` fails at linking with `xcrun: error: invalid active developer path` until the Xcode
   Command Line Tools are installed (`xcode-select --install`). If it then fails with `tapi error:
   malformed file ... MacOSX27.0.sdk ... unknown architecture`, an SDK newer than the installed
-  linker is left over and `xcrun` picks it because it is the highest version: build with
-  `SDKROOT=$(xcrun --sdk macosx26.5 --show-sdk-path)` (the SDK matching the tools; see
-  `ls /Library/Developer/CommandLineTools/SDKs`), or remove the stray SDK.
+  linker is left over and `xcrun` picks it because it is the highest version. Seen 2026-10-17/18
+  after Command Line Tools 26.5, 27.0 and 26.6 installed in one run: 26.6's linker (`ld -v`) stayed,
+  27.0's SDK stayed with it, and no installed package owns that SDK (`pkgutil --file-info
+  .../MacOSX27.0.sdk/usr/lib/libSystem.tbd` names none). Fix: remove the stray SDK, `sudo rm -rf
+  /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk
+  /Library/Developer/CommandLineTools/SDKs/MacOSX27.sdk`, then `xcrun --kill-cache`; `xcrun
+  --show-sdk-path` should name `MacOSX.sdk` and a plain `cargo build` links (confirmed on macOS 26.6).
+  Prefixing one build with `SDKROOT=$(xcrun --sdk macosx26.5 --show-sdk-path)` only works for that
+  command; the next shell fails again. `xcrun --kill-cache` alone does not help.
 
 ### Coding agents asking on the board
 

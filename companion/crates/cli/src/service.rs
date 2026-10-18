@@ -2,7 +2,7 @@
 //! and run the configure agent when Configure is tapped. State and events are shared with the
 //! web app; window titles never leave this loop (only the app's name is published).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -167,7 +167,9 @@ enum Event {
 }
 
 pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
-    let mut dirs: Vec<PathBuf> = std::env::var_os("OPENPAGER_BUILTIN").map(PathBuf::from).into_iter().collect();
+    // OPENPAGER_BUILTIN is a recipes tree (apps/, sites/<host>/, agents/); the person's own
+    // folder is read flat, since its ai/ subfolder is listed on its own.
+    let mut dirs: Vec<PathBuf> = std::env::var_os("OPENPAGER_BUILTIN").map(|d| Catalog::folders(Path::new(&d))).unwrap_or_default();
     dirs.extend([config_dir().join("libraries"), ai_libraries()]);
     dirs.extend(extra_libraries);
     let (mut catalog, rejected) = Catalog::load(&dirs);

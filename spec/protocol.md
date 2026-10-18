@@ -349,7 +349,8 @@ for that state: which slot holds which answer (`agent` actions), labels, icons. 
 what changes per request: the explanation panel, the agent's options on `reply = "option"` keys (in
 order; spare ones are hidden), `always` only when the agent offers a rule to remember, `done` only on
 several-choice questions, and a second tap on allow/always for commands that look destructive. A user
-library with the same `match.agent` replaces the built-in screen.
+library with the same `match.agent` replaces the built-in screen. An `agent` key in a library without
+`match.agent` is rejected (it would do nothing there).
 
 ## 6. Open questions
 

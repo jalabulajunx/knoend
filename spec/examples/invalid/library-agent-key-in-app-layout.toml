@@ -1,0 +1,12 @@
+# An agent answer belongs on a coding agent's screen (match.agent); in an app's layout the key
+# would do nothing, so the schema rejects it.
+[pack]
+id = "community.bad"
+name = "Bad"
+version = "1.0.0"
+source = "community"
+[match]
+linux = ["firefox"]
+[[key]]
+label = "Allow"
+action = { kind = "agent", reply = "allow" }

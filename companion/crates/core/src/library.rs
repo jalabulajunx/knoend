@@ -267,6 +267,7 @@ mod tests {
             ("library-raw-command.toml", "rm -rf"),
             ("library-offsite-url.toml", "https://evil.example/"),
             ("library-risky-without-confirm.toml", "looks risky"),
+            ("library-agent-key-in-app-layout.toml", "at /key/0/action/kind"),
         ];
         for (name, expected) in cases {
             let text = fs::read_to_string(examples().join("invalid").join(name)).unwrap();
