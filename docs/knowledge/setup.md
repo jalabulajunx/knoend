@@ -190,6 +190,19 @@ devices and whether each has a port, the WCH driver state, and whether openpager
   still exposes only its window frames; reading its content needs it launched with
   `--force-renderer-accessibility`. The hooks make that unnecessary for Claude Code sessions.
 
+### Linux desktops: X11 and Wayland
+
+- **Keys never change with the app, and keys from the board are not typed (Bluetooth off), on a
+  Wayland session** (GNOME and KDE default to Wayland; `XDG_SESSION_TYPE=wayland`, shown in
+  `system_checks.desktop_session`). Cause: following the focused window and typing keys use X11
+  (EWMH `_NET_ACTIVE_WINDOW`, XTest); Wayland hides native Wayland windows from other programs and
+  blocks synthetic input. Apps running through XWayland are visible, so focus may follow a few apps
+  and not others. Not supported yet (planned). What works: the board, pairing, Wi-Fi, Claude Code
+  questions and approvals, notifications, media, and typing through the board's Bluetooth keyboard.
+  Workaround: choose an X11/Xorg session at the login screen (GNOME: "GNOME on Xorg"; KDE: "Plasma
+  (X11)"), where everything works. Confirmed from the code (2026-10-18); not yet seen on a Wayland
+  machine.
+
 ### Running in the background
 
 - **Board stops following apps after the computer or Claude Code restarts.** `openpager serve` was

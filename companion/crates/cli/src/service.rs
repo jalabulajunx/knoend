@@ -625,6 +625,11 @@ async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus
 }
 
 fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
+    #[cfg(target_os = "linux")]
+    if let Some(note) = crate::diagnostics::desktop_session()["note"].as_str().filter(|n| !n.is_empty()) {
+        println!("{note}");
+        shared.emit("log", json!({"text": note}));
+    }
     std::thread::spawn(move || {
         let watcher = match openpager_focus::Watcher::connect() {
             Ok(w) => w,

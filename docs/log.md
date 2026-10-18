@@ -825,3 +825,26 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   terminal workspace: the key appeared, the tap switched to workspace 10 and focused Claude (i3 log:
   `_NET_ACTIVE_WINDOW ... should be activated`, workspace switch, focus in for Claude's window).
   If it fails again: `i3-msg 'debuglog on'`, tap, then `i3-dump-log | grep -A3 ACTIVE_WINDOW`.
+
+## 2026-10-18 - Sundar (Claude Code) - Wayland: detected and explained, not supported yet (#13)
+
+- Tested: a local Claude Code session's AskUserQuestion reached the board with its options (Sundar
+  answered in the app; answering by a board tap is still to be seen).
+- Decided (Sundar): no Wayland support for the hackathon; X11 (Linux) and macOS only. Enhancement
+  issue: https://github.com/jalabulajunx/openpager/issues/13 (plan: one Rust "focus from a helper"
+  input + uinput typing + wlroots foreign-toplevel; GNOME extension / KWin script installed by the
+  setup assistant, so nothing needs a rebuild during setup).
+- Changed: `system_checks.desktop_session` (Linux): session type, desktop, `keys_follow_apps`,
+  `service_can_type`, and a plain note; the service prints the note at start on Wayland or with no
+  DISPLAY. Knowledge entry "Linux desktops: X11 and Wayland"; assistant prompt rule: on Wayland, say
+  plainly what does not work and that an Xorg session at login fixes it; no fault hunting.
+- Tested: unit tests (session rules; prompt carries the rule and the knowledge entry). On this i3
+  machine the snapshot reports x11. Not tested on a Wayland machine.
+- Open, for Tom's terminal work: "a terminal program is waiting for input" (pacman/yay prompts).
+  Measured on Linux 7.2: a program waiting at a prompt is the foreground process group of its pty
+  (`/proc/<pid>/stat` field 8 tpgid == its pgrp), in a `read` on fd 0 (`/proc/<pid>/syscall` starts
+  `0 0x0`, wchan `wait_woken`), fd 0 -> `/dev/pts/N`. Works for every terminal app (kernel level).
+  Shells at their prompt look the same: tell them apart by name. macOS: `ps -o stat,wchan` shows
+  `ttyin`. The prompt's text cannot be read from outside the terminal; `TIOCSTI` is off
+  (`dev.tty.legacy_tiocsti = 0`), so answering means focusing that terminal and typing (X11/macOS).
+  Never type into `sudo`/password prompts.
