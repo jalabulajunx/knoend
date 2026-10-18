@@ -782,3 +782,20 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - **macOS gaps your side may hit:** no MPRIS (media row never appears), no notification watcher,
   launcher app icons untested (above), Claude Code hooks untested on macOS (socket in
   `~/Library/Application Support/openpager/agents.sock`; Unix socket paths max ~104 bytes there).
+
+## 2026-10-18 - Sundar (Claude Code) - Linux scope, roadmap issues, naming proposal (no code changes)
+
+- Changed: no code. Filed issues:
+  - #15 several boards on one computer;
+  - #16 one board across several computers and OSes, with settings travelling with the board;
+  - #17 change a board's Wi-Fi network without starting over;
+  - #19 naming: proposal to rename OpenPager to KnoEnd (Kn°End, said "no end"), with the whole
+    naming discussion and the availability checks (US and Canadian trademarks, GitHub, domains,
+    package registries).
+- Tested: nothing run. Read `focus/src/x11.rs` and `input/src/x11.rs`: following the focused app
+  and typing work on any X11 window manager that sets EWMH `_NET_ACTIVE_WINDOW` (not i3 only), but
+  only for XWayland windows on Wayland (tracked in #13). Only i3 has been tried on hardware.
+- Decided: nothing yet. The rename needs both maintainers (it touches `spec/`: `_openpager._tcp`,
+  `openpager.*` message types).
+- Open: Tom to weigh in on #19; the protocol questions in #16 and #17 (who serves the board when
+  several computers can; whether Wi-Fi details may be changed without a cable).
