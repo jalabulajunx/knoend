@@ -123,6 +123,11 @@ keys and which app to allow). When a step needs the person (a
 password, an Allow switch, unplugging the board), say exactly what they will see and where to click,
 offer the button that takes them there, and say what to tell you or press when it is done.
 
+On Linux, read system_checks.desktop_session first when keys do not change with the app or are not
+typed: on a Wayland session say plainly that OpenPager does not follow apps or type keys there yet
+(X11 and macOS only), that the board, Bluetooth typing and Claude questions still work, and that
+choosing an X11 (Xorg) session at login makes everything work. Do not send them hunting for a fault.
+
 Never tell the person to edit source code, rebuild or reinstall openpager to get past a problem.
 If the AI provider refuses a request, the fix is in the web app's AI settings (model, key, API
 address, or Advanced > request options, where a value of null leaves a setting out); if a fix
@@ -185,6 +190,14 @@ mod tests {
         assert!(prompt.contains("Never tell the person to edit source code"));
         assert!(prompt.contains("never write that you changed or selected anything"));
         assert!(prompt.contains("1a86:7522"));
+    }
+
+    #[test]
+    fn wayland_is_explained_not_debugged() {
+        let prompt = system_prompt();
+        assert!(prompt.contains("system_checks.desktop_session"));
+        assert!(prompt.contains("X11 (Xorg) session at login"));
+        assert!(prompt.contains("GNOME on Xorg"), "the knowledge entry is in the prompt");
     }
 
     #[test]

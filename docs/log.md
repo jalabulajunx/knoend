@@ -782,3 +782,71 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - **macOS gaps your side may hit:** no MPRIS (media row never appears), no notification watcher,
   launcher app icons untested (above), Claude Code hooks untested on macOS (socket in
   `~/Library/Application Support/openpager/agents.sock`; Unix socket paths max ~104 bytes there).
+
+## 2026-10-18 - Sundar (Claude Code) - Claude's questions answered from the board
+
+- Sundar: a new Claude Code session asked him a question (options to pick); the board only showed
+  "Claude needs your attention" in the status line, and he had to go to the computer to answer.
+- Found: that session was a cloud session (claude.ai/code, "Default" environment). Cloud sessions do
+  not read `~/.claude/settings.json`, and their hooks run on Anthropic's machine, which cannot reach
+  this computer's `agents.sock`: the only signal is Claude desktop's notification (D-Bus), text
+  only. Answering a cloud session from the board is not possible with hooks; local sessions (desktop
+  app on this computer, or the `claude` CLI) are.
+- First rejected a "Go to Claude" key that raises the app's window (Sundar: the point of the board
+  is answering from wherever he is, e.g. another room); then agreed to it for sessions the board
+  cannot answer (below).
+- Changed: a local session's AskUserQuestion (it arrives as a PermissionRequest) is shown as the
+  question: options on keys 1, 2, 3, 7, the question and each option's description in the detail
+  panel, Decline on 9; several-choice questions tick options and Send on 8; several questions go one
+  after another. The answer goes back as `decision.behavior = allow` with `updatedInput` = the
+  agent's own input plus `answers` (question -> label; several labels joined with ", "), as the
+  hooks docs describe for PermissionRequest.
+- Tested: unit tests (reading questions, answers added to the input, tapping through two questions
+  incl. ticks/untick/Send/Decline); the hook against a stand-in service prints
+  `{"hookSpecificOutput":{"decision":{"behavior":"allow","updatedInput":{...,"answers":{"Which?":"B"}}},...}}`.
+  Not tested: a real Claude Code session taking the answer (needs the new `serve` and a new local
+  session).
+- Checked the CLI for cloud sessions (Claude Code 2.1.283 + docs): `claude -p "msg" --cloud <id>`
+  only queues a message (write-only; needs `claude auth login`, not signed in here); no status,
+  attach or stream-json for an existing cloud session; `--teleport` makes a local copy. So the board
+  cannot read a cloud session's question. Remote Control (local session, steered from phone/web)
+  keeps hooks local and is the way to get questions and approvals on the board.
+- Changed: a Claude desktop notification with no hook event within 3 s either side (= no local
+  session behind it, e.g. a cloud session; also Claude chat notifications) puts "Go to Claude" on
+  slot 9 of whatever the board shows (app keys or launcher), for up to 30 minutes or until Claude is
+  focused. A tap brings Claude's window to the front: `openpager_focus::bring_to_front` sends EWMH
+  `_NET_ACTIVE_WINDOW` as a pager (source 2), which i3 honours across workspaces; macOS uses
+  `open -b/-a` (untested).
+- Tested: unit tests (window class matching, the Go to key and when it applies). Not tested: on the
+  board, and raising a window on another i3 workspace.
+- Board test (ONX, i3 4.25.1): the first real cloud-session notification put "Go to Claude" on key 9
+  and the service logged "brought Claude to the front", but Claude did not come forward; i3's log no
+  longer covered that tap, so the cause is unknown. Retest with `notify-send -a Claude ...` from the
+  terminal workspace: the key appeared, the tap switched to workspace 10 and focused Claude (i3 log:
+  `_NET_ACTIVE_WINDOW ... should be activated`, workspace switch, focus in for Claude's window).
+  If it fails again: `i3-msg 'debuglog on'`, tap, then `i3-dump-log | grep -A3 ACTIVE_WINDOW`.
+
+## 2026-10-18 - Sundar (Claude Code) - Wayland: detected and explained, not supported yet (#13)
+
+- Tested: a local Claude Code session's AskUserQuestion reached the board with its options (Sundar
+  answered in the app; answering by a board tap is still to be seen).
+- Decided (Sundar): no Wayland support for the hackathon; X11 (Linux) and macOS only. Enhancement
+  issue: https://github.com/jalabulajunx/openpager/issues/13 (plan: one Rust "focus from a helper"
+  input + uinput typing + wlroots foreign-toplevel; GNOME extension / KWin script installed by the
+  setup assistant, so nothing needs a rebuild during setup).
+- Changed: `system_checks.desktop_session` (Linux): session type, desktop, `keys_follow_apps`,
+  `service_can_type`, and a plain note; the service prints the note at start on Wayland or with no
+  DISPLAY. Knowledge entry "Linux desktops: X11 and Wayland"; assistant prompt rule: on Wayland, say
+  plainly what does not work and that an Xorg session at login fixes it; no fault hunting.
+- Tested: unit tests (session rules; prompt carries the rule and the knowledge entry). On this i3
+  machine the snapshot reports x11. Not tested on a Wayland machine.
+- Open, for Tom's terminal work: "a terminal program is waiting for input" (pacman/yay prompts).
+  Measured on Linux 7.2: a program waiting at a prompt is the foreground process group of its pty
+  (`/proc/<pid>/stat` field 8 tpgid == its pgrp), in a `read` on fd 0 (`/proc/<pid>/syscall` starts
+  `0 0x0`, wchan `wait_woken`), fd 0 -> `/dev/pts/N`. Works for every terminal app (kernel level).
+  Shells at their prompt look the same: tell them apart by name. macOS: `ps -o stat,wchan` shows
+  `ttyin`. The prompt's text cannot be read from outside the terminal; `TIOCSTI` is off
+  (`dev.tty.legacy_tiocsti = 0`), so answering means focusing that terminal and typing (X11/macOS).
+  Never type into `sudo`/password prompts.
+- Sundar: board taps answered Claude's questions in the earlier tests (confirmed on the board).
+  Terminal-waiting detection waits for Tom's terminal work.

@@ -68,3 +68,53 @@ impl Watcher {
         }
     }
 }
+
+/// Whether a window's WM_CLASS parts belong to the app called `name` ("Claude" matches
+/// "com.anthropic.Claude"; case-insensitive).
+pub fn class_matches(class: &str, instance: &str, name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    !name.is_empty() && [class, instance].iter().any(|part| {
+        let part = part.to_ascii_lowercase();
+        part == name || part.ends_with(&format!(".{name}"))
+    })
+}
+
+/// Asks the window manager to show and focus the first window of the app called any of `names`
+/// (EWMH `_NET_ACTIVE_WINDOW` sent as a pager, which window managers honour even across
+/// workspaces, i3 included).
+pub fn bring_to_front(names: &[&str]) -> Result<(), String> {
+    use x11rb::protocol::xproto::ClientMessageEvent;
+    let (conn, screen) = x11rb::connect(None).map_err(|e| format!("cannot reach the X server: {e}"))?;
+    let root = conn.setup().roots[screen].root;
+    let atom = |name: &str| -> Result<u32, String> {
+        Ok(conn.intern_atom(false, name.as_bytes()).map_err(|e| e.to_string())?.reply().map_err(|e| e.to_string())?.atom)
+    };
+    let (clients, active) = (atom("_NET_CLIENT_LIST")?, atom("_NET_ACTIVE_WINDOW")?);
+    let list = conn.get_property(false, root, clients, AtomEnum::WINDOW, 0, 4096).map_err(|e| e.to_string())?
+        .reply().map_err(|e| e.to_string())?;
+    let windows: Vec<Window> = list.value32().map(|v| v.collect()).unwrap_or_default();
+    let window = windows.into_iter().find(|&w| {
+        let Some(class) = conn.get_property(false, w, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 256).ok().and_then(|c| c.reply().ok()) else { return false };
+        let mut parts = class.value.split(|&b| b == 0).map(|p| String::from_utf8_lossy(p).to_string());
+        let (instance, class) = (parts.next().unwrap_or_default(), parts.next().unwrap_or_default());
+        names.iter().any(|n| class_matches(&class, &instance, n))
+    }).ok_or_else(|| format!("no open window of {}", names.join(" / ")))?;
+    // Source 2 = a pager acting for the person; timestamp 0 = now.
+    let event = ClientMessageEvent::new(32, window, active, [2u32, 0, 0, 0, 0]);
+    conn.send_event(false, root, EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY, event)
+        .map_err(|e| e.to_string())?;
+    conn.flush().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::class_matches;
+
+    #[test]
+    fn app_names_match_window_classes() {
+        assert!(class_matches("com.anthropic.Claude", "com.anthropic.claude", "Claude"));
+        assert!(class_matches("firefox", "Navigator", "Firefox"));
+        assert!(!class_matches("claude-helper", "x", "Claude"));
+        assert!(!class_matches("x", "y", ""));
+    }
+}

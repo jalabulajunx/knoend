@@ -55,7 +55,33 @@ fn linux_checks(ports: &[openpager_flash::Port]) -> Value {
     let brltty = ["/usr/bin/brltty", "/bin/brltty", "/usr/sbin/brltty"].iter().any(|p| std::path::Path::new(p).exists());
     json!({"bluetooth_radios": bluetooth, "serial_access": access, "user_groups": group_names,
            "usb_serial_devices": openpager_flash::usb_serial_devices(ports),
-           "brltty_installed": brltty})
+           "brltty_installed": brltty, "desktop_session": desktop_session()})
+}
+
+/// The graphical session and what OpenPager can do in it. Following the focused app and typing
+/// keys use X11 (EWMH, XTest); a Wayland session hides native Wayland windows from both, so there
+/// the layout does not follow apps and the service cannot type (the board's Bluetooth keyboard
+/// still can). Wayland support is planned, not built.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn desktop_session() -> Value {
+    let var = |name: &str| std::env::var(name).unwrap_or_default();
+    session_support(&var("XDG_SESSION_TYPE"), &var("XDG_CURRENT_DESKTOP"), !var("WAYLAND_DISPLAY").is_empty(), !var("DISPLAY").is_empty())
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn session_support(session_type: &str, desktop: &str, wayland_display: bool, x_display: bool) -> Value {
+    let wayland = session_type.eq_ignore_ascii_case("wayland") || (session_type.is_empty() && wayland_display);
+    let follows = !wayland && x_display;
+    let note = if wayland {
+        "Wayland session: keys do not follow the focused app and the service cannot type keys here yet (X11 and macOS only). \
+         Bluetooth typing from the board works. An X11 (Xorg) session at login makes everything work."
+    } else if !x_display {
+        "No X display reachable from the service (DISPLAY is empty): keys cannot follow apps until it is set."
+    } else {
+        ""
+    };
+    json!({"type": if session_type.is_empty() { "unknown" } else { session_type }, "desktop": desktop,
+           "keys_follow_apps": follows, "service_can_type": follows, "note": note})
 }
 
 /// macOS: what stops a board being found or keys being typed, none of it visible from the port
@@ -117,7 +143,17 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::redact;
+    use super::{redact, session_support};
+
+    #[test]
+    fn wayland_sessions_are_reported_plainly() {
+        let gnome = session_support("wayland", "ubuntu:GNOME", true, true);
+        assert_eq!(gnome["keys_follow_apps"], false, "XWayland's DISPLAY does not make focus work");
+        assert!(gnome["note"].as_str().unwrap().contains("do not follow"));
+        let i3 = session_support("x11", "i3", false, true);
+        assert_eq!((i3["keys_follow_apps"].as_bool(), i3["note"].as_str()), (Some(true), Some("")));
+        assert_eq!(session_support("", "", true, false)["keys_follow_apps"], false);
+    }
 
     #[test]
     fn network_names_are_redacted() {
