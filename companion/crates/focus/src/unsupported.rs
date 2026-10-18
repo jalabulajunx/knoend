@@ -16,3 +16,7 @@ impl Watcher {
         None
     }
 }
+
+pub fn bring_to_front(_names: &[&str]) -> Result<(), String> {
+    Err("bringing an app to the front is not supported on this OS yet".into())
+}

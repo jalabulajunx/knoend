@@ -792,8 +792,9 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   this computer's `agents.sock`: the only signal is Claude desktop's notification (D-Bus), text
   only. Answering a cloud session from the board is not possible with hooks; local sessions (desktop
   app on this computer, or the `claude` CLI) are.
-- Rejected: a "Go to Claude" key that raises the app's window (Sundar: the point of the board is
-  answering from wherever he is, e.g. another room). Code removed before commit.
+- First rejected a "Go to Claude" key that raises the app's window (Sundar: the point of the board
+  is answering from wherever he is, e.g. another room); then agreed to it for sessions the board
+  cannot answer (below).
 - Changed: a local session's AskUserQuestion (it arrives as a PermissionRequest) is shown as the
   question: options on keys 1, 2, 3, 7, the question and each option's description in the detail
   panel, Decline on 9; several-choice questions tick options and Send on 8; several questions go one
@@ -805,3 +806,16 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   `{"hookSpecificOutput":{"decision":{"behavior":"allow","updatedInput":{...,"answers":{"Which?":"B"}}},...}}`.
   Not tested: a real Claude Code session taking the answer (needs the new `serve` and a new local
   session).
+- Checked the CLI for cloud sessions (Claude Code 2.1.283 + docs): `claude -p "msg" --cloud <id>`
+  only queues a message (write-only; needs `claude auth login`, not signed in here); no status,
+  attach or stream-json for an existing cloud session; `--teleport` makes a local copy. So the board
+  cannot read a cloud session's question. Remote Control (local session, steered from phone/web)
+  keeps hooks local and is the way to get questions and approvals on the board.
+- Changed: a Claude desktop notification with no hook event within 3 s either side (= no local
+  session behind it, e.g. a cloud session; also Claude chat notifications) puts "Go to Claude" on
+  slot 9 of whatever the board shows (app keys or launcher), for up to 30 minutes or until Claude is
+  focused. A tap brings Claude's window to the front: `openpager_focus::bring_to_front` sends EWMH
+  `_NET_ACTIVE_WINDOW` as a pager (source 2), which i3 honours across workspaces; macOS uses
+  `open -b/-a` (untested).
+- Tested: unit tests (window class matching, the Go to key and when it applies). Not tested: on the
+  board, and raising a window on another i3 workspace.

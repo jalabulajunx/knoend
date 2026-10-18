@@ -69,3 +69,14 @@ fn frontmost_window_pid() -> Option<i32> {
         Some(number(&window, ns_string!("kCGWindowOwnerPID"))?.intValue())
     })
 }
+
+/// Brings the app called any of `names` (bundle id or display name) to the front with `open`.
+pub fn bring_to_front(names: &[&str]) -> Result<(), String> {
+    for name in names.iter().filter(|n| !n.is_empty()) {
+        let flag = if name.contains('.') { "-b" } else { "-a" };
+        if std::process::Command::new("open").args([flag, name]).status().is_ok_and(|s| s.success()) {
+            return Ok(());
+        }
+    }
+    Err(format!("no app called {}", names.join(" / ")))
+}
