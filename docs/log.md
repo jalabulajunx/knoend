@@ -424,3 +424,156 @@ Entry template:
   the three board definitions each match their SHA-256; 10 assets, not a draft or pre-release; the
   Linux binary reports `openpager 0.1.1` and contains the new web app (model combo box, Wi-Fi rows).
 - Not yet done: installing a board from v0.1.1 end to end, and running the macOS binaries.
+
+## 2026-10-18 - Sundar (Claude Code) - Browser extension: site-aware keys (first slice)
+
+- Division of work agreed with Tom: Tom takes the dynamic board grid and pagination, per-app button
+  editing in the web app, and terminal-aware buttons from running CLIs (mostly on his Mac); Sundar
+  takes the Chrome/Firefox extension with website-aware keys, then app-specific dynamic UIs (Claude
+  desktop waiting state, Codex, Antigravity, presentations, media players). Live key state (labels,
+  badges) without re-sending a layout is a shared contract to agree next.
+- Changed (branch `sundar/browser-extension`):
+  - `spec/browser.md` (new): extension <-> native messaging host <-> service; tab, act, inventory,
+    result messages; page inventory (controls only); actions; per-site permission. Decision:
+    [`decisions/2026-10-18-browser-link-native-messaging.md`](decisions/2026-10-18-browser-link-native-messaging.md).
+  - `spec/schemas/library.schema.json` + core: actions `focus` and `media`; libraries match sites by
+    `match.web` (host or parent domain; `name.*` for any ending), before the app's own library.
+  - `cli/src/browser.rs`: the service listens on `$XDG_RUNTIME_DIR/openpager/browser.sock` (0600, in
+    a 0700 folder); `openpager` acts as the native host when a browser starts it; `openpager browser
+    install|uninstall` registers it for Chrome, Chromium, Edge, Brave and Firefox. A board key whose
+    action is a web action is sent to the extension; the result is logged.
+  - `extension/` (new): MV3 for Chrome and Firefox from one source (`tools/build_extension.py`):
+    tab reporting, popup with per-site on/off, page actions and inventory. Chrome id fixed by a
+    public key (private key kept off the repo).
+  - Built-in YouTube layout (`libraries/builtin/youtube.toml`).
+- Tested (Arch Linux): Rust tests incl. framing, browser detection, web matching. The helper relayed
+  a stand-in browser's messages to the real service. Chrome 152 headless with the extension loaded
+  via `Extensions.loadUnpacked` and the real `openpager` host, against a stand-in service: hello and
+  tab reports on navigation; inventory of a YouTube watch page = 35 controls with selectors and the
+  site's shortcuts (k, m, c, t, f); media pause/forward/mute, focus search, open `/feed/trending`
+  all ok; missing element -> `not-found`; `//evil.example/` -> `bad-action`.
+- Found: Google Chrome 137+ ignores `--load-extension`; Edge loaded it once, then blocked it.
+- Not tested: a real board key reaching the page (needs the extension in Sundar's own browser),
+  Firefox, the popup's permission prompt. Next: drafting a site's keys from its inventory, teach
+  mode, live key state (with Tom).
+
+## 2026-10-18 - Sundar (Claude Code) - Browser extension in Firefox (Sundar's main browser)
+
+- Ran `openpager browser install` on Sundar's machine (Firefox, Chrome, Chromium, Edge, Brave host
+  files; the binary path is the dev build in `companion/target/debug`).
+- Tested Firefox 156 headless, extension installed through WebDriver BiDi `webExtension.install`,
+  real host from `~/.mozilla/native-messaging-hosts`, stand-in service: hello, tab reports,
+  inventory of a YouTube watch page (52 controls, shortcuts k/m/c/t/f), media pause/forward/mute,
+  focus search, open `/feed/trending` ok; `#does-not-exist` -> `not-found`; `//evil.example/` ->
+  `bad-action`. With the shipped build (no site granted): `granted: false`, inventory and every page
+  action -> `not-granted`, `open` ok. Popup no longer uses innerHTML (Mozilla's checker flags it).
+- Keeping it in Firefox across restarts needs Mozilla's signing (self-distribution); steps in
+  `extension/README.md`. Not done: that upload is Sundar's (his Mozilla account).
+
+## 2026-10-18 - Sundar (Claude Code) - Media keys through MPRIS; "Make keys for this site with AI"
+
+- Sundar tried the YouTube keys in his Firefox: after turning buttons on, every key reported "done in
+  the browser" but only Search had an effect. Reproduced in headless Firefox reading the video's state
+  before and after: `play()` from a page script is refused without a click (still paused), yet the
+  extension said ok. He pointed at KDE Connect, which uses MPRIS.
+- Changed:
+  - New crate `openpager-media`: MPRIS players over D-Bus (zbus; list, play/pause, next, previous,
+    seek). Firefox publishes its playing tab there (title, channel, state). The service polls every
+    second; the board's status bar shows "Playing/Paused: title - artist" (ASCII only: the board's
+    Montserrat font has no other glyphs) and the play/pause key is labelled Play or Pause. Media keys
+    go to the focused app's player first; the extension is the fallback and now reports `blocked`
+    when the page refuses to play.
+  - `match.web` takes a path prefix; most specific wins. YouTube split into browsing keys and video
+    keys (`builtin.youtube`, `builtin.youtube-watch`). `open` may now go to `/`.
+  - Site drafting (`agents/src/site.rs`): from the page inventory, pinned to the site, every selector
+    must be in the inventory (one retry with the errors). Triggered by the popup ("Make keys for this
+    site with AI") or Configure on the board for a site with no keys; progress shown in both.
+- Tested (Arch Linux): Rust tests (new: player matching, path patterns, site constraints and unknown
+  selectors). The media crate lists Sundar's real Firefox player with title, channel and state; the
+  service showed "Paused: ... - Sathya Jyothi Films" on the board. Gemini drafted Wikipedia keys from
+  236 controls in 6.5 s, first attempt (Search, Random article, Current events, Main page, Recent
+  changes, Talk, History, Help, Dark mode); in headless Firefox, Search focused the box and Random
+  article navigated to a random article.
+- Not tested: MPRIS commands (headless Firefox does not register a player until something plays;
+  needs Sundar's board), the popup button end to end, Configure on the board for a site.
+
+## 2026-10-18 - Sundar (Claude Code) - Site keys from the board
+
+- Sundar: making keys for a site should be done from the board, not (only) the extension.
+- Already there: on a site with no keys the board shows Configure, which runs the same drafting.
+- Changed: when Configure or a page key needs a site that is not allowed yet, the service asks the
+  extension (`grant`), which opens an OpenPager page next to the site with Allow / Not now (browsers
+  only grant on a click); the board says "Allow <site> in your browser". On Allow it returns to the
+  page and carries on (reads the page and drafts keys, or repeats the key). Spec: `grant` message.
+- Tested (headless Firefox): the grant request opens `grant.html` next to the page with the site's
+  origin. Not tested: pressing Allow / Not now (BiDi cannot evaluate in extension pages; Firefox's
+  permission prompt cannot be clicked headless), the whole flow from the board.
+- Mistake while testing: a stand-in service sent one `grant` to whichever extension connected last,
+  which may have been Sundar's own Firefox (an "OpenPager: allow this site" tab; it closes itself
+  after two minutes). The test now targets only the test browser's connection.
+- Open (for Tom's dynamic grid): a way to redo keys from the board on a site that already has them
+  (all 9 slots used), e.g. a last page that always offers "Make keys again".
+
+## 2026-10-18 - Sundar (Claude Code) - Multi-page sites: page kinds, per-page keys, media row
+
+- Sundar on his Navidrome (`/app/#/...` routes): keys drafted once never changed on the album page,
+  and starting playback did not change the keys (only the status bar). Causes: routes after `#` were
+  ignored (every page looked the same); each draft overwrote the one site library; media keys came
+  only from drafts; several drafted selectors were positional.
+- Changed:
+  - Routes include an app's in-page route (`/app/#/album/<id>/show`); a page's kind replaces id-like
+    segments with `*`. `match.web` routes match segment by segment with `*`.
+  - Drafting has two scopes: the first draft covers the site; later drafts cover the kind of page
+    (told the site-wide keys). On a site configured with the AI, a new kind of page is drafted in the
+    background on first visit, once (`sites.json`). The prompt prefers `open` with a link's href,
+    avoids positional selectors, and leaves media keys to the keypad.
+  - Media row: while the focused app's player plays or is paused mid-track and the layout has no
+    media keys, slots 7-9 become Prev / Play-Pause / Next (MPRIS; Prev/Next only if the player offers
+    them). Board keys act on what is shown (layout + row).
+  - Inventory links keep `#/` routes.
+- Tested: Rust tests (routes, page kinds, page-scoped drafts). Live: the service sees Sundar's
+  Firefox player on the Navidrome album route (paused, next/prev available). Not tested: the media
+  row and per-page drafting on the board (needs Firefox focused on Navidrome).
+
+## 2026-10-18 - Sundar (Claude Code) - Google Slides keys did nothing; Chrome re-check; open items
+
+- Sundar drafted keys on a Google Slides presentation: all keys reported "done in the browser",
+  none had an effect, and Present never started. Causes: Google's editors act on the mouse going
+  down/up, not on a bare `click()`; and presenting goes full screen, which browsers only allow on a
+  real key press or click by the person.
+- Changed: `element` keys now dispatch a whole press (pointerdown, mousedown, pointerup, mouseup,
+  click at the element's centre). The site-drafting prompt gets the operating system, prefers an
+  app's documented keyboard shortcuts (Docs, Slides, Sheets, Gmail, Figma, Notion, GitHub) over
+  toolbar clicks, and must use a shortcut for anything that presents, goes full screen or opens a file
+  picker (shortcuts are typed as real key presses by the board or the service).
+- Tested: headless Firefox, a local page with a button that only listens for `mousedown` (like
+  Google's toolbar): before, no effect; now it fires once, and an ordinary button still gets exactly
+  one click. Gemini, given a stand-in Slides control list (ids from Sundar's draft, names guessed):
+  Present = Ctrl+F5, New slide = Ctrl+M, Comment = Ctrl+Alt+M, Undo/Redo = Ctrl+Z/Ctrl+Y, the rest
+  presses. Not tested: real Google Slides (needs Sundar's signed-in browser; delete
+  `libraries/ai/site-docs-google-com.toml` and its entry in `sites.json`, then configure again).
+- Chrome re-check of the current extension build (headless, `Extensions.loadUnpacked`): inventory of
+  34 controls on YouTube, media/focus/open actions and refusals as in Firefox.
+- Open items:
+  - **macOS has no MPRIS**: media keys, the media row and "Playing:" status are Linux-only; on a Mac
+    media keys fall back to the extension (seek, mute and pause work; play from a script is refused;
+    nothing is shown as playing). Needs a macOS Now Playing source (Tom's Mac; to agree who).
+  - Redo keys from the board on a site that already has keys: needs a place on Tom's paged grid.
+  - Firefox: keeping the extension across restarts needs Mozilla signing (Sundar's account); Chrome:
+    Web Store listing (US$5, review) or Developer mode. The web app should guide both.
+  - Not yet tried on the board: media row, per-page drafts, the Allow tab, Chrome/Edge/Brave with
+    MPRIS.
+
+## 2026-10-18 - Sundar (Claude Code) - Presenting: the board becomes a slide remote
+
+- Sundar: after starting a presentation the board kept the editing keys. Google Slides presents in
+  the same tab at the same address; only full screen changes.
+- Changed: on allowed sites the extension registers `watch.js` (content script) that reports
+  `fullscreenchange`; the tab message carries `fullscreen`. `match.web` patterns may end in
+  `@fullscreen`. Built-in `google-slides-present` (`docs.google.com/presentation@fullscreen`):
+  Prev, Next, Exit, First, Last, Laser, Black, White, Captions as Slides' own shortcuts. No drafting
+  while full screen. Also: removed Sundar's old Slides draft and its `sites.json` entry on request.
+- Tested: Rust tests (full-screen patterns: a presentation matches only while full screen and wins
+  over the site keys). Not tested: the full-screen report itself: headless Firefox cannot go full
+  screen even with `full-screen-api.allow-trusted-requests-only` off, and there is no Xvfb here (not
+  installed; would ask first). Needs Sundar's Slides test.

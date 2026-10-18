@@ -63,13 +63,28 @@
                 "type": "object", "additionalProperties": false, "required": ["kind", "url"],
                 "properties": {
                   "kind": { "const": "open" },
-                  "url": { "type": "string", "pattern": "^/[^/]", "maxLength": 512 }
+                  "url": { "type": "string", "pattern": "^/([^/]|$)", "maxLength": 512 }
                 }
               },
               {
                 "type": "object", "additionalProperties": false, "required": ["kind", "selector"],
                 "properties": {
                   "kind": { "const": "element" },
+                  "selector": { "type": "string", "minLength": 1, "maxLength": 256 }
+                }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["kind", "selector"],
+                "properties": {
+                  "kind": { "const": "focus" },
+                  "selector": { "type": "string", "minLength": 1, "maxLength": 256 }
+                }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["kind", "command"],
+                "properties": {
+                  "kind": { "const": "media" },
+                  "command": { "enum": ["toggle", "play", "pause", "next", "previous", "mute", "forward", "back"] },
                   "selector": { "type": "string", "minLength": 1, "maxLength": 256 }
                 }
               },

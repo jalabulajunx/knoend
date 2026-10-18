@@ -5,7 +5,11 @@
 //!   openpager run                          the service without the web app
 //!   openpager devices / flash              find, identify and flash boards from a firmware release
 //!   openpager draft --class C --instance I  ask the configure agent for a library (no board needed)
+//!   openpager browser install              let the browser extension reach openpager
+//!
+//! A browser that starts this binary as its native messaging host (spec/browser.md) gets the host.
 
+mod browser;
 mod diagnostics;
 mod firmware;
 mod macos_help;
@@ -83,9 +87,33 @@ enum Command {
         #[arg(long)]
         save: bool,
     },
+    /// Let the OpenPager browser extension reach this computer's openpager (Chrome, Chromium,
+    /// Edge, Brave, Firefox).
+    Browser {
+        #[command(subcommand)]
+        action: BrowserAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum BrowserAction {
+    /// Register openpager with every browser found here.
+    Install,
+    /// Remove those registrations.
+    Uninstall,
+    /// Act as the native messaging host (browsers start it this way themselves).
+    Host,
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if browser::started_by_browser(&args) {
+        if let Err(message) = browser::run_host() {
+            eprintln!("openpager: {message}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Pair { port } => pair(&port),
@@ -101,8 +129,21 @@ fn main() {
         Command::Devices { firmware } => tokio::runtime::Runtime::new().expect("tokio").block_on(devices(&firmware)),
         Command::Flash { board, port, firmware, erase } =>
             tokio::runtime::Runtime::new().expect("tokio").block_on(flash(&board, &port, &firmware, erase)),
+        Command::Browser { action: BrowserAction::Install } => browser::install().map(|done| {
+            for line in done {
+                println!("{line}");
+            }
+            println!("Now add the OpenPager extension to the browser (see extension/README.md).");
+        }),
+        Command::Browser { action: BrowserAction::Uninstall } => {
+            for line in browser::uninstall() {
+                println!("{line}");
+            }
+            Ok(())
+        }
+        Command::Browser { action: BrowserAction::Host } => browser::run_host(),
         Command::Draft { class, instance, save } => tokio::runtime::Runtime::new().expect("tokio")
-            .block_on(draft(Focus { os: Os::current(), app: class, instance, title: String::new() }, save)),
+            .block_on(draft(Focus { os: Os::current(), app: class, instance, title: String::new(), web: None }, save)),
     };
     if let Err(message) = result {
         eprintln!("openpager: {message}");
@@ -200,6 +241,48 @@ pub async fn configure(focus: &Focus, save: bool) -> Result<(PathBuf, Library), 
                              config.describe());
         std::fs::write(&path, header + &draft.toml).map_err(|e| e.to_string())?;
     }
+    Ok((path, draft.library))
+}
+
+/// Drafts keys for the website in `focus` from the page's controls (the extension lists them; the
+/// person must have turned board buttons on for the site), then saves them.
+pub async fn configure_site(shared: &service::Shared, focus: &Focus, scope: openpager_agents::site::Scope) -> Result<(PathBuf, Library), String> {
+    let browser = &shared.browser;
+    let web = focus.web.as_ref().ok_or("no website is focused")?;
+    let site = openpager_agents::site::site_of(&web.host);
+    let config = agent_config()?;
+    let read = || browser.request(serde_json::json!({"type": "inventory"}), std::time::Duration::from_secs(10));
+    let mut inventory = read().await?;
+    if inventory["error"] == "not-granted" {
+        shared.ask_site_permission(&site).await?;
+        shared.board_status(format!("Configuring {site}: reading the page..."));
+        inventory = read().await?;
+    }
+    if inventory["ok"] != true {
+        return Err(match inventory["error"].as_str() {
+            Some("not-granted") => format!("turn on board buttons for {site} in the OpenPager extension first"),
+            Some(other) => format!("the page could not be read ({other})"),
+            None => "the page could not be read".into(),
+        });
+    }
+    let items = inventory["items"].as_array().cloned().unwrap_or_default();
+    let started = std::time::Instant::now();
+    let os = match focus.os {
+        openpager_core::focus::Os::Linux => "Linux",
+        openpager_core::focus::Os::Macos => "macOS",
+        openpager_core::focus::Os::Windows => "Windows",
+    };
+    let draft = openpager_agents::site::draft_site_library(&config, &web.host, &web.route(), os, &scope, &items).await?;
+    println!("  drafted keys for {site}{} by {} from {} controls in {:.1} s ({} attempt{}), {} keys",
+             match &scope { openpager_agents::site::Scope::Page { kind, .. } => format!(" (page {kind})"), _ => String::new() },
+             config.describe(), items.len(), started.elapsed().as_secs_f32(), draft.attempts,
+             if draft.attempts == 1 { "" } else { "s" }, draft.library.keys.len());
+    let path = service::ai_libraries().join(format!("{}.toml", draft.library.pack.id.trim_start_matches("ai.")));
+    std::fs::create_dir_all(service::ai_libraries()).map_err(|e| e.to_string())?;
+    let header = format!("# Drafted by the OpenPager configure agent ({}) from the controls on {site}. Unreviewed:\n\
+                          # check the keys, then change source to \"user\" (and the id prefix to \"user.\") to keep your edits.\n\n",
+                         config.describe());
+    std::fs::write(&path, header + &draft.toml).map_err(|e| e.to_string())?;
     Ok((path, draft.library))
 }
 

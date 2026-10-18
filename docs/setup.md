@@ -123,6 +123,12 @@ network. The service finds it by mDNS.
   or Visual Studio Code if you started it in VS Code's terminal), and restart `openpager`. The
   service log names the app; the setup assistant has a button that opens the page.
 
+### Websites (browser extension)
+
+The board can follow the website in your browser and press things on the page. Run
+`./openpager browser install` once, add the extension (see `extension/README.md`), and turn board
+buttons on per site from the extension's popup. YouTube has a built-in layout.
+
 ### Where things are kept
 
 Everything is in `~/.config/openpager/` (or `$XDG_CONFIG_HOME/openpager/`):

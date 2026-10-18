@@ -1,0 +1,6 @@
+body { width: auto; min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box; }
+main { max-width: 460px; }
+h1 { font-size: 20px; margin: 18px 0 8px; }
+#site { word-break: break-all; }
+.buttons { display: flex; gap: 10px; margin-top: 16px; }
+.buttons button { width: auto; flex: 1; }

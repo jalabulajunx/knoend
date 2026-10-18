@@ -1,0 +1,52 @@
+# Built-in library for a YouTube video page. Play/pause and seeking go to the browser's media
+# player (MPRIS on Linux, like the keyboard's media keys), so they work without page access; the
+# key's label follows the video. F, C, T and M are YouTube's own shortcuts.
+[pack]
+id = "builtin.youtube-watch"
+name = "YouTube video"
+version = "0.1.0"
+source = "builtin"
+license = "MIT"
+
+[match]
+web = ["youtube.com/watch"]
+
+[[key]]
+label = "Play/Pause"
+speak = "Play or pause"
+action = { kind = "media", command = "toggle" }
+
+[[key]]
+label = "Back 10s"
+action = { kind = "media", command = "back" }
+
+[[key]]
+label = "Fwd 10s"
+speak = "Forward ten seconds"
+action = { kind = "media", command = "forward" }
+
+[[key]]
+label = "Mute"
+action = { kind = "shortcut", keys = "M" }
+
+[[key]]
+label = "Next"
+speak = "Next video"
+action = { kind = "media", command = "next", selector = ".ytp-next-button" }
+
+[[key]]
+label = "Fullscreen"
+action = { kind = "shortcut", keys = "F" }
+
+[[key]]
+label = "Captions"
+action = { kind = "shortcut", keys = "C" }
+
+[[key]]
+label = "Theater"
+speak = "Theater mode"
+action = { kind = "shortcut", keys = "T" }
+
+[[key]]
+label = "Search"
+action = { kind = "focus", selector = "input[name=\"search_query\"]" }

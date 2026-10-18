@@ -7,7 +7,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use openpager_core::catalog::Catalog;
-use openpager_core::focus::Focus;
+use openpager_core::focus::{Focus, WebPage};
+use openpager_core::library::{Action, MediaCommand};
+use openpager_agents::site::Scope;
+use openpager_media::NowPlaying;
+use std::collections::{HashMap, HashSet};
 use openpager_core::layout;
 use openpager_core::library::Library;
 use openpager_core::protocol::{LayoutBody, LayoutKey, Packet, Send};
@@ -51,6 +55,12 @@ pub struct Shared {
     typist: Arc<std::sync::Mutex<Option<openpager_input::Typist>>>,
     /// The last log lines, for the setup assistant's snapshot.
     recent: std::sync::Mutex<std::collections::VecDeque<String>>,
+    /// The browser extension link (`spec/browser.md`).
+    pub browser: Arc<crate::browser::Browser>,
+    /// Media players (MPRIS on Linux); None where there are none to read.
+    pub media: Option<Arc<openpager_media::Players>>,
+    /// The service loop's inbox, so background jobs can put a line on the board's status bar.
+    inbox: std::sync::OnceLock<mpsc::Sender<Event>>,
 }
 
 impl Shared {
@@ -58,7 +68,10 @@ impl Shared {
         let (events, _) = broadcast::channel(256);
         Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())), firmware_source,
                           typist: Arc::new(std::sync::Mutex::new(None)),
-                          recent: std::sync::Mutex::new(std::collections::VecDeque::new()) })
+                          recent: std::sync::Mutex::new(std::collections::VecDeque::new()),
+                          browser: Arc::new(crate::browser::Browser::default()),
+                          media: openpager_media::Players::connect().ok().map(Arc::new),
+                          inbox: std::sync::OnceLock::new() })
     }
 
     /// Publishes an event to the web app and prints it for the terminal.
@@ -73,6 +86,26 @@ impl Shared {
             }
         }
         let _ = self.events.send(json!({"kind": kind, "data": data}));
+    }
+
+    /// Shows `text` on the board's status bar (highlighted), from any task.
+    pub fn board_status(&self, text: String) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.try_send(Event::Status(text));
+        }
+    }
+
+    /// Asks the browser to let the board act on the active site (the extension opens a page with
+    /// an Allow button; browsers only grant on a click). Waits up to two minutes for the answer.
+    pub async fn ask_site_permission(&self, site: &str) -> Result<(), String> {
+        self.board_status(format!("Allow {site} in your browser (OpenPager tab)"));
+        let answer = self.browser.request(json!({"type": "grant"}), Duration::from_secs(125)).await?;
+        if answer["ok"] == true {
+            Ok(())
+        } else {
+            self.board_status(format!("{site} not allowed: the board cannot act there"));
+            Err(format!("{site} was not allowed in the browser"))
+        }
     }
 
     pub fn recent(&self) -> Vec<String> {
@@ -114,6 +147,14 @@ pub fn ai_libraries() -> PathBuf {
 
 enum Event {
     Focus(Option<Focus>),
+    /// The browser's active tab (None: no browser window focused, or the extension went away).
+    Tab(Option<WebPage>),
+    /// Every media player and what it plays, when that changed.
+    Players(Vec<NowPlaying>),
+    /// The extension's popup asked to configure the focused site.
+    ConfigureSite,
+    /// A line for the board's status bar from a background job.
+    Status(String),
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
@@ -135,17 +176,51 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     shared.update(|s| s.libraries = count).await;
 
     let (events, mut inbox) = mpsc::channel::<Event>(64);
+    let _ = shared.inbox.set(events.clone());
     spawn_focus_watcher(events.clone(), shared.clone());
+    {
+        let (tabs_tx, mut tabs_rx) = mpsc::channel(16);
+        tokio::spawn(crate::browser::serve(shared.browser.clone(), tabs_tx));
+        let events = events.clone();
+        tokio::spawn(async move {
+            while let Some(event) = tabs_rx.recv().await {
+                let event = match event {
+                    crate::browser::BrowserEvent::Tab(tab) => Event::Tab(tab),
+                    crate::browser::BrowserEvent::Configure => Event::ConfigureSite,
+                };
+                if events.send(event).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
 
+    if let Some(media) = shared.media.clone() {
+        spawn_media_watcher(media, events.clone());
+    }
+
+    // What the OS says is focused, and the browser's active tab; `effective` joins them.
     let mut focus: Option<Focus> = None;
+    let mut tab: Option<WebPage> = None;
+    let mut players: Vec<NowPlaying> = Vec::new();
+    // Kinds of page that have keys of their own, per site (saved), and those tried this run.
+    let mut drafted = DraftedPages::load();
+    let mut attempted: HashSet<(String, String)> = HashSet::new();
+    // What each slot on the board does right now (the layout plus any media row).
+    let mut shown_actions: HashMap<u8, KeyRef> = HashMap::new();
     loop {
         let pairings = Pairings::load();
         if pairings.boards.is_empty() {
             shared.update(|s| { s.link = "no-pairing".into(); s.board = None; }).await;
             // Keep following focus while waiting, so the dashboard shows it.
-            if let Ok(Some(Event::Focus(Some(f)))) = tokio::time::timeout(Duration::from_secs(2), inbox.recv()).await {
+            match tokio::time::timeout(Duration::from_secs(2), inbox.recv()).await {
+                Ok(Some(Event::Focus(Some(f)))) => focus = Some(f),
+                Ok(Some(Event::Tab(t))) => tab = t,
+                Ok(Some(Event::Players(p))) => players = p,
+                _ => {}
+            }
+            if let Some(f) = effective(&focus, &tab) {
                 shared.update(|s| s.app = Some(f.display_name().to_string())).await;
-                focus = Some(f);
             }
             continue;
         }
@@ -154,7 +229,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             Ok(link) => link,
             Err(e) => {
                 println!("{e}; retrying in 5 s");
-                drain_focus(&mut inbox, &mut focus, &shared).await;
+                drain_focus(&mut inbox, &mut focus, &mut tab, &mut players, &shared).await;
                 continue;
             }
         };
@@ -162,8 +237,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let board_status = board.clone();
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
-        if let Some(f) = &focus {
-            show(&mut sender, &catalog, f, &mut shown, &shared).await;
+        if let Some(f) = effective(&focus, &tab) {
+            show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
         }
 
         // A board that restarts never closes its old connection, so silence is the only sign:
@@ -190,39 +265,84 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             }
             match event {
                 Event::Focus(Some(f)) => {
+                    focus = Some(f);
+                    let f = effective(&focus, &tab).expect("focus");
                     println!("Focus: {} ({})", f.display_name(), f.instance);
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
-                    show(&mut sender, &catalog, &f, &mut shown, &shared).await;
-                    focus = Some(f);
+                    show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                    draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                 }
                 Event::Focus(None) => {}
-                Event::Board(packet) => {
-                    if let Some(target) = on_board_packet(&packet, focus.as_ref(), &mut sender, &shared).await {
-                        let events = events.clone();
-                        let name = target.display_name().to_string();
-                        shared.update(|s| s.configuring = Some(name)).await;
-                        tokio::spawn(async move {
-                            let result = crate::configure(&target, true).await;
-                            let _ = events.send(Event::Configured(target, result)).await;
-                        });
+                Event::Players(p) => {
+                    players = p;
+                    // Re-show only if this changes what the board shows (show() skips a repeat).
+                    if let Some(f) = effective(&focus, &tab) {
+                        show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
                     }
                 }
+                Event::Tab(t) => {
+                    // A new site, a change of permission, or another kind of page on the same site.
+                    let changed = t.as_ref().map(|p| (&p.host, p.granted, p.page_kind(), p.fullscreen))
+                        != tab.as_ref().map(|p| (&p.host, p.granted, p.page_kind(), p.fullscreen));
+                    tab = t;
+                    let browser_focused = focus.as_ref().is_some_and(|f| crate::browser::is_browser(&f.app, &f.instance));
+                    if changed && browser_focused {
+                        let f = effective(&focus, &tab).expect("focus");
+                        println!("Site: {}", f.display_name());
+                        let name = f.display_name().to_string();
+                        shared.update(|s| s.app = Some(name)).await;
+                        show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                        draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
+                    }
+                }
+                Event::Board(packet) => {
+                    let current = effective(&focus, &tab);
+                    if let Some(target) = on_board_packet(&packet, current.as_ref(), &shown_actions, &players, &mut sender, &shared).await {
+                        let scope = site_scope(&catalog, &target);
+                        start_configure(target, scope, &events, &shared).await;
+                    }
+                }
+                Event::Status(text) => {
+                    let _ = sender.send("openpager.status", json!({"text": board_text(&text, 80), "level": "attention", "ttl": 20})).await;
+                }
+                Event::ConfigureSite => match effective(&focus, &tab).filter(|f| f.web.is_some()) {
+                    Some(target) => {
+                        let text = format!("Configuring {}: reading the page...", board_text(target.display_name(), 40));
+                        let _ = sender.send("openpager.status", json!({"text": text, "level": "attention"})).await;
+                        let scope = site_scope(&catalog, &target);
+                        start_configure(target, scope, &events, &shared).await;
+                    }
+                    None => shared.browser.notify(json!({"type": "configure-status", "ok": false,
+                                                         "text": "Focus the browser window with the site first."})),
+                },
                 Event::Configured(target, result) => {
                     shared.update(|s| s.configuring = None).await;
                     match result {
                         Ok((path, library)) => {
+                            let keys = library.keys.len();
+                            if let Some(web) = &target.web {
+                                drafted.add(&web.host, &web.page_kind());
+                            }
                             shared.emit("configured", json!({"text": format!("  saved {} -> {}", library.pack.id, path.display()),
                                                              "app": target.display_name(), "library": library.pack.id}));
                             catalog.add(path, library);
                             let count = catalog.len();
                             shared.update(|s| s.libraries = count).await;
-                            if focus.as_ref().is_some_and(|f| f.app == target.app && f.instance == target.instance) {
+                            if target.web.is_some() {
+                                shared.browser.notify(json!({"type": "configure-status", "ok": true,
+                                    "text": format!("Made {keys} keys for {}. Look at the board.", target.display_name())}));
+                            }
+                            let same_site = |f: &Focus| f.web.as_ref().map(|w| &w.host) == target.web.as_ref().map(|w| &w.host);
+                            if effective(&focus, &tab).is_some_and(|f| f.app == target.app && f.instance == target.instance && same_site(&f)) {
                                 shown = None;
-                                show(&mut sender, &catalog, &target, &mut shown, &shared).await;
+                                show(&mut sender, &catalog, &target, &players, &mut shown, &mut shown_actions, &shared).await;
                             }
                         }
                         Err(error) => {
+                            if target.web.is_some() {
+                                shared.browser.notify(json!({"type": "configure-status", "ok": false, "text": format!("Could not make keys: {error}")}));
+                            }
                             shared.emit("configure-failed", json!({"text": format!("  configure failed for {}: {error}", target.display_name()),
                                                                    "app": target.display_name(), "error": error}));
                             let mut text = format!("Could not configure {}: {error}", target.display_name());
@@ -241,14 +361,29 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     }
 }
 
+/// The focused app, with the browser's active site attached when the app is a browser.
+fn effective(focus: &Option<Focus>, tab: &Option<WebPage>) -> Option<Focus> {
+    let mut f = focus.clone()?;
+    if crate::browser::is_browser(&f.app, &f.instance) {
+        f.web = tab.clone();
+    }
+    Some(f)
+}
+
 /// While not connected, keep the latest focus without blocking the reconnect for long.
-async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus>, shared: &Shared) {
+async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus>, tab: &mut Option<WebPage>,
+                     players: &mut Vec<NowPlaying>, shared: &Shared) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     while let Ok(Some(event)) = tokio::time::timeout_at(deadline, inbox.recv()).await {
-        if let Event::Focus(Some(f)) = event {
+        match event {
+            Event::Focus(Some(f)) => *focus = Some(f),
+            Event::Tab(t) => *tab = t,
+            Event::Players(p) => { *players = p; continue; }
+            _ => continue,
+        }
+        if let Some(f) = effective(focus, tab) {
             let name = f.display_name().to_string();
             shared.update(|s| s.app = Some(name)).await;
-            *focus = Some(f);
         }
     }
 }
@@ -309,31 +444,188 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
     Ok((status, sender))
 }
 
-/// Pushes the layout for `focus`, or the "unsupported app" screen.
-async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, shown: &mut Option<String>, shared: &Shared) {
-    let (body, status) = match catalog.find(focus) {
+/// Pushes the layout for `focus`, or the "unsupported app" screen. When the focused app has a
+/// media player, its play/pause key and the status bar follow what it plays. Sends nothing when the
+/// board already shows exactly this.
+async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, players: &[NowPlaying],
+              shown: &mut Option<String>, shown_actions: &mut HashMap<u8, KeyRef>, shared: &Shared) {
+    let player = openpager_media::for_focus(players, &focus.app, &focus.instance);
+    let mut actions: HashMap<u8, KeyRef> = HashMap::new();
+    let (mut body, mut status) = match catalog.find(focus) {
         Some(library) => match layout::build(library, focus.os) {
-            Ok(body) => (body, json!({"text": ""})),
+            Ok(mut body) => {
+                for (key, slot) in library.keys.iter().zip(library.slots()) {
+                    actions.insert(slot, KeyRef { label: key.label.clone(), action: key.action.clone() });
+                }
+                if let Some(player) = player {
+                    for (key, slot) in library.keys.iter().zip(library.slots()) {
+                        if let Action::Media { command: MediaCommand::Toggle, .. } = key.action {
+                            if let Some(k) = body.keys.iter_mut().find(|k| k.key == slot) {
+                                k.label = if player.playing() { "Pause".into() } else { "Play".into() };
+                            }
+                        }
+                    }
+                }
+                (body, json!({"text": ""}))
+            }
             Err(e) => {
                 println!("  library {} cannot be built: {e}", library.pack.id);
                 return;
             }
         },
-        None => (unsupported_layout(focus), json!({"text": format!("Unsupported app: {}", focus.display_name()), "level": "attention"})),
+        None => (unsupported_layout(focus), json!({"text": if focus.web.is_some() { format!("No keys for {} yet", board_text(focus.display_name(), 50)) }
+                                         else { format!("Unsupported app: {}", board_text(focus.display_name(), 50)) }, "level": "attention"})),
     };
-    let id = body.layout.clone();
-    if shown.as_deref() == Some(id.as_str()) && id != UNSUPPORTED {
+    if let (Some(player), true) = (player, status["text"] == "") {
+        let what = [board_text(&player.title, 50), board_text(&player.artist, 24)].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" - ");
+        if !what.is_empty() {
+            status = json!({"text": format!("{}: {what}", if player.playing() { "Playing" } else { "Paused" }), "level": "info"});
+        }
+    }
+    // While the focused app plays something, the bottom row controls it (as KDE Connect's media
+    // controls do), unless the layout has media keys of its own.
+    if let Some(player) = player.filter(|p| p.playing() || (p.status == "Paused" && !p.title.is_empty())) {
+        if !actions.values().any(|k| matches!(k.action, Action::Media { .. })) {
+            let row = [(7u8, player.can_go_previous, "Prev", "Previous track", MediaCommand::Previous),
+                       (8, true, if player.playing() { "Pause" } else { "Play" }, "Play or pause", MediaCommand::Toggle),
+                       (9, player.can_go_next, "Next", "Next track", MediaCommand::Next)];
+            for (slot, offered, label, speak, command) in row {
+                if !offered {
+                    continue;
+                }
+                body.keys.retain(|k| k.key != slot);
+                body.keys.push(LayoutKey { key: slot, label: label.into(), speak: Some(speak.into()), confirm: false, send: Send::Event(true) });
+                actions.insert(slot, KeyRef { label: label.into(), action: Action::Media { command, selector: None } });
+            }
+            body.keys.sort_by_key(|k| k.key);
+        }
+    }
+    body.name = board_text(&body.name, 128);
+    *shown_actions = actions;
+    let signature = format!("{}|{}", serde_json::to_string(&body).unwrap_or_default(), status);
+    if shown.as_deref() == Some(signature.as_str()) {
         return;
     }
-    println!("  -> {} ({})", body.name, id);
+    let id = body.layout.clone();
+    println!("  -> {} ({}){} keys: {}", body.name, id, status["text"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" [{t}]")).unwrap_or_default(),
+             body.keys.iter().map(|k| format!("{}={}", k.key, k.label)).collect::<Vec<_>>().join(", "));
     let summary = json!({"id": id, "name": body.name, "source": body.source, "reviewed": body.reviewed,
                          "keys": body.keys.iter().map(|k| json!({"key": k.key, "label": k.label})).collect::<Vec<_>>()});
     let body = serde_json::to_value(&body).expect("serialisable");
     if sender.send("openpager.layout", body).await.is_ok() {
         let _ = sender.send("openpager.status", status).await;
-        *shown = Some(id);
+        *shown = Some(signature);
         shared.update(|s| s.layout = Some(summary)).await;
     }
+}
+
+/// Text the board's font can draw (printable ASCII), on one line, at most `max` characters.
+fn board_text(text: &str, max: usize) -> String {
+    let ascii: String = text.chars().map(|c| if c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).collect();
+    let mut out = ascii.split_whitespace().collect::<Vec<_>>().join(" ");
+    if out.chars().count() > max {
+        out = out.chars().take(max.saturating_sub(3)).collect::<String>() + "...";
+    }
+    out
+}
+
+/// What a site draft should cover: the whole site the first time; once the site has keys, the
+/// kind of page the person is on (told the site-wide keys, so it does not repeat them).
+fn site_scope(catalog: &Catalog, focus: &Focus) -> Scope {
+    let Some(web) = &focus.web else { return Scope::Site };
+    match catalog.site_wide(web) {
+        Some(site) => Scope::Page { kind: web.page_kind(), site_keys: site.keys.iter().map(|k| k.label.clone()).collect() },
+        None => Scope::Site,
+    }
+}
+
+/// Once the person made keys for a site, a kind of page with no keys of its own gets them drafted
+/// in the background (once per kind; remembered across runs).
+async fn draft_new_page(catalog: &Catalog, focus: &Focus, drafted: &DraftedPages, attempted: &mut HashSet<(String, String)>,
+                        events: &mpsc::Sender<Event>, shared: &Arc<Shared>) {
+    // Not while full screen: a presentation or a full-screen video has nothing to draft from.
+    let Some(web) = focus.web.as_ref().filter(|w| w.granted && !w.fullscreen) else { return };
+    let Some(site) = catalog.site_wide(web) else { return };
+    // Only sites the person configured with the AI, and only where nothing more specific applies.
+    if site.pack.source != openpager_core::library::Source::Ai || catalog.find(focus).map(|l| &l.pack.id) != Some(&site.pack.id) {
+        return;
+    }
+    let kind = web.page_kind();
+    if drafted.has(&web.host, &kind) || !attempted.insert((web.host.clone(), kind.clone())) {
+        return;
+    }
+    if shared.status.read().await.configuring.is_some() {
+        attempted.remove(&(web.host.clone(), kind));
+        return;
+    }
+    println!("  new kind of page on {}: {kind}; drafting its keys", web.host);
+    shared.board_status("Making keys for this page...".into());
+    start_configure(focus.clone(), site_scope(catalog, focus), events, shared).await;
+}
+
+/// What one key on the board does now.
+#[derive(Debug, Clone)]
+pub struct KeyRef {
+    pub label: String,
+    pub action: Action,
+}
+
+/// Kinds of page that have their own drafted keys, per site (`sites.json` in the config folder).
+#[derive(Default, Serialize, serde::Deserialize)]
+struct DraftedPages {
+    sites: HashMap<String, Vec<String>>,
+}
+
+impl DraftedPages {
+    fn path() -> PathBuf {
+        config_dir().join("sites.json")
+    }
+    fn load() -> DraftedPages {
+        std::fs::read_to_string(Self::path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    }
+    fn has(&self, host: &str, kind: &str) -> bool {
+        self.sites.get(host).is_some_and(|k| k.iter().any(|x| x == kind))
+    }
+    fn add(&mut self, host: &str, kind: &str) {
+        let kinds = self.sites.entry(host.to_string()).or_default();
+        if !kinds.iter().any(|k| k == kind) {
+            kinds.push(kind.to_string());
+        }
+        let _ = std::fs::write(Self::path(), serde_json::to_string_pretty(self).unwrap_or_default());
+    }
+}
+
+/// Drafts keys for `target` (an app, or the site in its browser tab) in the background; the
+/// result comes back as `Event::Configured`.
+async fn start_configure(target: Focus, scope: Scope, events: &mpsc::Sender<Event>, shared: &Arc<Shared>) {
+    let (events, shared) = (events.clone(), shared.clone());
+    let name = target.display_name().to_string();
+    shared.update(|s| s.configuring = Some(name)).await;
+    tokio::spawn(async move {
+        let result = if target.web.is_some() {
+            crate::configure_site(&shared, &target, scope).await
+        } else {
+            crate::configure(&target, true).await
+        };
+        let _ = events.send(Event::Configured(target, result)).await;
+    });
+}
+
+/// Polls the media players every second and reports when anything shown changes.
+fn spawn_media_watcher(media: Arc<openpager_media::Players>, events: mpsc::Sender<Event>) {
+    std::thread::spawn(move || {
+        let mut last: Vec<NowPlaying> = Vec::new();
+        loop {
+            let now = media.list();
+            if now != last {
+                if events.blocking_send(Event::Players(now.clone())).is_err() {
+                    return;
+                }
+                last = now;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
 }
 
 fn unsupported_layout(focus: &Focus) -> LayoutBody {
@@ -349,7 +641,8 @@ fn unsupported_layout(focus: &Focus) -> LayoutBody {
 }
 
 /// Handles a packet from the board; returns the app to configure when Configure was tapped.
-async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, sender: &mut wifi::WifiSender, shared: &Shared) -> Option<Focus> {
+async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: &HashMap<u8, KeyRef>, players: &[NowPlaying],
+                         sender: &mut wifi::WifiSender, shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
         "openpager.layout.ack" if packet.body["ok"] != true => println!("  board rejected layout: {}", packet.body),
         "openpager.key" => {
@@ -371,6 +664,57 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, sender: &mut wi
                     Err(e) => shared.emit("type-failed", json!({"text": format!("  could not type key {key}: {e}")})),
                 }
                 return None;
+            }
+            // A key whose action happens on the web page: the browser extension carries it out.
+            if layout != UNSUPPORTED || key != u64::from(CONFIGURE_SLOT) {
+                if let Some(library_key) = u8::try_from(key).ok().and_then(|k| shown_actions.get(&k)) {
+                    // Media keys go to the focused app's media player first (like the keyboard's
+                    // media keys): the browser then allows starting playback.
+                    let player = focus.and_then(|f| openpager_media::for_focus(players, &f.app, &f.instance));
+                    if let (Action::Media { command, .. }, Some(player), Some(media)) = (&library_key.action, player, shared.media.clone()) {
+                        let mpris = match command {
+                            MediaCommand::Toggle => Some(openpager_media::Command::PlayPause),
+                            MediaCommand::Play => Some(openpager_media::Command::Play),
+                            MediaCommand::Pause => Some(openpager_media::Command::Pause),
+                            MediaCommand::Next if player.can_go_next => Some(openpager_media::Command::Next),
+                            MediaCommand::Previous if player.can_go_previous => Some(openpager_media::Command::Previous),
+                            MediaCommand::Forward if player.can_seek => Some(openpager_media::Command::Seek(10)),
+                            MediaCommand::Back if player.can_seek => Some(openpager_media::Command::Seek(-10)),
+                            _ => None,
+                        };
+                        if let Some(mpris) = mpris {
+                            let (bus, label, shared) = (player.bus.clone(), library_key.label.clone(), shared.clone());
+                            tokio::task::spawn_blocking(move || {
+                                let text = match media.command(&bus, mpris) {
+                                    Ok(()) => format!("  {label}: sent to the media player"),
+                                    Err(e) => format!("  {label}: the media player refused ({e})"),
+                                };
+                                shared.emit("media-action", json!({"text": text}));
+                            });
+                            return None;
+                        }
+                    }
+                    if library_key.action.is_web() {
+                        let (shared, label) = (shared.clone(), library_key.label.clone());
+                        let action = serde_json::to_value(&library_key.action).unwrap_or_default();
+                        let site = focus.and_then(|f| f.web.as_ref()).map(|w| openpager_agents::site::site_of(&w.host)).unwrap_or_default();
+                        tokio::spawn(async move {
+                            let act = || shared.browser.request(json!({"type": "act", "action": action.clone()}), Duration::from_secs(5));
+                            let mut answer = act().await;
+                            // Not allowed yet: ask in the browser, then do it.
+                            if answer.as_ref().is_ok_and(|r| r["error"] == "not-granted") && shared.ask_site_permission(&site).await.is_ok() {
+                                answer = act().await;
+                            }
+                            let text = match answer {
+                                Ok(r) if r["ok"] == true => format!("  {label}: done in the browser"),
+                                Ok(r) => format!("  {label}: the browser could not do it ({})", r["error"].as_str().unwrap_or("unknown")),
+                                Err(e) => format!("  {label}: {e}"),
+                            };
+                            shared.emit("web-action", json!({"text": text}));
+                        });
+                        return None;
+                    }
+                }
             }
             if layout == UNSUPPORTED && key == u64::from(CONFIGURE_SLOT) {
                 let target = focus?.clone();

@@ -1,0 +1,41 @@
+# Built-in library for browsing YouTube. Page keys need the OpenPager extension with board buttons
+# turned on for youtube.com; a video page uses youtube-watch.toml instead.
+[pack]
+id = "builtin.youtube"
+name = "YouTube"
+version = "0.2.0"
+source = "builtin"
+license = "MIT"
+
+[match]
+web = ["youtube.com"]
+
+[[key]]
+label = "Search"
+action = { kind = "focus", selector = "input[name=\"search_query\"]" }
+
+[[key]]
+label = "Home"
+action = { kind = "open", url = "/" }
+
+[[key]]
+label = "Subscriptions"
+action = { kind = "open", url = "/feed/subscriptions" }
+
+[[key]]
+label = "History"
+action = { kind = "open", url = "/feed/history" }
+
+[[key]]
+label = "Shorts"
+action = { kind = "open", url = "/shorts" }
+
+[[key]]
+label = "You"
+speak = "Your library"
+action = { kind = "open", url = "/feed/you" }
+
+[[key]]
+label = "Play/Pause"
+speak = "Play or pause"
+action = { kind = "media", command = "toggle" }

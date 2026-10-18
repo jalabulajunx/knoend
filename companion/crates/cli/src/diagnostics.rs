@@ -109,6 +109,7 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
         "system_checks": system_checks(&ports),
         "recent_log": shared.recent().iter().map(|l| redact(l)).collect::<Vec<_>>(),
         "firmware_source": shared.firmware_source,
+        "browser_extension_connected": shared.browser.connected(),
         "ai_provider": agent.map(|a| a.describe()),
         "from_the_web_app": ui_context,
     })

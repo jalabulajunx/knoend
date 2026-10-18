@@ -9,6 +9,7 @@
 pub mod assistant;
 pub mod provider;
 pub mod secrets;
+pub mod site;
 
 use openpager_core::focus::{Focus, Os};
 use openpager_core::library::Library;
@@ -77,7 +78,7 @@ pub fn slug(focus: &Focus) -> String {
 }
 
 /// Strips code fences or prose around the TOML, if the model added any.
-fn extract_toml(reply: &str) -> String {
+pub(crate) fn extract_toml(reply: &str) -> String {
     let text = reply.trim();
     if let Some(start) = text.find("```") {
         let after = &text[start + 3..];
@@ -146,7 +147,7 @@ mod tests {
     use super::*;
 
     fn focus() -> Focus {
-        Focus { os: Os::Linux, app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), title: "secret title".into() }
+        Focus { os: Os::Linux, app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), title: "secret title".into(), web: None }
     }
 
     #[test]
@@ -187,7 +188,7 @@ action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
     #[test]
     fn slugs_are_safe() {
         assert_eq!(slug(&focus()), "xfce4-terminal");
-        let f = Focus { os: Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new() };
+        let f = Focus { os: Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new(), web: None };
         assert_eq!(slug(&f), "com-anthropic-claude");
     }
 }

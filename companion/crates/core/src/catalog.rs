@@ -53,16 +53,38 @@ impl Catalog {
         self.libraries.is_empty()
     }
 
-    /// The library for the focused app, by precedence; `None` means "unsupported app".
+    /// The library for what is focused, by precedence: a library for the browser tab's site
+    /// first, then one for the app. `None` means "unsupported".
     pub fn find(&self, focus: &Focus) -> Option<&Library> {
         let rank = |source: &Source| match source {
             Source::User => 0,
             Source::Builtin | Source::Community => 1,
             Source::Ai => 2,
         };
+        if let Some(web) = &focus.web {
+            // The most specific pattern wins ("youtube.com/watch" over "youtube.com"), then source.
+            let site = self.libraries.iter().map(|(_, l)| l)
+                .filter_map(|l| l.matches.web.iter().filter(|p| web.matches_pattern(p)).map(|p| p.len()).max().map(|n| (l, n)))
+                .min_by_key(|(l, n)| (std::cmp::Reverse(*n), rank(&l.pack.source)))
+                .map(|(l, _)| l);
+            if site.is_some() {
+                return site;
+            }
+        }
         self.libraries.iter().map(|(_, l)| l)
             .filter(|l| patterns(l, focus.os).iter().any(|p| focus.matches_pattern(p)))
             .min_by_key(|l| rank(&l.pack.source))
+    }
+
+    /// The library that covers a whole site (a `match.web` pattern without a route), if any.
+    pub fn site_wide(&self, web: &crate::focus::WebPage) -> Option<&Library> {
+        self.libraries.iter().map(|(_, l)| l)
+            .find(|l| l.matches.web.iter().any(|p| !p.contains('/') && web.matches_pattern(p)))
+    }
+
+    /// A library by its id.
+    pub fn get(&self, id: &str) -> Option<&Library> {
+        self.libraries.iter().map(|(_, l)| l).find(|l| l.pack.id == id)
     }
 
     pub fn path_of(&self, id: &str) -> Option<&Path> {
@@ -83,7 +105,7 @@ mod tests {
     use super::*;
 
     fn focus(app: &str, instance: &str) -> Focus {
-        Focus { os: Os::Linux, app: app.into(), instance: instance.into(), title: String::new() }
+        Focus { os: Os::Linux, app: app.into(), instance: instance.into(), title: String::new(), web: None }
     }
 
     #[test]
