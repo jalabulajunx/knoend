@@ -848,3 +848,5 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   `ttyin`. The prompt's text cannot be read from outside the terminal; `TIOCSTI` is off
   (`dev.tty.legacy_tiocsti = 0`), so answering means focusing that terminal and typing (X11/macOS).
   Never type into `sudo`/password prompts.
+- Sundar: board taps answered Claude's questions in the earlier tests (confirmed on the board).
+  Terminal-waiting detection waits for Tom's terminal work.
