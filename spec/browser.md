@@ -33,7 +33,7 @@ Every message is a JSON object with a `type`. Extension to service:
 | `type` | Body | Meaning |
 | --- | --- | --- |
 | `hello` | `browser` ("chrome", "firefox", ...), `version` | The extension started. |
-| `tab` | `url`, `title`, `windowFocused` (bool), `granted` (bool: board buttons are on for this site) | The active tab of the focused window changed, navigated, or the window gained or lost focus. Sent only for `http`/`https` pages; other pages send `url: null`. |
+| `tab` | `url`, `title`, `windowFocused` (bool), `granted` (bool: board buttons are on for this site), `fullscreen` (bool: the page is full screen; known on allowed sites only) | The active tab of the focused window changed, navigated, or the window gained or lost focus. Sent only for `http`/`https` pages; other pages send `url: null`. |
 | `inventory` | `request`, `url`, `items` (see 3) | Answer to `inventory`. |
 | `configure` | (none) | The person pressed "Make keys for this site with AI" in the popup. |
 | `result` | `request`, `ok`, `error?` | Answer to `act`. |
@@ -97,6 +97,11 @@ only when no player is found or for `mute`.
 optionally a route: path segments, with `*` for any one segment and `#` for an app's in-page route
 (`youtube.com/watch`, `music.example/app/#/album/*/show`). The longest matching pattern wins, so a
 site can have different keys on different kinds of page. A site layout wins over the browser's own.
+
+A pattern ending in `@fullscreen` applies only while the page is full screen
+(`docs.google.com/presentation@fullscreen`: a presentation showing). On allowed sites the
+extension registers a small watcher (`watch.js`) that reports entering and leaving full screen. No
+keys are drafted while a page is full screen.
 
 A page's **kind** is its route with id-like segments (numbers, long or random-looking strings)
 replaced by `*`: `/app/#/album/0CqaylqAigA1E6bOjrSyRD/show` is the kind `/app/#/album/*/show`.

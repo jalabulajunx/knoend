@@ -1,0 +1,56 @@
+# Built-in library for a Google Slides presentation while it is showing (the page is full screen,
+# reported by the OpenPager extension on an allowed site). The keys are Slides' own presenting
+# shortcuts, typed as real key presses.
+[pack]
+id = "builtin.google-slides-present"
+name = "Presenting"
+version = "0.1.0"
+source = "builtin"
+license = "MIT"
+
+[match]
+web = ["docs.google.com/presentation@fullscreen"]
+
+[[key]]
+label = "Prev"
+speak = "Previous slide"
+action = { kind = "shortcut", keys = "Left" }
+
+[[key]]
+label = "Next"
+speak = "Next slide"
+action = { kind = "shortcut", keys = "Right" }
+
+[[key]]
+label = "Exit"
+speak = "Stop presenting"
+action = { kind = "shortcut", keys = "Escape" }
+
+[[key]]
+label = "First"
+speak = "First slide"
+action = { kind = "shortcut", keys = "Home" }
+
+[[key]]
+label = "Last"
+speak = "Last slide"
+action = { kind = "shortcut", keys = "End" }
+
+[[key]]
+label = "Laser"
+speak = "Laser pointer"
+action = { kind = "shortcut", keys = "L" }
+
+[[key]]
+label = "Black"
+speak = "Black screen"
+action = { kind = "shortcut", keys = "B" }
+
+[[key]]
+label = "White"
+speak = "White screen"
+action = { kind = "shortcut", keys = "W" }
+
+[[key]]
+label = "Captions"
+action = { kind = "shortcut", keys = "Ctrl+Shift+C" }

@@ -283,7 +283,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Tab(t) => {
                     // A new site, a change of permission, or another kind of page on the same site.
-                    let changed = t.as_ref().map(|p| (&p.host, p.granted, p.page_kind())) != tab.as_ref().map(|p| (&p.host, p.granted, p.page_kind()));
+                    let changed = t.as_ref().map(|p| (&p.host, p.granted, p.page_kind(), p.fullscreen))
+                        != tab.as_ref().map(|p| (&p.host, p.granted, p.page_kind(), p.fullscreen));
                     tab = t;
                     let browser_focused = focus.as_ref().is_some_and(|f| crate::browser::is_browser(&f.app, &f.instance));
                     if changed && browser_focused {
@@ -542,7 +543,8 @@ fn site_scope(catalog: &Catalog, focus: &Focus) -> Scope {
 /// in the background (once per kind; remembered across runs).
 async fn draft_new_page(catalog: &Catalog, focus: &Focus, drafted: &DraftedPages, attempted: &mut HashSet<(String, String)>,
                         events: &mpsc::Sender<Event>, shared: &Arc<Shared>) {
-    let Some(web) = focus.web.as_ref().filter(|w| w.granted) else { return };
+    // Not while full screen: a presentation or a full-screen video has nothing to draft from.
+    let Some(web) = focus.web.as_ref().filter(|w| w.granted && !w.fullscreen) else { return };
     let Some(site) = catalog.site_wide(web) else { return };
     // Only sites the person configured with the AI, and only where nothing more specific applies.
     if site.pack.source != openpager_core::library::Source::Ai || catalog.find(focus).map(|l| &l.pack.id) != Some(&site.pack.id) {

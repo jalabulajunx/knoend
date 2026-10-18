@@ -194,6 +194,7 @@ fn page_from(message: &Value) -> Option<WebPage> {
         url: url.chars().take(2048).collect(),
         title: message["title"].as_str().unwrap_or("").chars().take(200).collect(),
         granted: message["granted"] == true,
+        fullscreen: message["fullscreen"] == true,
     })
 }
 

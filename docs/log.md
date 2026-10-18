@@ -563,3 +563,17 @@ Entry template:
     Web Store listing (US$5, review) or Developer mode. The web app should guide both.
   - Not yet tried on the board: media row, per-page drafts, the Allow tab, Chrome/Edge/Brave with
     MPRIS.
+
+## 2026-10-18 - Sundar (Claude Code) - Presenting: the board becomes a slide remote
+
+- Sundar: after starting a presentation the board kept the editing keys. Google Slides presents in
+  the same tab at the same address; only full screen changes.
+- Changed: on allowed sites the extension registers `watch.js` (content script) that reports
+  `fullscreenchange`; the tab message carries `fullscreen`. `match.web` patterns may end in
+  `@fullscreen`. Built-in `google-slides-present` (`docs.google.com/presentation@fullscreen`):
+  Prev, Next, Exit, First, Last, Laser, Black, White, Captions as Slides' own shortcuts. No drafting
+  while full screen. Also: removed Sundar's old Slides draft and its `sites.json` entry on request.
+- Tested: Rust tests (full-screen patterns: a presentation matches only while full screen and wins
+  over the site keys). Not tested: the full-screen report itself: headless Firefox cannot go full
+  screen even with `full-screen-api.allow-trusted-requests-only` off, and there is no Xvfb here (not
+  installed; would ask first). Needs Sundar's Slides test.

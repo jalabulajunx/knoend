@@ -65,6 +65,23 @@ async function granted(url) {
 
 // ---- telling openpager which site is active ----
 
+/** Tabs whose page is full screen (reported by watch.js on allowed sites). */
+const fullscreenTabs = new Set();
+
+/** watch.js runs on every allowed site, so a page can say when it goes full screen. */
+async function registerWatcher() {
+  const { origins = [] } = await api.permissions.getAll();
+  const matches = origins.filter((o) => /^https?:\/\//.test(o));
+  try { await api.scripting.unregisterContentScripts({ ids: ["openpager-watch"] }); } catch { /* none yet */ }
+  if (!matches.length) return;
+  try {
+    await api.scripting.registerContentScripts([{ id: "openpager-watch", js: ["watch.js"], matches, runAt: "document_idle" }]);
+  } catch (e) { hostError = `watcher: ${e.message || e}`; }
+}
+registerWatcher();
+api.permissions.onAdded.addListener(registerWatcher);
+api.permissions.onRemoved.addListener(registerWatcher);
+
 let reportTimer = null;
 function reportTab() {
   clearTimeout(reportTimer);
@@ -73,11 +90,12 @@ function reportTab() {
     const tab = await activeTab().catch(() => null);
     const url = tab && isWeb(tab.url) ? tab.url : null;
     send({ type: "tab", url, title: url ? (tab.title || "") : "", windowFocused: !!(window && window.focused),
-           granted: url ? await granted(url) : false });
+           granted: url ? await granted(url) : false, fullscreen: !!(tab && fullscreenTabs.has(tab.id)) });
   }, 150);
 }
 
 api.tabs.onActivated.addListener(reportTab);
+api.tabs.onRemoved.addListener((tabId) => fullscreenTabs.delete(tabId));
 api.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (tab.active && (change.url || change.status === "complete" || change.title)) reportTab();
 });
@@ -312,6 +330,10 @@ function pageInventory() {
 api.runtime.onMessage.addListener((message, sender, reply) => {
   if (message && message.type === "status") {
     reply({ host: !!port, service: serviceRunning, hostError, configure: configureStatus });
+  } else if (message && message.type === "page-state" && sender.tab) {
+    const was = fullscreenTabs.has(sender.tab.id);
+    if (message.fullscreen) fullscreenTabs.add(sender.tab.id); else fullscreenTabs.delete(sender.tab.id);
+    if (was !== !!message.fullscreen && sender.tab.active) reportTab();
   } else if (message && message.type === "grant-result") {
     settleGrant(message.request, !!message.granted);
   } else if (message && message.type === "configure") {

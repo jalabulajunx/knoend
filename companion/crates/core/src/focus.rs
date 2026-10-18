@@ -47,6 +47,9 @@ pub struct WebPage {
     pub title: String,
     /// Board buttons are turned on for this site (the extension holds its host permission).
     pub granted: bool,
+    /// The page is full screen (a presentation showing, a video full screen).
+    #[serde(default)]
+    pub fullscreen: bool,
 }
 
 impl WebPage {
@@ -55,8 +58,17 @@ impl WebPage {
     /// ("amazon.ca", "www.amazon.co.uk"); a route after the host narrows it to pages under it,
     /// segment by segment, where `*` stands for any one segment ("youtube.com/watch",
     /// "music.example/app/#/album/*/show": `#` marks an app's in-page route).
+    ///
+    /// A pattern ending in `@fullscreen` matches only while the page is full screen
+    /// ("docs.google.com/presentation@fullscreen": a presentation showing).
     pub fn matches_pattern(&self, pattern: &str) -> bool {
-        let pattern = pattern.trim().to_ascii_lowercase();
+        let mut pattern = pattern.trim().to_ascii_lowercase();
+        if let Some(base) = pattern.strip_suffix("@fullscreen") {
+            if !self.fullscreen {
+                return false;
+            }
+            pattern = base.to_string();
+        }
         let (site, route) = match pattern.find('/') {
             Some(i) => (&pattern[..i], Some(&pattern[i..])),
             None => (pattern.as_str(), None),
@@ -139,7 +151,7 @@ mod tests {
     use super::WebPage;
 
     fn page(host: &str) -> WebPage {
-        WebPage { host: host.into(), url: format!("https://{host}/"), title: String::new(), granted: false }
+        WebPage { host: host.into(), url: format!("https://{host}/"), title: String::new(), granted: false, fullscreen: false }
     }
 
     #[test]
@@ -150,11 +162,11 @@ mod tests {
         assert!(page("www.amazon.co.uk").matches_pattern("amazon.*"));
         assert!(page("amazon.ca").matches_pattern("amazon.*"));
         assert!(!page("amazonia.org").matches_pattern("amazon.*"));
-        let watch = WebPage { host: "www.youtube.com".into(), url: "https://www.youtube.com/watch?v=1".into(), title: String::new(), granted: true };
+        let watch = WebPage { host: "www.youtube.com".into(), url: "https://www.youtube.com/watch?v=1".into(), title: String::new(), granted: true, fullscreen: false };
         assert!(watch.matches_pattern("youtube.com/watch"));
         assert!(!page("www.youtube.com").matches_pattern("youtube.com/watch"));
         assert_eq!(watch.path(), "/watch");
-        let album = WebPage { host: "192.168.50.3".into(), url: "http://192.168.50.3:4533/app/#/album/0CqaylqAigA1E6bOjrSyRD/show".into(), title: String::new(), granted: true };
+        let album = WebPage { host: "192.168.50.3".into(), url: "http://192.168.50.3:4533/app/#/album/0CqaylqAigA1E6bOjrSyRD/show".into(), title: String::new(), granted: true, fullscreen: false };
         assert_eq!(album.route(), "/app/#/album/0CqaylqAigA1E6bOjrSyRD/show");
         assert_eq!(album.page_kind(), "/app/#/album/*/show");
         assert!(album.matches_pattern("192.168.50.3/app/#/album/*/show"));
@@ -162,6 +174,11 @@ mod tests {
         assert!(!album.matches_pattern("192.168.50.3/app/#/artist/*/show"));
         let home = WebPage { url: "http://192.168.50.3:4533/app/#/".into(), ..album.clone() };
         assert_eq!(home.page_kind(), "/app/#");
+        let slides = WebPage { url: "https://docs.google.com/presentation/d/abc123def456/edit".into(), host: "docs.google.com".into(), ..album.clone() };
+        assert!(!slides.matches_pattern("docs.google.com/presentation@fullscreen"));
+        let presenting = WebPage { fullscreen: true, ..slides.clone() };
+        assert!(presenting.matches_pattern("docs.google.com/presentation@fullscreen"));
+        assert!(presenting.matches_pattern("docs.google.com"));
         let plain = WebPage { url: "https://example.com/a/b?x=1#section".into(), ..album.clone() };
         assert_eq!(plain.route(), "/a/b");
     }
