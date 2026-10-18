@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "icons.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -33,6 +34,7 @@ static const char *TAG = "ui";
 static ui_layout_t layout;
 static lv_obj_t *key_buttons[UI_KEYS];
 static lv_obj_t *key_labels[UI_KEYS];
+static lv_obj_t *key_icons[UI_KEYS];
 static lv_obj_t *status_bar;
 static lv_obj_t *status_label;
 
@@ -160,9 +162,23 @@ static void draw_keys_locked(void)
         const bool blank = key->send == UI_SEND_NONE;
         lv_obj_set_style_bg_color(key_buttons[i], lv_color_hex(blank ? COLOR_KEY_BLANK : COLOR_KEY), 0);
         lv_label_set_text(key_labels[i], blank ? "" : key->label);
-        lv_obj_set_style_text_font(key_labels[i],
-                                   strlen(key->label) <= 2 ? &lv_font_montserrat_28
-                                                           : &lv_font_montserrat_20, 0);
+        const lv_img_dsc_t *icon = blank ? NULL : icons_find(key->icon);
+        if (icon != NULL) {
+            // Icon above, a small label under it.
+            lv_img_set_src(key_icons[i], icon);
+            lv_obj_clear_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_align(key_icons[i], LV_ALIGN_CENTER, 0, -10);
+            lv_obj_set_style_text_font(key_labels[i], &lv_font_montserrat_14, 0);
+            lv_label_set_long_mode(key_labels[i], LV_LABEL_LONG_DOT);
+            lv_obj_align(key_labels[i], LV_ALIGN_CENTER, 0, 18);
+        } else {
+            lv_obj_add_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_text_font(key_labels[i],
+                                       strlen(key->label) <= 2 ? &lv_font_montserrat_28
+                                                               : &lv_font_montserrat_20, 0);
+            lv_label_set_long_mode(key_labels[i], LV_LABEL_LONG_WRAP);
+            lv_obj_center(key_labels[i]);
+        }
         if (blank) {
             lv_obj_add_state(key_buttons[i], LV_STATE_DISABLED);
         } else {
@@ -203,8 +219,14 @@ void ui_start(void)
         lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(label);
+        lv_obj_t *icon = lv_img_create(button);
+        lv_obj_set_style_img_recolor(icon, lv_color_white(), 0);
+        lv_obj_set_style_img_recolor_opa(icon, LV_OPA_COVER, 0);
+        lv_obj_add_flag(icon, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE);
         key_buttons[i] = button;
         key_labels[i] = label;
+        key_icons[i] = icon;
     }
 
     status_bar = lv_obj_create(screen);

@@ -577,3 +577,33 @@ Entry template:
   over the site keys). Not tested: the full-screen report itself: headless Firefox cannot go full
   screen even with `full-screen-api.allow-trusted-requests-only` off, and there is no Xvfb here (not
   installed; would ask first). Needs Sundar's Slides test.
+
+## 2026-10-18 - Sundar (Claude Code) - Icons on the board; desktop notifications; Claude desktop prep
+
+- Sundar: presenting worked (the Slides remote). Next: Claude desktop and other app-specific
+  dynamic keys, and icons instead of text on keys (Material Icons). He chose to have me do the icons
+  end to end (firmware included; Tom's grid rework merges with it) and to turn on accessibility now.
+- Icons:
+  - `spec/icons.txt`: 132 Material Icons names (Apache-2.0, google/material-design-icons), the one
+    list for firmware, companion and AI. `tools/build_icons.py` renders them from the Material Icons
+    font (32x32, 4-bit alpha) into `firmware/components/icons/` with Google's LICENSE and a NOTICE.
+  - Spec: optional `icon` on layout keys (packet schema) and library keys; unknown names are
+    rejected by the library validator and ignored by the board (label only).
+  - Firmware: keys with a known icon draw it (white) with a small label under it; others as before.
+    Image +66 KB (app 1.75 MB, 44% of the partition free).
+  - Companion: layouts carry icons; media row and Configure key have icons; both drafting agents
+    get the icon list and choose icons (Gemini on Wikipedia: search, shuffle, home, chat, history,
+    public, schedule, explore, dark_mode). Built-in VS Code, YouTube (browse, video) and Slides
+    remote have icons.
+- Desktop notifications: new crate `openpager-desktop`; the service monitors `Notify` calls on the
+  session D-Bus (read only) and puts notifications from Claude, Codex, Antigravity, ChatGPT and
+  Cursor on the board's status bar (alert, 60 s). Tested with `notify-send` (app name, desktop entry,
+  summary and body arrive).
+- Claude desktop: it is Electron (`/usr/lib/claude-desktop`) and exposes nothing on the
+  accessibility bus while session accessibility is off. With Sundar's go-ahead: `org.a11y.Status
+  IsEnabled` set true (gsettings `toolkit-accessibility` was already true). Claude desktop must be
+  restarted once to expose its tree; the accessibility adapter (working / waiting / approval,
+  pressing its buttons, sending a message) comes after that.
+- Tested on the ONX2432G028: icon firmware flashed (`idf.py flash`, hashes verified); the board came
+  back and reconnected over Wi-Fi. Not yet seen by Sundar on the board.
+- Generated icon preview checked (all 132 render as the Material designs).

@@ -155,6 +155,8 @@ enum Event {
     ConfigureSite,
     /// A line for the board's status bar from a background job.
     Status(String),
+    /// A desktop notification from an app the board follows (Claude, Codex, ...).
+    Notified(openpager_desktop::Notification),
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
@@ -198,6 +200,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     if let Some(media) = shared.media.clone() {
         spawn_media_watcher(media, events.clone());
     }
+    spawn_notification_watcher(events.clone());
 
     // What the OS says is focused, and the browser's active tab; `effective` joins them.
     let mut focus: Option<Focus> = None;
@@ -302,6 +305,12 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         let scope = site_scope(&catalog, &target);
                         start_configure(target, scope, &events, &shared).await;
                     }
+                }
+                Event::Notified(n) => {
+                    println!("Notification from {}: {}", n.app, n.summary);
+                    let text = board_text(&format!("{}: {}", n.app, if n.summary.is_empty() { &n.body } else { &n.summary }), 80);
+                    let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
+                    shared.emit("notification", json!({"app": n.app, "summary": n.summary}));
                 }
                 Event::Status(text) => {
                     let _ = sender.send("openpager.status", json!({"text": board_text(&text, 80), "level": "attention", "ttl": 20})).await;
@@ -462,6 +471,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
                         if let Action::Media { command: MediaCommand::Toggle, .. } = key.action {
                             if let Some(k) = body.keys.iter_mut().find(|k| k.key == slot) {
                                 k.label = if player.playing() { "Pause".into() } else { "Play".into() };
+                                k.icon = Some(if player.playing() { "pause" } else { "play_arrow" }.into());
                             }
                         }
                     }
@@ -486,15 +496,16 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     // controls do), unless the layout has media keys of its own.
     if let Some(player) = player.filter(|p| p.playing() || (p.status == "Paused" && !p.title.is_empty())) {
         if !actions.values().any(|k| matches!(k.action, Action::Media { .. })) {
-            let row = [(7u8, player.can_go_previous, "Prev", "Previous track", MediaCommand::Previous),
-                       (8, true, if player.playing() { "Pause" } else { "Play" }, "Play or pause", MediaCommand::Toggle),
-                       (9, player.can_go_next, "Next", "Next track", MediaCommand::Next)];
-            for (slot, offered, label, speak, command) in row {
+            let row = [(7u8, player.can_go_previous, "Prev", "Previous track", "skip_previous", MediaCommand::Previous),
+                       (8, true, if player.playing() { "Pause" } else { "Play" }, "Play or pause",
+                        if player.playing() { "pause" } else { "play_arrow" }, MediaCommand::Toggle),
+                       (9, player.can_go_next, "Next", "Next track", "skip_next", MediaCommand::Next)];
+            for (slot, offered, label, speak, icon, command) in row {
                 if !offered {
                     continue;
                 }
                 body.keys.retain(|k| k.key != slot);
-                body.keys.push(LayoutKey { key: slot, label: label.into(), speak: Some(speak.into()), confirm: false, send: Send::Event(true) });
+                body.keys.push(LayoutKey { key: slot, label: label.into(), speak: Some(speak.into()), icon: Some(icon.into()), confirm: false, send: Send::Event(true) });
                 actions.insert(slot, KeyRef { label: label.into(), action: Action::Media { command, selector: None } });
             }
             body.keys.sort_by_key(|k| k.key);
@@ -611,6 +622,22 @@ async fn start_configure(target: Focus, scope: Scope, events: &mpsc::Sender<Even
     });
 }
 
+/// Apps whose desktop notifications reach the board: coding and chat agents that finish work or
+/// wait for the person while they look elsewhere.
+const NOTIFYING_APPS: &[&str] = &["claude", "codex", "antigravity", "chatgpt", "cursor"];
+
+/// Forwards notifications from `NOTIFYING_APPS` (Linux; nothing elsewhere).
+fn spawn_notification_watcher(events: mpsc::Sender<Event>) {
+    std::thread::spawn(move || {
+        let result = openpager_desktop::watch_notifications(|n| {
+            !n.from_any(NOTIFYING_APPS) || events.blocking_send(Event::Notified(n)).is_ok()
+        });
+        if let Err(e) = result {
+            println!("Desktop notifications not followed: {e}");
+        }
+    });
+}
+
 /// Polls the media players every second and reports when anything shown changes.
 fn spawn_media_watcher(media: Arc<openpager_media::Players>, events: mpsc::Sender<Event>) {
     std::thread::spawn(move || {
@@ -636,7 +663,7 @@ fn unsupported_layout(focus: &Focus) -> LayoutBody {
         name,
         source: "default".into(),
         reviewed: true,
-        keys: vec![LayoutKey { key: CONFIGURE_SLOT, label: "Configure".into(), speak: Some("Configure this app".into()), confirm: false, send: Send::Event(true) }],
+        keys: vec![LayoutKey { key: CONFIGURE_SLOT, label: "Configure".into(), speak: Some("Configure this app".into()), icon: Some("auto_awesome".into()), confirm: false, send: Send::Event(true) }],
     }
 }
 

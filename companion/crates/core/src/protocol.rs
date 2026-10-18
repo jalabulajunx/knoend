@@ -27,6 +27,9 @@ pub struct LayoutKey {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speak: Option<String>,
+    /// A Material Icons name from `spec/icons.txt`, drawn above a small label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub confirm: bool,
     pub send: Send,

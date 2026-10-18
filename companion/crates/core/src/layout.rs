@@ -16,7 +16,7 @@ pub fn build(library: &Library, os: Os) -> Result<LayoutBody, String> {
             }
             _ => Send::Event(true),
         };
-        keys.push(LayoutKey { key: slot, label: key.label.clone(), speak: key.speak.clone(), confirm: key.confirm, send });
+        keys.push(LayoutKey { key: slot, label: key.label.clone(), speak: key.speak.clone(), icon: key.icon.clone(), confirm: key.confirm, send });
     }
     keys.sort_by_key(|k| k.key);
     let source = match library.pack.source {

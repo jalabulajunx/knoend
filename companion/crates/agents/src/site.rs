@@ -34,6 +34,7 @@ web = ["example.com"]
 [[key]]
 label = "Compose"           # at most 14 characters so it fits on the key
 speak = "Write a message"   # optional, spoken aloud, at most 80 characters
+icon = "edit"               # optional: one name from the icon list below
 action = { kind = "element", selector = "[data-testid=\"compose\"]" }
 
 Action kinds:
@@ -63,7 +64,9 @@ Rules:
   browsers refuse those from a click made by a program.
 - Never use a selector that is not in the list. Fewer correct keys are better than nine guesses.
 - Any key that deletes, sends, submits, posts, pays or buys must have confirm = true.
-- Put the most used actions first."#;
+- Put the most used actions first.
+- Give each key the icon that best shows its action, from the icon list only; leave icon out if
+  none fits. Keep labels short (one or two words) when there is an icon."#;
 
 /// The inventory as compact lines for the prompt (at most 150 controls).
 fn describe(items: &[Value]) -> String {
@@ -154,8 +157,8 @@ pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, o
              Choose what this page adds; repeat a site key only if it is essential here.",
             if site_keys.is_empty() { "none".into() } else { site_keys.join(", ") }),
     };
-    let prompt = format!("Website: {}\nPage: {}\nOperating system: {os}\n{purpose}\nControls on this page:\n{}\n",
-                         site_of(host), route, describe(items));
+    let prompt = format!("Website: {}\nPage: {}\nOperating system: {os}\n{purpose}\nIcon list: {}\nControls on this page:\n{}\n",
+                         site_of(host), route, openpager_core::library::icon_names().join(" "), describe(items));
     let mut messages = vec![Message::user(prompt)];
     let mut last_error = String::new();
     for attempt in 1..=2 {

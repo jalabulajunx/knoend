@@ -46,6 +46,7 @@
           "slot": { "type": "integer", "minimum": 1, "maximum": 9 },
           "label": { "type": "string", "minLength": 1, "maxLength": 24 },
           "speak": { "type": "string", "maxLength": 80 },
+          "icon": { "type": "string", "pattern": "^[a-z0-9_]{1,40}$" },
           "confirm": { "type": "boolean" },
           "action": {
             "oneOf": [

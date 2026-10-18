@@ -1,0 +1,1 @@
+The icons in icons.c are rendered from Material Icons by Google (https://github.com/google/material-design-icons), licensed under the Apache License 2.0 (LICENSE in this folder). Changes: rasterised at 32x32 pixels as 4-bit alpha by tools/build_icons.py.

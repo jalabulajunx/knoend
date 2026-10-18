@@ -6,6 +6,7 @@
 
 #define UI_KEYS        9
 #define UI_LABEL_BYTES 97 // 24 characters of UTF-8, plus NUL
+#define UI_ICON_BYTES  41 // a Material Icons name from spec/icons.txt, plus NUL
 
 typedef enum {
     UI_SEND_NONE,  // blank slot
@@ -16,6 +17,7 @@ typedef enum {
 typedef struct {
     ui_send_t send;
     char label[UI_LABEL_BYTES];
+    char icon[UI_ICON_BYTES]; // empty: text only
     bool confirm;      // risky: needs a second tap within 3 s
     uint8_t modifiers; // UI_SEND_HID only
     uint8_t usage;     // UI_SEND_HID only
