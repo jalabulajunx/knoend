@@ -456,3 +456,16 @@ Entry template:
 - Not tested: a real board key reaching the page (needs the extension in Sundar's own browser),
   Firefox, the popup's permission prompt. Next: drafting a site's keys from its inventory, teach
   mode, live key state (with Tom).
+
+## 2026-10-18 - Sundar (Claude Code) - Browser extension in Firefox (Sundar's main browser)
+
+- Ran `openpager browser install` on Sundar's machine (Firefox, Chrome, Chromium, Edge, Brave host
+  files; the binary path is the dev build in `companion/target/debug`).
+- Tested Firefox 156 headless, extension installed through WebDriver BiDi `webExtension.install`,
+  real host from `~/.mozilla/native-messaging-hosts`, stand-in service: hello, tab reports,
+  inventory of a YouTube watch page (52 controls, shortcuts k/m/c/t/f), media pause/forward/mute,
+  focus search, open `/feed/trending` ok; `#does-not-exist` -> `not-found`; `//evil.example/` ->
+  `bad-action`. With the shipped build (no site granted): `granted: false`, inventory and every page
+  action -> `not-granted`, `open` ok. Popup no longer uses innerHTML (Mozilla's checker flags it).
+- Keeping it in Firefox across restarts needs Mozilla's signing (self-distribution); steps in
+  `extension/README.md`. Not done: that upload is Sundar's (his Mozilla account).

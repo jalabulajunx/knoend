@@ -26,10 +26,22 @@ the browser's native messaging (no network port).
      unpacked", pick `dist/extension/chrome`. Its id is `echibclfkpicikodohehemgjefbpakpj` (fixed
      by the public key in `chrome.json`; the host only accepts that id).
    - **Firefox:** open `about:debugging#/runtime/this-firefox`, "Load Temporary Add-on", pick
-     `dist/extension/firefox/manifest.json` (unsigned add-ons last until Firefox restarts).
+     `dist/extension/firefox/manifest.json`. A temporary add-on is removed when Firefox restarts.
+     To keep it, have Mozilla sign it for self-distribution (free, automated, not listed publicly):
+     upload `dist/extension/openpager-firefox-<version>.zip` at
+     https://addons.mozilla.org/developers/addon/submit/distribution, choose "On your own", then
+     open the signed `.xpi` it returns in Firefox. The add-on id stays `openpager@jalabulajunx.github.io`,
+     which is what `openpager browser install` allows.
 3. Run `openpager serve`. The popup shows "connected".
 4. Open a site that has a layout (YouTube is built in), open the popup, and turn board buttons on.
 
-Tested: Chrome 152 (headless, loaded through DevTools' `Extensions.loadUnpacked`), against a
-stand-in for the service: tab reports, page inventory, and media / focus / element / open actions.
-Not yet tested: Firefox, a person's own browser profile, the popup's permission prompt.
+Tested, against a stand-in for the service and the real `openpager` host:
+
+- Firefox 156 (headless, installed through WebDriver BiDi `webExtension.install`, host registered by
+  `openpager browser install` in `~/.mozilla/native-messaging-hosts`): tab reports, inventory of a
+  YouTube page (52 controls), media / focus / element / open actions; without the site granted,
+  every page action and the inventory answer `not-granted` while `open` still works.
+- Chrome 152 (headless, DevTools `Extensions.loadUnpacked`): the same actions; 35 controls.
+
+Not yet tested: a person's own browser profile, the popup's permission prompt, a board key end to
+end (needs the extension in the browser the person uses).

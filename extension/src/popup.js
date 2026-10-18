@@ -3,6 +3,14 @@
 const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
 
+/** Help text with one command in it, built without innerHTML. */
+function help(before, command, after) {
+  const code = document.createElement("code");
+  code.textContent = command;
+  $("help").replaceChildren(before, code, after);
+  $("help").hidden = false;
+}
+
 async function render() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   const status = await api.runtime.sendMessage({ type: "status" }).catch(() => null);
@@ -11,11 +19,9 @@ async function render() {
   else if (status && status.host) { link.textContent = "openpager not running"; link.className = "pill bad"; }
   else { link.textContent = "not set up"; link.className = "pill bad"; }
   if (!status || !status.host) {
-    $("help").hidden = false;
-    $("help").innerHTML = 'Run <code>openpager browser install</code> once, then restart the browser.';
+    help("Run ", "openpager browser install", " once, then restart the browser.");
   } else if (!status.service) {
-    $("help").hidden = false;
-    $("help").innerHTML = 'Start it with <code>openpager serve</code>.';
+    help("Start it with ", "openpager serve", ".");
   }
 
   if (!tab || !/^https?:\/\//.test(tab.url || "")) {
