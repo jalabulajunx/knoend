@@ -819,3 +819,9 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   `open -b/-a` (untested).
 - Tested: unit tests (window class matching, the Go to key and when it applies). Not tested: on the
   board, and raising a window on another i3 workspace.
+- Board test (ONX, i3 4.25.1): the first real cloud-session notification put "Go to Claude" on key 9
+  and the service logged "brought Claude to the front", but Claude did not come forward; i3's log no
+  longer covered that tap, so the cause is unknown. Retest with `notify-send -a Claude ...` from the
+  terminal workspace: the key appeared, the tap switched to workspace 10 and focused Claude (i3 log:
+  `_NET_ACTIVE_WINDOW ... should be activated`, workspace switch, focus in for Claude's window).
+  If it fails again: `i3-msg 'debuglog on'`, tap, then `i3-dump-log | grep -A3 ACTIVE_WINDOW`.
