@@ -168,6 +168,38 @@ means until replaced. An empty `text` clears the bar.
   the companion treats silence as "fall back to the agent's own prompt", never as approval.
 - `decision`: `allow` or `deny`.
 
+### 3.6a Layout extras: `icon`, `detail`
+
+- A key's optional `icon` is a name from [`icons.txt`](icons.txt) (Material Icons, drawn white above a
+  small label) or the name of a picture sent with `openpager.image` (`app:...`, `site:...`, drawn in
+  colour). A board that does not know the name shows the label alone.
+- A layout's optional `detail` (up to 240 characters, `\n` for new lines) is shown in place of the
+  middle row (slots 4-6 are hidden); the top and bottom rows get shorter and the text scrolls.
+  Used for what a permission request is about.
+
+### 3.6b `openpager.image` / `openpager.image.ack`
+
+```json
+{ "id": 30, "type": "openpager.image", "body": { "name": "app:firefox", "w": 32, "h": 32,
+    "offset": 0, "total": 3072, "data": "<base64 of this slice>" } }
+```
+
+A picture for keys: `w`x`h` pixels (at most 64x64) of RGB565 with its two bytes swapped (as LVGL
+draws with `LV_COLOR_16_SWAP`), then one byte of alpha: `total` = w*h*3 bytes. It is sent in slices
+that each fit a packet (the companion uses 2048 bytes), in order, starting at `offset` 0. After the
+last slice the board answers `openpager.image.ack` `{ "name": ..., "ok": true }` (or `ok: false` and
+`error`). The board keeps about 48 pictures (least recently used replaced) until it restarts; the
+companion sends a picture again on each new connection, before the layout that uses it.
+
+### 3.6c What the companion shows when
+
+- The focused app's or site's layout (section 5 and `browser.md`), with a media row while it plays.
+- A coding agent's permission request (`system.approve`: Allow, Always, Deny, Stop, with `detail`)
+  until it is answered on the board or in the agent's own window.
+- Nothing focused (empty desktop): the launcher (`system.launcher`): up to 9 apps and sites the
+  person used most and most recently, with their own icons; a tap opens one. Usage (seconds in front
+  per app and site) is kept on the computer only.
+
 ### 3.7 `openpager.error`
 
 `{ "re": 7, "body": { "code": "unsupported", "message": "..." } }`. Codes: `bad-packet`,

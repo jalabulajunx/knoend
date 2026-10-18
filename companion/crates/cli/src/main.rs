@@ -14,6 +14,7 @@
 
 mod agent_hooks;
 mod background;
+mod launcher;
 mod browser;
 mod diagnostics;
 mod firmware;

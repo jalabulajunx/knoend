@@ -2,11 +2,12 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define UI_KEYS        9
 #define UI_LABEL_BYTES 97 // 24 characters of UTF-8, plus NUL
-#define UI_ICON_BYTES  41 // a Material Icons name from spec/icons.txt, plus NUL
+#define UI_ICON_BYTES  66 // a Material Icons name (spec/icons.txt) or a sent image ("app:firefox"), plus NUL
 #define UI_DETAIL_BYTES 241 // 240 characters of text, plus NUL
 
 typedef enum {
@@ -40,6 +41,12 @@ void ui_start(void);
 
 // Replaces the keys. Safe to call from any task.
 void ui_apply_layout(const ui_layout_t *layout);
+
+// Keeps a picture sent by the companion (openpager.image) under `name` ("app:firefox"), for keys
+// whose icon names it. `pixels` is w*h pixels of RGB565 (byte-swapped, as LVGL draws) + alpha, 3
+// bytes each, allocated with heap_caps_malloc; the UI owns it from here on (also on failure).
+// Safe to call from any task.
+bool ui_add_image(const char *name, int w, int h, uint8_t *pixels, size_t len);
 
 // Shows `text` on the status bar for `ttl_seconds` (0 = until replaced); empty text clears it.
 // Safe to call from any task.

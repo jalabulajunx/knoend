@@ -195,6 +195,8 @@ fn page_from(message: &Value) -> Option<WebPage> {
         title: message["title"].as_str().unwrap_or("").chars().take(200).collect(),
         granted: message["granted"] == true,
         fullscreen: message["fullscreen"] == true,
+        favicon: message["favicon"].as_str().filter(|f| f.starts_with("https://") || f.starts_with("http://") || f.starts_with("data:image/"))
+            .filter(|f| f.len() <= 100_000).unwrap_or("").to_string(),
     })
 }
 

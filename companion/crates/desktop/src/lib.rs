@@ -28,6 +28,11 @@ impl Notification {
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+pub mod apps;
+/// Built everywhere (its tests run on any system); used on macOS.
+pub mod mac_apps;
+pub mod picture;
 
 /// Calls `each` for every notification any app posts, until it returns false. Blocks; run it on
 /// its own thread.

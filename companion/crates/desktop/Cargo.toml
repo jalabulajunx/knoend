@@ -10,3 +10,15 @@ serde = { version = "1.0.229", features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = "5"
+
+[dependencies.resvg]
+version = "0.45"
+default-features = false
+features = ["text"]
+
+[dependencies.image]
+version = "0.25"
+default-features = false
+features = ["png", "ico", "jpeg", "gif", "webp"]
+
+[dev-dependencies]

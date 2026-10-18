@@ -50,6 +50,9 @@ pub struct WebPage {
     /// The page is full screen (a presentation showing, a video full screen).
     #[serde(default)]
     pub fullscreen: bool,
+    /// The tab's icon as the browser reports it (http(s) or data: URL); empty when none.
+    #[serde(skip)]
+    pub favicon: String,
 }
 
 impl WebPage {
@@ -151,7 +154,7 @@ mod tests {
     use super::WebPage;
 
     fn page(host: &str) -> WebPage {
-        WebPage { host: host.into(), url: format!("https://{host}/"), title: String::new(), granted: false, fullscreen: false }
+        WebPage { host: host.into(), url: format!("https://{host}/"), title: String::new(), granted: false, fullscreen: false, favicon: String::new() }
     }
 
     #[test]
@@ -162,11 +165,11 @@ mod tests {
         assert!(page("www.amazon.co.uk").matches_pattern("amazon.*"));
         assert!(page("amazon.ca").matches_pattern("amazon.*"));
         assert!(!page("amazonia.org").matches_pattern("amazon.*"));
-        let watch = WebPage { host: "www.youtube.com".into(), url: "https://www.youtube.com/watch?v=1".into(), title: String::new(), granted: true, fullscreen: false };
+        let watch = WebPage { host: "www.youtube.com".into(), url: "https://www.youtube.com/watch?v=1".into(), title: String::new(), granted: true, fullscreen: false, favicon: String::new() };
         assert!(watch.matches_pattern("youtube.com/watch"));
         assert!(!page("www.youtube.com").matches_pattern("youtube.com/watch"));
         assert_eq!(watch.path(), "/watch");
-        let album = WebPage { host: "192.168.50.3".into(), url: "http://192.168.50.3:4533/app/#/album/0CqaylqAigA1E6bOjrSyRD/show".into(), title: String::new(), granted: true, fullscreen: false };
+        let album = WebPage { host: "192.168.50.3".into(), url: "http://192.168.50.3:4533/app/#/album/0CqaylqAigA1E6bOjrSyRD/show".into(), title: String::new(), granted: true, fullscreen: false, favicon: String::new() };
         assert_eq!(album.route(), "/app/#/album/0CqaylqAigA1E6bOjrSyRD/show");
         assert_eq!(album.page_kind(), "/app/#/album/*/show");
         assert!(album.matches_pattern("192.168.50.3/app/#/album/*/show"));

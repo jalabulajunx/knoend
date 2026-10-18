@@ -249,6 +249,38 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "openpager.image"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/image"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "openpager.image.ack"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/imageAck"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -455,9 +487,9 @@
                 "maxLength": 80
               },
               "icon": {
-                "description": "A name from spec/icons.txt; a board that does not know it shows the label alone.",
+                "description": "A name from spec/icons.txt, or a picture sent with openpager.image (app:..., site:...); a board that does not know it shows the label alone.",
                 "type": "string",
-                "pattern": "^[a-z0-9_]{1,40}$"
+                "pattern": "^([a-z0-9_]{1,40}|(app|site):[a-z0-9._-]{1,60})$"
               },
               "confirm": {
                 "type": "boolean"
@@ -814,6 +846,66 @@
         "error": {
           "type": "string",
           "maxLength": 80
+        }
+      }
+    },
+    "image": {
+      "description": "A picture for keys (an app's or a site's icon), sent in slices: offset/total in bytes of w*h pixels of RGB565 (byte-swapped) + alpha, 3 bytes each; data is base64 of this slice.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "w",
+        "h",
+        "offset",
+        "total",
+        "data"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^(app|site):[a-z0-9._-]{1,60}$"
+        },
+        "w": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "h": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 12288
+        },
+        "data": {
+          "type": "string",
+          "maxLength": 3000
+        }
+      }
+    },
+    "imageAck": {
+      "type": "object",
+      "required": [
+        "name",
+        "ok"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
         }
       }
     }
