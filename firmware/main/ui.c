@@ -7,6 +7,7 @@
 
 #include "ble_keyboard.h"
 #include "board.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "esp_timer.h"
@@ -38,6 +39,29 @@ static lv_obj_t *key_icons[UI_KEYS];
 static lv_obj_t *status_bar;
 static lv_obj_t *detail_box;   // over the middle row when the layout has a detail
 static lv_obj_t *detail_label;
+
+// Pictures sent by the companion (app and site icons), least recently used replaced first. The
+// pixels live in PSRAM.
+#define IMAGE_SLOTS 48
+typedef struct {
+    char name[UI_ICON_BYTES];
+    lv_img_dsc_t dsc;
+    uint8_t *pixels;
+    uint32_t used;
+} sent_image_t;
+static sent_image_t images[IMAGE_SLOTS];
+static uint32_t image_clock;
+
+static const lv_img_dsc_t *sent_image(const char *name)
+{
+    for (int i = 0; i < IMAGE_SLOTS; i++) {
+        if (images[i].pixels != NULL && strcmp(images[i].name, name) == 0) {
+            images[i].used = ++image_clock;
+            return &images[i].dsc;
+        }
+    }
+    return NULL;
+}
 // Grid geometry, set in ui_start: rows shrink to `compact_h` while a detail is shown.
 static int key_w, key_h, compact_h, detail_h;
 static lv_obj_t *status_label;
@@ -190,7 +214,10 @@ static void draw_keys_locked(void)
         const bool blank = key->send == UI_SEND_NONE;
         lv_obj_set_style_bg_color(key_buttons[i], lv_color_hex(blank ? COLOR_KEY_BLANK : COLOR_KEY), 0);
         lv_label_set_text(key_labels[i], blank ? "" : key->label);
-        const lv_img_dsc_t *icon = blank || detail ? NULL : icons_find(key->icon);
+        // A sent picture ("app:...", in colour) or a Material icon (white).
+        const bool sent = strchr(key->icon, ':') != NULL;
+        const lv_img_dsc_t *icon = blank || detail ? NULL : sent ? sent_image(key->icon) : icons_find(key->icon);
+        lv_obj_set_style_img_recolor_opa(key_icons[i], sent ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
         if (icon != NULL) {
             // Icon above, a small label under it.
             lv_img_set_src(key_icons[i], icon);
@@ -313,6 +340,42 @@ void ui_apply_layout(const ui_layout_t *new_layout)
     draw_keys_locked();
     update_status_locked();
     lvgl_port_unlock();
+}
+
+bool ui_add_image(const char *name, int w, int h, uint8_t *pixels, size_t len)
+{
+    if (status_label == NULL || len != (size_t)w * h * 3 || strlen(name) >= UI_ICON_BYTES) {
+        heap_caps_free(pixels);
+        return false;
+    }
+    if (!lvgl_port_lock(1000)) {
+        heap_caps_free(pixels);
+        return false;
+    }
+    int slot = 0;
+    for (int i = 0; i < IMAGE_SLOTS; i++) {
+        if (images[i].pixels != NULL && strcmp(images[i].name, name) == 0) {
+            slot = i; // replace the same name
+            break;
+        }
+        if (images[i].used < images[slot].used) {
+            slot = i;
+        }
+    }
+    sent_image_t *image = &images[slot];
+    lv_img_cache_invalidate_src(&image->dsc);
+    heap_caps_free(image->pixels);
+    snprintf(image->name, sizeof(image->name), "%s", name);
+    image->pixels = pixels;
+    image->used = ++image_clock;
+    image->dsc = (lv_img_dsc_t){
+        .header = { .cf = LV_IMG_CF_TRUE_COLOR_ALPHA, .w = w, .h = h },
+        .data_size = len,
+        .data = pixels,
+    };
+    draw_keys_locked(); // a key may already name it
+    lvgl_port_unlock();
+    return true;
 }
 
 void ui_show_status(const char *text, ui_status_level_t level, uint32_t ttl_seconds)

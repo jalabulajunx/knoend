@@ -28,6 +28,8 @@ impl Notification {
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+pub mod apps;
 
 /// Calls `each` for every notification any app posts, until it returns false. Blocks; run it on
 /// its own thread.

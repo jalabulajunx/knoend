@@ -90,7 +90,9 @@ function reportTab() {
     const tab = await activeTab().catch(() => null);
     const url = tab && isWeb(tab.url) ? tab.url : null;
     send({ type: "tab", url, title: url ? (tab.title || "") : "", windowFocused: !!(window && window.focused),
-           granted: url ? await granted(url) : false, fullscreen: !!(tab && fullscreenTabs.has(tab.id)) });
+           granted: url ? await granted(url) : false, fullscreen: !!(tab && fullscreenTabs.has(tab.id)),
+           // The tab's icon, for the board's launcher (an address or a small data: URL).
+           favicon: url && tab.favIconUrl && /^(https?:|data:image\/)/.test(tab.favIconUrl) && tab.favIconUrl.length <= 100000 ? tab.favIconUrl : "" });
   }, 150);
 }
 

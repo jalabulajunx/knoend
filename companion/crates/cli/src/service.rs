@@ -159,6 +159,8 @@ enum Event {
     Notified(openpager_desktop::Notification),
     /// A coding agent's hook: a permission request or a notification.
     Agent(crate::agent_hooks::AgentEvent),
+    /// A site's icon, fetched and shrunk to 32x32 RGBA.
+    Favicon(String, Vec<u8>),
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
@@ -222,6 +224,12 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     let mut focus: Option<Focus> = None;
     let mut tab: Option<WebPage> = None;
     let mut players: Vec<NowPlaying> = Vec::new();
+    // The launcher: usage per app/site, installed apps, site icons, icons already on the board.
+    let mut usage = crate::launcher::Usage::load();
+    let apps = crate::launcher::installed_apps();
+    let mut favicons = load_favicons();
+    let mut fetching: HashSet<String> = HashSet::new();
+    let mut launcher_targets: HashMap<u8, crate::launcher::Target> = HashMap::new();
     // Kinds of page that have keys of their own, per site (saved), and those tried this run.
     let mut drafted = DraftedPages::load();
     let mut attempted: HashSet<(String, String)> = HashSet::new();
@@ -256,6 +264,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let board_status = board.clone();
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
+        let mut sent_images: HashSet<String> = HashSet::new();
+        if focus.is_none() {
+            show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut shown, &shared).await;
+        }
         if let Some(f) = effective(&focus, &tab) {
             show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
         }
@@ -282,8 +294,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         shown = None;
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
-                            None => if let Some(f) = effective(&focus, &tab) {
-                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                            None => match effective(&focus, &tab) {
+                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await,
+                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
+                                                      &mut shown, &shared).await,
                             },
                         }
                     }
@@ -306,13 +320,41 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Event::Focus(Some(f)) => {
                     focus = Some(f);
                     let f = effective(&focus, &tab).expect("focus");
+                    usage.focused(crate::launcher::usage_key(&f, &apps));
                     println!("Focus: {} ({})", f.display_name(), f.instance);
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
                     show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
                     draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                 }
-                Event::Focus(None) => {}
+                Event::Focus(None) => {
+                    // Nothing in front: the launcher.
+                    println!("Focus: nothing (launcher)");
+                    focus = None;
+                    usage.focused(None);
+                    shared.update(|s| s.app = None).await;
+                    if approvals.is_empty() {
+                        show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut shown, &shared).await;
+                    }
+                }
+                Event::Favicon(host, pixels) => {
+                    fetching.remove(&host);
+                    let _ = std::fs::create_dir_all(crate::launcher::favicon_dir());
+                    if let Some(png) = image_png(&pixels) {
+                        let _ = std::fs::write(crate::launcher::favicon_dir().join(format!("{host}.png")), png);
+                    }
+                    favicons.insert(host, pixels);
+                }
+                Event::Board(packet) if packet.kind == "openpager.key" && packet.body["layout"] == LAUNCHER => {
+                    let key = packet.body["key"].as_u64().and_then(|k| u8::try_from(k).ok()).unwrap_or(0);
+                    if let Some(target) = launcher_targets.get(&key) {
+                        let text = match target.open() {
+                            Ok(()) => format!("  launcher: opened {target:?}"),
+                            Err(e) => format!("  launcher: could not open {target:?}: {e}"),
+                        };
+                        shared.emit("launcher", json!({"text": text}));
+                    }
+                }
                 Event::Players(p) => {
                     players = p;
                     // Re-show only if this changes what the board shows (show() skips a repeat).
@@ -321,6 +363,12 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::Tab(t) => {
+                    // The site's icon, for the launcher (once per site per run).
+                    if let Some(page) = t.as_ref().filter(|p| !p.favicon.is_empty()) {
+                        if !favicons.contains_key(&page.host) && fetching.insert(page.host.clone()) {
+                            spawn_favicon_fetch(page.host.clone(), page.favicon.clone(), events.clone());
+                        }
+                    }
                     // A new site, a change of permission, or another kind of page on the same site.
                     let changed = t.as_ref().map(|p| (&p.host, p.granted, p.page_kind(), p.fullscreen))
                         != tab.as_ref().map(|p| (&p.host, p.granted, p.page_kind(), p.fullscreen));
@@ -329,6 +377,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     if changed && browser_focused {
                         let f = effective(&focus, &tab).expect("focus");
                         println!("Site: {}", f.display_name());
+                        usage.focused(crate::launcher::usage_key(&f, &apps));
                         let name = f.display_name().to_string();
                         shared.update(|s| s.app = Some(name)).await;
                         show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
@@ -350,8 +399,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         shown = None;
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
-                            None => if let Some(f) = effective(&focus, &tab) {
-                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                            None => match effective(&focus, &tab) {
+                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await,
+                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
+                                                      &mut shown, &shared).await,
                             },
                         }
                     }
@@ -382,8 +433,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         shown = None;
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
-                            None => if let Some(f) = effective(&focus, &tab) {
-                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                            None => match effective(&focus, &tab) {
+                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await,
+                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
+                                                      &mut shown, &shared).await,
                             },
                         }
                     }
@@ -673,6 +726,116 @@ async fn draft_new_page(catalog: &Catalog, focus: &Focus, drafted: &DraftedPages
     println!("  new kind of page on {}: {kind}; drafting its keys", web.host);
     shared.board_status("Making keys for this page...".into());
     start_configure(focus.clone(), site_scope(catalog, focus), events, shared).await;
+}
+
+/// Layout id of the launcher (nothing focused).
+const LAUNCHER: &str = "system.launcher";
+
+/// The launcher: the most used and recent apps and sites, with their own icons (sent to the board
+/// first, once per connection), or a hint while there is no history yet.
+#[allow(clippy::too_many_arguments)]
+async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::Usage, apps: &[crate::launcher::AppInfo],
+                       favicons: &HashMap<String, Vec<u8>>, sent_images: &mut HashSet<String>,
+                       targets: &mut HashMap<u8, crate::launcher::Target>, shown: &mut Option<String>, shared: &Shared) {
+    targets.clear();
+    let mut keys = Vec::new();
+    for (i, entry) in usage.top(9).into_iter().enumerate() {
+        let slot = i as u8 + 1;
+        let name = entry.target.image_name();
+        let mut icon = Some(match entry.target { crate::launcher::Target::Site { .. } => "public", _ => "apps" }.to_string());
+        if sent_images.contains(&name) {
+            icon = Some(name.clone());
+        } else if let Some(pixels) = crate::launcher::icon_pixels(&entry.target, apps, favicons) {
+            if send_image(sender, &name, &pixels).await {
+                sent_images.insert(name.clone());
+                icon = Some(name.clone());
+            }
+        }
+        keys.push(LayoutKey { key: slot, label: board_text(&entry.name, 24), speak: Some(format!("Open {}", entry.name)),
+                              icon, confirm: false, send: Send::Event(true) });
+        targets.insert(slot, entry.target.clone());
+    }
+    let status = if keys.is_empty() { "Nothing open. Apps and sites you use will appear here." } else { "" };
+    let body = LayoutBody { detail: None, layout: LAUNCHER.into(), name: "Launcher".into(), source: "default".into(), reviewed: true, keys };
+    let signature = format!("launcher|{}", serde_json::to_string(&body).unwrap_or_default());
+    if shown.as_deref() == Some(signature.as_str()) {
+        return;
+    }
+    println!("  -> launcher: {}", body.keys.iter().map(|k| k.label.as_str()).collect::<Vec<_>>().join(", "));
+    if sender.send("openpager.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
+        let _ = sender.send("openpager.status", json!({"text": status})).await;
+        *shown = Some(signature);
+        shared.update(|s| s.layout = Some(json!({"id": LAUNCHER, "name": "Launcher"}))).await;
+    }
+}
+
+/// Sends a 32x32 RGBA picture to the board in slices that fit a packet. False if the board
+/// refused the first slice (a board without picture support ignores the rest).
+async fn send_image(sender: &mut wifi::WifiSender, name: &str, rgba: &[u8]) -> bool {
+    use base64::Engine;
+    let pixels = crate::launcher::board_pixels(rgba);
+    for (i, chunk) in pixels.chunks(2048).enumerate() {
+        let body = json!({"name": name, "w": 32, "h": 32, "offset": i * 2048, "total": pixels.len(),
+                          "data": base64::engine::general_purpose::STANDARD.encode(chunk)});
+        if sender.send("openpager.image", body).await.is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+/// Fetches a site's icon (http(s), or a data: URL) and shrinks it to 32x32, off the loop.
+fn spawn_favicon_fetch(host: String, url: String, events: mpsc::Sender<Event>) {
+    tokio::spawn(async move {
+        let bytes: Option<Vec<u8>> = if let Some(data) = url.strip_prefix("data:") {
+            use base64::Engine;
+            data.split_once(";base64,").and_then(|(_, b)| base64::engine::general_purpose::STANDARD.decode(b).ok())
+        } else {
+            let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().ok();
+            match client {
+                Some(c) => match c.get(&url).send().await { Ok(r) if r.status().is_success() => r.bytes().await.ok().map(|b| b.to_vec()), _ => None },
+                None => None,
+            }
+        };
+        let Some(bytes) = bytes.filter(|b| b.len() <= 512 * 1024) else { return };
+        let svg = url.contains("svg");
+        #[cfg(target_os = "linux")]
+        let pixels = tokio::task::spawn_blocking(move || openpager_desktop::apps::render_bytes(&bytes, svg, 32)).await.ok().flatten();
+        #[cfg(not(target_os = "linux"))]
+        let pixels: Option<Vec<u8>> = { let _ = (bytes, svg); None };
+        if let Some(pixels) = pixels {
+            let _ = events.send(Event::Favicon(host, pixels)).await;
+        }
+    });
+}
+
+/// Saved site icons from the cache folder.
+fn load_favicons() -> HashMap<String, Vec<u8>> {
+    let mut out = HashMap::new();
+    #[cfg(target_os = "linux")]
+    if let Ok(entries) = std::fs::read_dir(crate::launcher::favicon_dir()) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let host = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+            if let Some(pixels) = openpager_desktop::apps::render(&path, 32) {
+                out.insert(host, pixels);
+            }
+        }
+    }
+    out
+}
+
+/// 32x32 RGBA as PNG bytes (for the favicon cache).
+fn image_png(rgba: &[u8]) -> Option<Vec<u8>> {
+    #[cfg(target_os = "linux")]
+    {
+        openpager_desktop::apps::png(rgba, 32, 32)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = rgba;
+        None
+    }
 }
 
 /// Layout id of a coding agent's permission request on the board.

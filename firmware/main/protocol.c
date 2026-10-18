@@ -8,7 +8,9 @@
 #include "board.h"
 #include "cJSON.h"
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "mbedtls/base64.h"
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -26,11 +28,11 @@ static const char *TAG = "protocol";
 // Only what this firmware actually handles is advertised.
 static const char *const incoming_types[] = {
     "openpager.identity", "openpager.layout", "openpager.status", "openpager.pair", "openpager.wifi",
-    "openpager.wifi.scan", "openpager.ping",
+    "openpager.wifi.scan", "openpager.ping", "openpager.image",
 };
 static const char *const outgoing_types[] = {
     "openpager.identity", "openpager.key", "openpager.layout.ack", "openpager.pair.ack",
-    "openpager.wifi.ack", "openpager.wifi.networks", "openpager.ping", "openpager.error",
+    "openpager.wifi.ack", "openpager.wifi.networks", "openpager.ping", "openpager.error", "openpager.image.ack",
 };
 static const char *const transports[] = { "ble-hid", "serial", "wifi" };
 
@@ -244,7 +246,7 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
             // An icon name the board does not know is ignored (the label still shows).
             const char *icon = get_string(key, "icon", UI_ICON_BYTES - 1);
             target->icon[0] = '\0';
-            if (icon != NULL && strspn(icon, "abcdefghijklmnopqrstuvwxyz0123456789_") == strlen(icon)) {
+            if (icon != NULL && strspn(icon, "abcdefghijklmnopqrstuvwxyz0123456789_:.-") == strlen(icon)) {
                 strcpy(target->icon, icon);
             }
             target->confirm = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(key, "confirm"));
@@ -260,6 +262,67 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
         ui_apply_layout(&layout); // all-or-nothing: only a fully valid layout replaces the keys
     }
     send_packet("openpager.layout.ack", ack, re, from);
+}
+
+// ---- pictures (openpager.image), sent in slices that fit a packet ----
+
+static struct {
+    char name[UI_ICON_BYTES];
+    int w, h;
+    size_t total, received;
+    uint8_t *pixels;
+} incoming_image;
+
+static void image_ack(const char *name, const char *error, int re, transport_t transport)
+{
+    cJSON *ack = cJSON_CreateObject();
+    cJSON_AddStringToObject(ack, "name", name != NULL ? name : "");
+    cJSON_AddBoolToObject(ack, "ok", error == NULL);
+    if (error != NULL) {
+        cJSON_AddStringToObject(ack, "error", error);
+    }
+    send_packet("openpager.image.ack", ack, re, transport);
+}
+
+static void handle_image(const cJSON *body, int re, transport_t transport)
+{
+    const char *name = get_string(body, "name", UI_ICON_BYTES - 1);
+    const char *data = get_string(body, "data", 4000);
+    int w, h, offset, total;
+    if (name == NULL || strspn(name, "abcdefghijklmnopqrstuvwxyz0123456789_:.-") != strlen(name) || strchr(name, ':') == NULL ||
+        data == NULL || !get_int(body, "w", 1, 64, &w) || !get_int(body, "h", 1, 64, &h) ||
+        !get_int(body, "offset", 0, 64 * 64 * 3, &offset) || !get_int(body, "total", 1, 64 * 64 * 3, &total) ||
+        total != w * h * 3) {
+        image_ack(name, "name, w, h, offset, total and data are required (total = w*h*3)", re, transport);
+        return;
+    }
+    if (offset == 0) {
+        heap_caps_free(incoming_image.pixels);
+        incoming_image.pixels = heap_caps_malloc(total, MALLOC_CAP_SPIRAM);
+        snprintf(incoming_image.name, sizeof(incoming_image.name), "%s", name);
+        incoming_image.w = w;
+        incoming_image.h = h;
+        incoming_image.total = total;
+        incoming_image.received = 0;
+    }
+    if (incoming_image.pixels == NULL || strcmp(incoming_image.name, name) != 0 ||
+        (size_t)offset != incoming_image.received || (size_t)total != incoming_image.total) {
+        image_ack(name, "slice out of order", re, transport);
+        return;
+    }
+    size_t written = 0;
+    if (mbedtls_base64_decode(incoming_image.pixels + offset, incoming_image.total - offset, &written,
+                              (const unsigned char *)data, strlen(data)) != 0) {
+        image_ack(name, "data is not base64 or too long", re, transport);
+        return;
+    }
+    incoming_image.received += written;
+    if (incoming_image.received < incoming_image.total) {
+        return; // more slices to come
+    }
+    uint8_t *pixels = incoming_image.pixels;
+    incoming_image.pixels = NULL;
+    image_ack(name, ui_add_image(name, w, h, pixels, incoming_image.total) ? NULL : "could not keep it", re, transport);
 }
 
 static void handle_status(const cJSON *body)
@@ -462,6 +525,8 @@ static void handle_line(const char *line, transport_t transport)
         handle_layout(body, re, transport);
     } else if (strcmp(type->valuestring, "openpager.status") == 0) {
         handle_status(body);
+    } else if (strcmp(type->valuestring, "openpager.image") == 0) {
+        handle_image(body, re, transport);
     } else if (strcmp(type->valuestring, "openpager.pair") == 0) {
         handle_pair(body, re, transport);
     } else if (strcmp(type->valuestring, "openpager.wifi") == 0) {

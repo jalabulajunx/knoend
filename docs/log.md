@@ -682,3 +682,32 @@ Entry template:
   still removes only ours).
 - Tested: unit tests (settling rule: same session and tool/input, stop, other sessions ignored). Not
   yet on the board: needs Sundar to restart `openpager serve` and a new Claude Code session.
+
+## 2026-10-18 - Sundar (Claude Code) - Merged to main; launcher and real app/site icons (built, not flashed)
+
+- Merged PR #10 (browser extension) and #11 (icons, desktop notifications, Claude hooks, background
+  service, request details) into main at Sundar's request. Both change `spec/`; they went in without
+  Tom's review by Sundar's decision as owner. Tom: please review the spec changes on main
+  (`spec/browser.md`, library actions focus/media, `match.web` routes and `@fullscreen`, key `icon`,
+  layout `detail`, `openpager.image`).
+- Sundar confirmed on the board: Claude's permission requests with the details panel; asked for
+  shorter keys + a scrollable detail (flashed: compact rows, scrolling; his check pending) and
+  reported a request answered on screen staying on the board (fixed with settle hooks; pending his
+  check after restarting the service and a new session).
+- New (branch `sundar/launcher-and-app-icons`):
+  - Firmware: `openpager.image` (pictures in slices, RGB565 swapped + alpha, up to 64x64, kept in
+    PSRAM, 48 least-recently-used); keys whose icon is `app:...`/`site:...` draw that picture in
+    colour. Built (app 1.75 MB); NOT flashed: waiting for Sundar to report the previous flash.
+  - Companion: `openpager-desktop::apps`: installed apps from `.desktop` entries, the icon from the
+    GTK icon theme (Buuf here, then inherited themes, hicolor, pixmaps; PNG/SVG via `image`/`resvg`),
+    shrunk to 32x32. Usage per app and site (seconds in front, one-week half-life, today bonus) in
+    `usage.json` (local only). When nothing is focused: launcher `system.launcher` with the top 9 and
+    their own icons (sent before the layout, once per connection); a tap runs `gtk-launch <id>` /
+    `xdg-open https://site` (`open -b` / `open` on macOS). Site icons from the tab's favicon (the
+    extension now sends `favIconUrl`), cached in `~/.cache/openpager/favicons/`.
+  - Spec: `openpager.image` + ack, icon names for sent pictures, `detail`, the launcher
+    (`protocol.md` 3.6a-c); example `image.json`.
+- Tested: unit tests (colour packing: red -> F8 00 FF; image names; ranking; desktop entries; SVG
+  render); real apps on this machine render from the Buuf theme (Firefox, Claude, Xfce Terminal,
+  Thunar, Chrome, VLC; preview checked). Not tested: anything on the board (firmware not flashed),
+  launching from the board, favicons from the extension.
