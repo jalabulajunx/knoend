@@ -1,0 +1,73 @@
+# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Sundar. Tested on Linux only: other systems need their own match entries and a test.
+[[key]]
+label = "New Chat"
+speak = "New chat"
+
+[key.action]
+keys = "Primary+Shift+O"
+kind = "shortcut"
+
+[[key]]
+label = "Search Chats"
+speak = "Search chats"
+
+[key.action]
+keys = "Primary+K"
+kind = "shortcut"
+
+[[key]]
+label = "Toggle Sidebar"
+speak = "Toggle sidebar"
+
+[key.action]
+keys = "Primary+Shift+S"
+kind = "shortcut"
+
+[[key]]
+label = "Copy Last"
+speak = "Copy last response"
+
+[key.action]
+keys = "Primary+Shift+C"
+kind = "shortcut"
+
+[[key]]
+label = "Focus Input"
+speak = "Focus chat input"
+
+[key.action]
+keys = "Escape"
+kind = "shortcut"
+
+[[key]]
+label = "Settings"
+speak = "Open settings"
+
+[key.action]
+keys = "Primary+Comma"
+kind = "shortcut"
+
+[[key]]
+label = "Shortcuts"
+speak = "Show keyboard shortcuts"
+
+[key.action]
+keys = "Primary+Slash"
+kind = "shortcut"
+
+[match]
+linux = ["com.anthropic.claude"]
+
+[pack]
+description = "Quick navigation, chat management, and controls for Claude."
+id = "builtin.claude-desktop"
+name = "Claude"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11)"

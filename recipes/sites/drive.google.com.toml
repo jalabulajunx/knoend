@@ -1,0 +1,89 @@
+# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Sundar. Tested on Linux only: other systems need their own match entries and a test.
+[[key]]
+label = "Search"
+speak = "Search Drive"
+
+[key.action]
+keys = "Slash"
+kind = "shortcut"
+
+[[key]]
+label = "New"
+speak = "New file or folder"
+
+[key.action]
+keys = "C"
+kind = "shortcut"
+
+[[key]]
+label = "My Drive"
+speak = "Open My Drive"
+
+[key.action]
+kind = "open"
+url = "/drive/my-drive"
+
+[[key]]
+label = "Shared"
+speak = "Open Shared with me"
+
+[key.action]
+kind = "open"
+url = "/drive/shared-with-me"
+
+[[key]]
+label = "Recent"
+speak = "Open Recent files"
+
+[key.action]
+kind = "open"
+url = "/drive/recent"
+
+[[key]]
+label = "Starred"
+speak = "Open Starred files"
+
+[key.action]
+kind = "open"
+url = "/drive/starred"
+
+[[key]]
+label = "Trash"
+speak = "Open Trash"
+
+[key.action]
+kind = "open"
+url = "/drive/trash"
+
+[[key]]
+label = "Details"
+speak = "Toggle file details"
+
+[key.action]
+kind = "element"
+selector = 'button[aria-label="View details"]'
+
+[[key]]
+label = "Ask Gemini"
+speak = "Ask Gemini"
+
+[key.action]
+kind = "element"
+selector = 'button[aria-label="Ask Gemini"]'
+
+[match]
+web = ["drive.google.com"]
+
+[pack]
+description = "Quick navigation, search, and core actions for Google Drive."
+id = "builtin.site-drive-google-com"
+name = "Google Drive"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"

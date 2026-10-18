@@ -169,6 +169,26 @@ def check_board_definitions():
     return problems
 
 
+def check_recipes():
+    """Every recipes/**/*.toml must be a valid library, shipped as builtin, with a unique id."""
+    problems = 0
+    seen = {}
+    for path in sorted((ROOT / "recipes").rglob("*.toml")):
+        errors = check_library(path)
+        if not errors:
+            pack = tomllib.loads(path.read_text())["pack"]
+            if pack["source"] != "builtin" or not pack["id"].startswith("builtin."):
+                errors.append("a recipe in the repository has source = \"builtin\" and a builtin. id")
+            if pack["id"] in seen:
+                errors.append(f"id {pack['id']} is also used by {seen[pack['id']]}")
+            seen[pack["id"]] = path.relative_to(ROOT)
+        problems += bool(errors)
+        print(f"{'ok  ' if not errors else 'FAIL'} {path.relative_to(ROOT)}")
+        for error in errors:
+            print(f"       {error}")
+    return problems
+
+
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--packets":
         return check_packet_file(sys.argv[2])
@@ -190,6 +210,7 @@ def main():
         print(f"{status} {path.relative_to(ROOT)}  (rejected: {reason})" if errors
               else f"{status} {path.relative_to(ROOT)}  ({reason})")
     failures += check_board_definitions()
+    failures += check_recipes()
     print(f"\n{len(valid)} valid, {len(invalid)} invalid examples checked; {failures} problem(s)")
     return 1 if failures else 0
 

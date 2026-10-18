@@ -59,3 +59,9 @@ action = { kind = "shortcut", keys = "T" }
 label = "Search"
 icon = "search"
 action = { kind = "focus", selector = "input[name=\"search_query\"]" }
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"

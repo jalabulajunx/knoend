@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use openpager_core::catalog::Catalog;
 use openpager_core::focus::{Focus, WebPage};
-use openpager_core::library::{Action, MediaCommand};
+use openpager_core::library::{Action, AgentReply, LibraryKey, MediaCommand};
 use openpager_agents::site::Scope;
 use openpager_media::NowPlaying;
 use std::collections::{HashMap, HashSet};
@@ -283,7 +283,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         heartbeat.tick().await;
         let mut second = tokio::time::interval(Duration::from_secs(1));
         if let Some(a) = approvals.front() {
-            show_approval(&mut sender, a, &mut shown, &shared).await;
+            show_approval(&mut sender, a, &catalog, &mut shown, &shared).await;
         }
         let mut last_heard = tokio::time::Instant::now();
 
@@ -303,7 +303,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             let in_front = effective(&focus, &tab).is_some_and(|f| Calling::matches(&f, &n));
                             if !local && !in_front && approvals.is_empty() {
                                 println!("  {} notification with no local session behind it (cloud?): Go to key on the board", n.app);
-                                calling = Some(Calling::new(&n));
+                                calling = Some(Calling::new(&n, &catalog));
                             }
                         }
                         if approvals.is_empty() {
@@ -321,7 +321,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         println!("  permission request answered elsewhere; withdrawn from the board");
                         shown = None;
                         match approvals.front() {
-                            Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
+                            Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                             None => match effective(&focus, &tab) {
                                 Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await,
                                 None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
@@ -379,8 +379,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                     favicons.insert(host, pixels);
                 }
-                Event::Board(packet) if packet.kind == "openpager.key" && packet.body["key"] == 9 && packet.body["layout"] != APPROVE
-                                        && calling.is_some() => {
+                Event::Board(packet) if packet.kind == "openpager.key" && packet.body["layout"] != APPROVE
+                                        && calling.as_ref().is_some_and(|c| packet.body["key"] == c.key.key) => {
                     let c = calling.take().expect("calling");
                     let names = c.names.clone();
                     let result = tokio::task::spawn_blocking(move || {
@@ -438,39 +438,30 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Board(packet) if packet.kind == "openpager.key" && packet.body["layout"] == APPROVE => {
                     let key = packet.body["key"].as_u64().unwrap_or(0);
-                    if let Some(front) = approvals.front_mut().filter(|a| !a.questions.is_empty()) {
-                        match front.tap_question(key as u8) {
-                            Some(decision) => {
-                                let front = approvals.pop_front().expect("front");
-                                println!("  answered on the board: {decision:?}");
-                                let _ = front.answer.send(decision);
-                                shown = None;
-                                match approvals.front() {
-                                    Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
-                                    None => match effective(&focus, &tab) {
-                                        Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await,
-                                        None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
-                                                              &mut shown, calling.as_ref(), &shared).await,
-                                    },
+                    let decision = match approvals.front_mut() {
+                        Some(front) => {
+                            let screen = front.screen(&catalog);
+                            let tapped = agent_keys(&screen, front).into_iter().find(|k| u64::from(k.slot) == key).map(|k| (k.reply, k.option));
+                            match tapped.and_then(|(reply, option)| front.tap(reply, option)) {
+                                Some(decision) => Some(decision),
+                                None => {
+                                    if tapped.is_some() {
+                                        // A tick, or the next question.
+                                        show_approval(&mut sender, front, &catalog, &mut shown, &shared).await;
+                                    }
+                                    None
                                 }
                             }
-                            None => show_approval(&mut sender, front, &mut shown, &shared).await,
                         }
-                        continue;
-                    }
-                    let decision = match key {
-                        1 => Some(crate::agent_hooks::Decision::Allow),
-                        2 if approvals.front().is_some_and(|a| a.can_remember) => Some(crate::agent_hooks::Decision::AlwaysAllow),
-                        3 => Some(crate::agent_hooks::Decision::Deny),
-                        7 => Some(crate::agent_hooks::Decision::Stop),
-                        _ => None,
+                        None => None,
                     };
-                    if let (Some(decision), Some(front)) = (decision, approvals.pop_front()) {
+                    // Only a tap that answers takes the request off the queue.
+                    if let Some((decision, front)) = decision.and_then(|d| approvals.pop_front().map(|f| (d, f))) {
                         println!("  answered on the board: {decision:?} ({})", front.summary);
                         let _ = front.answer.send(decision);
                         shown = None;
                         match approvals.front() {
-                            Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
+                            Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                             None => match effective(&focus, &tab) {
                                 Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await,
                                 None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
@@ -494,7 +485,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                                                    questions: crate::agent_hooks::questions(&request), step: 0, answers: Vec::new(), ticked: Vec::new(),
                                                    answer });
                     if approvals.len() == 1 {
-                        show_approval(&mut sender, approvals.front().unwrap(), &mut shown, &shared).await;
+                        show_approval(&mut sender, approvals.front().unwrap(), &catalog, &mut shown, &shared).await;
                     }
                 }
                 Event::Agent(crate::agent_hooks::AgentEvent::Notification(n)) => {
@@ -505,7 +496,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         println!("  permission request settled in the app; withdrawn from the board");
                         shown = None;
                         match approvals.front() {
-                            Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
+                            Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                             None => match effective(&focus, &tab) {
                                 Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await,
                                 None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
@@ -748,10 +739,11 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
         }
     }
     if let Some(calling) = calling {
-        body.keys.retain(|k| k.key != 9);
-        body.keys.push(calling.key());
+        let key = calling.key();
+        body.keys.retain(|k| k.key != key.key);
+        actions.remove(&key.key);
+        body.keys.push(key);
         body.keys.sort_by_key(|k| k.key);
-        actions.remove(&9);
     }
     body.name = board_text(&body.name, 128);
     *shown_actions = actions;
@@ -844,9 +836,10 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
         targets.insert(slot, entry.target.clone());
     }
     if let Some(calling) = calling {
-        keys.retain(|k| k.key != 9);
-        keys.push(calling.key());
-        targets.remove(&9);
+        let key = calling.key();
+        keys.retain(|k| k.key != key.key);
+        targets.remove(&key.key);
+        keys.push(key);
     }
     let status = if keys.is_empty() { "Nothing open. Apps and sites you use will appear here." } else { "" };
     let body = LayoutBody { detail: None, layout: LAUNCHER.into(), name: "Launcher".into(), source: "default".into(), reviewed: true, keys };
@@ -954,12 +947,19 @@ struct Calling {
     /// Names its window may have (app name, desktop entry).
     names: Vec<String>,
     since: std::time::Instant,
+    /// The "Go to" key, from the recipe `claude-code/elsewhere`.
+    key: LayoutKey,
 }
 
 impl Calling {
-    fn new(n: &openpager_desktop::Notification) -> Calling {
+    fn new(n: &openpager_desktop::Notification, catalog: &Catalog) -> Calling {
         let names = [n.app.clone(), n.desktop_entry.clone()].into_iter().filter(|s| !s.is_empty()).collect();
-        Calling { app: n.app.clone(), names, since: std::time::Instant::now() }
+        let screen = agent_screen(catalog, "elsewhere");
+        let key = screen.keys.iter().zip(screen.slots())
+            .find(|(k, _)| matches!(k.action, Action::Agent { reply: AgentReply::GoTo }))
+            .map(|(k, slot)| board_key(k, slot, None))
+            .unwrap_or_else(|| LayoutKey { key: 9, label: "Go to Claude".into(), speak: None, icon: Some("open_in_new".into()), confirm: false, send: Send::Event(true) });
+        Calling { app: n.app.clone(), names, since: std::time::Instant::now(), key }
     }
 
     fn named(focus: &Focus, name: &str) -> bool {
@@ -981,88 +981,145 @@ impl Calling {
     }
 
     fn key(&self) -> LayoutKey {
-        LayoutKey { key: 9, label: board_text(&format!("Go to {}", self.app), 24), speak: Some(board_text(&format!("Show {}", self.app), 80)),
-                    icon: Some("open_in_new".into()), confirm: false, send: Send::Event(true) }
+        self.key.clone()
     }
 }
 
-/// Board slots of a question's options (the middle row holds the question).
-const OPTION_SLOTS: [u8; 4] = [1, 2, 3, 7];
+/// Coding-agent screens are recipes (`recipes/agents`): `claude-code/permission`, `/question` and
+/// `/elsewhere` say which key sits where and what it answers.
+const AGENT: &str = "claude-code";
+
+/// The recipe for one screen of the agent; the compiled-in one when the catalog has none (e.g.
+/// `OPENPAGER_BUILTIN` points at a folder without agent recipes).
+fn agent_screen(catalog: &Catalog, state: &str) -> Library {
+    let name = format!("{AGENT}/{state}");
+    catalog.agent(&name).cloned().unwrap_or_else(|| {
+        builtin::BUILTIN.iter().filter_map(|(_, text)| Library::parse(text).ok())
+            .find(|l| l.matches.agent.iter().any(|a| a.eq_ignore_ascii_case(&name)))
+            .expect("agent recipes are compiled in")
+    })
+}
+
+/// A key on an agent screen as the board shows it now.
+struct AgentKey<'a> {
+    slot: u8,
+    reply: AgentReply,
+    /// For an option key: which of the agent's options it carries.
+    option: Option<usize>,
+    key: &'a LibraryKey,
+}
+
+/// The keys of `screen` that apply to this request: option keys take the question's options in
+/// order (spare ones are left out), Done only for several-choice questions, Always only when the
+/// agent offers a rule to remember.
+fn agent_keys<'a>(screen: &'a Library, approval: &Approval) -> Vec<AgentKey<'a>> {
+    let question = approval.questions.get(approval.step);
+    let mut next_option = 0;
+    let mut out = Vec::new();
+    for (key, slot) in screen.keys.iter().zip(screen.slots()) {
+        let Action::Agent { reply } = key.action else { continue };
+        let option = match reply {
+            AgentReply::Option => {
+                next_option += 1;
+                match question {
+                    Some(q) if next_option - 1 < q.options.len() => Some(next_option - 1),
+                    _ => continue,
+                }
+            }
+            AgentReply::Done if !question.is_some_and(|q| q.multi) => continue,
+            AgentReply::Always if !approval.can_remember => continue,
+            _ => None,
+        };
+        out.push(AgentKey { slot, reply, option, key });
+    }
+    out
+}
+
+/// A recipe key as a board key (an option key shows the option's label instead of its own).
+fn board_key(key: &LibraryKey, slot: u8, option_label: Option<&str>) -> LayoutKey {
+    let label = option_label.unwrap_or(&key.label);
+    LayoutKey { key: slot, label: board_text(label, 24), speak: Some(board_text(option_label.or(key.speak.as_deref()).unwrap_or(label), 80)),
+                icon: key.icon.clone(), confirm: key.confirm, send: Send::Event(true) }
+}
 
 impl Approval {
-    /// A tap on a question's key: Some(decision) once every question is answered or the person
-    /// declined; None while there are more questions (or ticks) to make.
-    fn tap_question(&mut self, key: u8) -> Option<crate::agent_hooks::Decision> {
+    /// A tap on a key of this request's screen: Some(decision) once it is answered (every question
+    /// answered, or declined, or a permission given or refused); None while there is more to do.
+    fn tap(&mut self, reply: AgentReply, option: Option<usize>) -> Option<crate::agent_hooks::Decision> {
         use crate::agent_hooks::Decision;
-        let q = self.questions.get(self.step)?.clone();
-        if key == 9 {
-            return Some(Decision::Deny);
-        }
-        let chosen: Vec<usize> = match OPTION_SLOTS.iter().position(|&s| s == key).filter(|&i| i < q.options.len()) {
-            Some(i) if q.multi => {
+        let Some(q) = self.questions.get(self.step).cloned() else {
+            return match reply {
+                AgentReply::Allow => Some(Decision::Allow),
+                AgentReply::Always if self.can_remember => Some(Decision::AlwaysAllow),
+                AgentReply::Deny => Some(Decision::Deny),
+                AgentReply::Stop => Some(Decision::Stop),
+                _ => None,
+            };
+        };
+        let chosen: Vec<usize> = match (reply, option.filter(|&i| i < q.options.len())) {
+            (AgentReply::Decline | AgentReply::Deny | AgentReply::Stop, _) => return Some(if reply == AgentReply::Stop { Decision::Stop } else { Decision::Deny }),
+            (AgentReply::Option, Some(i)) if q.multi => {
                 if let Some(at) = self.ticked.iter().position(|&t| t == i) { self.ticked.remove(at); } else { self.ticked.push(i); }
                 return None;
             }
-            Some(i) => vec![i],
-            None if key == 8 && q.multi && !self.ticked.is_empty() => { let mut t = std::mem::take(&mut self.ticked); t.sort(); t }
-            None => return None,
+            (AgentReply::Option, Some(i)) => vec![i],
+            (AgentReply::Done, _) if q.multi && !self.ticked.is_empty() => { let mut t = std::mem::take(&mut self.ticked); t.sort(); t }
+            _ => return None,
         };
         let text = chosen.iter().map(|&i| q.options[i].0.clone()).collect::<Vec<_>>().join(", ");
         self.answers.push((q.question.clone(), text));
         self.step += 1;
         (self.step >= self.questions.len()).then(|| Decision::Answer(crate::agent_hooks::answered(&self.request, &self.answers)))
     }
+
+    /// The recipe for what is on the board for this request now.
+    fn screen(&self, catalog: &Catalog) -> Library {
+        agent_screen(catalog, if self.questions.is_empty() { "permission" } else { "question" })
+    }
 }
 
-/// Shows a permission request: Allow, Always (when the agent offers it), Deny, Stop.
-async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, shown: &mut Option<String>, shared: &Shared) {
-    let key = |slot: u8, label: &str, speak: &str, icon: &str, confirm: bool| LayoutKey {
-        key: slot, label: label.into(), speak: Some(speak.into()), icon: Some(icon.into()), confirm, send: Send::Event(true) };
-    if let Some(q) = approval.questions.get(approval.step) {
-        // A question: its options as keys, the question and what each option means in the panel.
-        let mut keys: Vec<LayoutKey> = q.options.iter().zip(OPTION_SLOTS).map(|((label, _), slot)| {
-            let ticked = approval.ticked.contains(&(OPTION_SLOTS.iter().position(|&s| s == slot).unwrap_or(9)));
-            LayoutKey { key: slot, label: board_text(label, 24), speak: Some(board_text(label, 80)),
-                        icon: ticked.then(|| "check".to_string()), confirm: false, send: Send::Event(true) }
-        }).collect();
-        if q.multi {
-            keys.push(key(8, "Send", "Send the ticked answers", "send", false));
+/// Shows a request on the board from its recipe: a permission request (Allow, Always when the
+/// agent offers it, Deny, Stop) or a question (its options, Done for several-choice, Decline),
+/// with the explanation in the panel between the rows.
+async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catalog: &Catalog, shown: &mut Option<String>, shared: &Shared) {
+    let screen = approval.screen(catalog);
+    let question = approval.questions.get(approval.step);
+    let keys: Vec<LayoutKey> = agent_keys(&screen, approval).into_iter().map(|k| {
+        let option = k.option.and_then(|i| question.map(|q| q.options[i].0.as_str()));
+        let mut key = board_key(k.key, k.slot, option);
+        if let Some(i) = k.option {
+            key.icon = approval.ticked.contains(&i).then(|| "check".to_string());
         }
-        keys.push(key(9, "Decline", "Do not answer", "close", false));
-        let count = if approval.questions.len() > 1 { format!(" ({}/{})", approval.step + 1, approval.questions.len()) } else { String::new() };
-        let mut detail = format!("{}{count}\n{}", q.question, if q.multi { "Tick one or more, then Send." } else { "" });
-        for (label, about) in &q.options {
-            if !about.is_empty() {
-                detail += &format!("\n{label}: {about}");
+        if matches!(k.reply, AgentReply::Allow | AgentReply::Always) && approval.destructive {
+            key.confirm = true;
+        }
+        key
+    }).collect();
+    let clean = |text: &str| -> String { text.chars().map(|c| if c == '\n' || c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).take(240).collect() };
+    let (title, detail, status, level) = match question {
+        Some(q) => {
+            let count = if approval.questions.len() > 1 { format!(" ({}/{})", approval.step + 1, approval.questions.len()) } else { String::new() };
+            let mut detail = format!("{}{count}\n{}", q.question, if q.multi { "Tick one or more, then Done." } else { "" });
+            for (label, about) in &q.options {
+                if !about.is_empty() {
+                    detail += &format!("\n{label}: {about}");
+                }
             }
+            let title = if q.header.is_empty() { screen.pack.name.clone() } else { format!("{}: {}", screen.pack.name, q.header) };
+            println!("  -> question on the board [{}]", q.question);
+            (title, clean(&detail), format!("{}: {}", screen.pack.name, q.question), "attention")
         }
-        let detail: String = detail.chars().map(|c| if c == '\n' || c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).take(240).collect();
-        let title = if q.header.is_empty() { "Claude asks".to_string() } else { format!("Claude asks: {}", q.header) };
-        let body = LayoutBody { layout: APPROVE.into(), name: board_text(&title, 128), source: "default".into(), reviewed: true, keys, detail: Some(detail) };
-        println!("  -> question on the board [{}]", q.question);
-        let signature = format!("{APPROVE_SIGNATURE}{}", serde_json::to_string(&body).unwrap_or_default());
-        if sender.send("openpager.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
-            let _ = sender.send("openpager.status", json!({"text": board_text(&format!("Claude asks: {}", q.question), 80), "level": "attention"})).await;
-            *shown = Some(signature);
-            shared.update(|s| s.layout = Some(json!({"id": APPROVE, "name": title, "summary": q.question}))).await;
+        None => {
+            println!("  -> permission request on the board [{}]", approval.summary);
+            (screen.pack.name.clone(), clean(&approval.detail), approval.summary.clone(), if approval.destructive { "alert" } else { "attention" })
         }
-        return;
-    }
-    let mut keys = vec![key(1, "Allow", "Allow", "check", approval.destructive)];
-    if approval.can_remember {
-        keys.push(key(2, "Always", "Always allow this", "done_all", approval.destructive));
-    }
-    keys.push(key(3, "Deny", "Deny", "close", false));
-    keys.push(key(7, "Stop", "Deny and stop Claude", "stop_circle", false));
-    let detail: String = approval.detail.chars().map(|c| if c == '\n' || c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).take(240).collect();
-    let body = LayoutBody { layout: APPROVE.into(), name: "Claude needs you".into(), source: "default".into(), reviewed: true, keys,
-                            detail: Some(detail) };
-    println!("  -> permission request on the board [{}]", approval.summary);
+    };
+    let body = LayoutBody { layout: APPROVE.into(), name: board_text(&title, 128), source: "builtin".into(), reviewed: true, keys, detail: Some(detail) };
+    let signature = format!("{APPROVE_SIGNATURE}{}", serde_json::to_string(&body).unwrap_or_default());
     if sender.send("openpager.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
-        let level = if approval.destructive { "alert" } else { "attention" };
-        let _ = sender.send("openpager.status", json!({"text": board_text(&approval.summary, 80), "level": level})).await;
-        *shown = Some(format!("{APPROVE_SIGNATURE}{}", approval.summary));
-        shared.update(|s| s.layout = Some(json!({"id": APPROVE, "name": "Claude needs you", "summary": approval.summary}))).await;
+        let _ = sender.send("openpager.status", json!({"text": board_text(&status, 80), "level": level})).await;
+        *shown = Some(signature);
+        shared.update(|s| s.layout = Some(json!({"id": APPROVE, "name": title, "summary": status}))).await;
     }
 }
 
@@ -1254,38 +1311,103 @@ mod tests {
     use super::*;
     use crate::agent_hooks::Decision;
 
-    fn asking(questions: Value) -> (Approval, tokio::sync::oneshot::Receiver<Decision>) {
-        let request = json!({"tool_name": "AskUserQuestion", "session_id": "s", "tool_input": {"questions": questions}});
+    fn recipes() -> Catalog {
+        let mut catalog = Catalog::default();
+        let problems = load_builtin(&mut catalog);
+        assert!(problems.is_empty(), "every recipe loads: {problems:?}");
+        catalog
+    }
+
+    fn request(tool_input: Value, tool: &str, suggestions: bool) -> (Approval, tokio::sync::oneshot::Receiver<Decision>) {
+        let mut request = json!({"tool_name": tool, "session_id": "s", "tool_input": tool_input});
+        if suggestions {
+            request["permission_suggestions"] = json!([{"type": "addRules"}]);
+        }
         let (answer, rx) = tokio::sync::oneshot::channel();
-        (Approval { questions: crate::agent_hooks::questions(&request), request, summary: String::new(), detail: String::new(),
-                    destructive: false, can_remember: false, step: 0, answers: Vec::new(), ticked: Vec::new(), answer }, rx)
+        (Approval { questions: crate::agent_hooks::questions(&request), destructive: crate::agent_hooks::destructive(&request),
+                    request, summary: String::new(), detail: String::new(), can_remember: suggestions,
+                    step: 0, answers: Vec::new(), ticked: Vec::new(), answer }, rx)
+    }
+
+    fn asking(questions: Value) -> (Approval, tokio::sync::oneshot::Receiver<Decision>) {
+        request(json!({"questions": questions}), "AskUserQuestion", false)
+    }
+
+    /// The keys the board would show, as (slot, label, icon, confirm).
+    fn shown(approval: &Approval, catalog: &Catalog) -> Vec<(u8, String, Option<String>, bool)> {
+        let screen = approval.screen(catalog);
+        let question = approval.questions.get(approval.step);
+        agent_keys(&screen, approval).into_iter().map(|k| {
+            let key = board_key(k.key, k.slot, k.option.and_then(|i| question.map(|q| q.options[i].0.as_str())));
+            let confirm = key.confirm || (matches!(k.reply, AgentReply::Allow | AgentReply::Always) && approval.destructive);
+            (key.key, key.label, key.icon, confirm)
+        }).collect()
+    }
+
+    /// Taps a slot as the service does: the recipe says what the slot answers.
+    fn tap(approval: &mut Approval, catalog: &Catalog, slot: u8) -> Option<Decision> {
+        let screen = approval.screen(catalog);
+        let found = agent_keys(&screen, approval).into_iter().find(|k| k.slot == slot).map(|k| (k.reply, k.option));
+        found.and_then(|(reply, option)| approval.tap(reply, option))
     }
 
     #[test]
-    fn go_to_key_names_the_app_and_knows_its_window() {
+    fn permission_screen_is_the_same_as_before_recipes() {
+        let catalog = recipes();
+        let (plain, _rx) = request(json!({"command": "ls"}), "Bash", false);
+        let s = |v: &str| v.to_string();
+        assert_eq!(shown(&plain, &catalog), vec![
+            (1, s("Allow"), Some(s("check")), false), (3, s("Deny"), Some(s("close")), false), (7, s("Stop"), Some(s("stop_circle")), false)]);
+        let (risky, _rx) = request(json!({"command": "rm -rf build"}), "Bash", true);
+        assert_eq!(shown(&risky, &catalog), vec![
+            (1, s("Allow"), Some(s("check")), true), (2, s("Always"), Some(s("done_all")), true),
+            (3, s("Deny"), Some(s("close")), false), (7, s("Stop"), Some(s("stop_circle")), false)]);
+        assert_eq!(plain.screen(&catalog).pack.name, "Claude needs you");
+    }
+
+    #[test]
+    fn taps_on_unused_keys_answer_nothing() {
+        let catalog = recipes();
+        let (mut plain, _rx) = request(json!({"command": "ls"}), "Bash", false);
+        for slot in [2, 4, 5, 6, 8, 9] {
+            assert_eq!(tap(&mut plain, &catalog, slot), None, "slot {slot}");
+        }
+        assert_eq!(tap(&mut plain, &catalog, 7), Some(Decision::Stop));
+        let (mut always, _rx) = request(json!({"command": "ls"}), "Bash", true);
+        assert_eq!(tap(&mut always, &catalog, 2), Some(Decision::AlwaysAllow));
+    }
+
+    #[test]
+    fn go_to_key_comes_from_its_recipe_and_knows_the_window() {
+        let catalog = recipes();
         let n = openpager_desktop::Notification { app: "Claude".into(), desktop_entry: String::new(), summary: "Claude needs your attention".into(), body: String::new() };
-        let calling = Calling::new(&n);
+        let calling = Calling::new(&n, &catalog);
         let claude = Focus { os: openpager_core::focus::Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new(), web: None };
         let terminal = Focus { app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), ..claude.clone() };
         assert!(calling.is(&claude) && Calling::matches(&claude, &n));
         assert!(!calling.is(&terminal));
         let key = calling.key();
-        assert_eq!((key.key, key.label.as_str()), (9, "Go to Claude"));
+        assert_eq!((key.key, key.label.as_str(), key.icon.as_deref()), (9, "Go to Claude", Some("open_in_new")));
     }
 
     #[test]
     fn questions_are_answered_one_after_another() {
+        let catalog = recipes();
         let (mut a, _rx) = asking(json!([
             {"question": "Which?", "header": "", "multiSelect": false, "options": [{"label": "A"}, {"label": "B"}, {"label": "C"}, {"label": "D"}]},
             {"question": "Also?", "header": "", "multiSelect": true, "options": [{"label": "X"}, {"label": "Y"}]}]));
-        assert_eq!(a.tap_question(8), None, "no Send key on a one-choice question");
-        assert_eq!(a.tap_question(7), None, "slot 7 = 4th option, answers the first question");
+        let labels = |a: &Approval| shown(a, &catalog).into_iter().map(|(slot, label, _, _)| (slot, label)).collect::<Vec<_>>();
+        let s = |v: &str| v.to_string();
+        assert_eq!(labels(&a), vec![(1, s("A")), (2, s("B")), (3, s("C")), (7, s("D")), (9, s("Decline"))]);
+        assert_eq!(tap(&mut a, &catalog, 8), None, "no Done key on a one-choice question");
+        assert_eq!(tap(&mut a, &catalog, 7), None, "slot 7 = 4th option, answers the first question");
         assert_eq!(a.answers, vec![("Which?".to_string(), "D".to_string())]);
-        assert_eq!(a.tap_question(2), None);
-        assert_eq!(a.tap_question(1), None);
-        assert_eq!(a.tap_question(2), None, "untick");
-        assert_eq!(a.tap_question(2), None, "tick again");
-        match a.tap_question(8) {
+        assert_eq!(labels(&a), vec![(1, s("X")), (2, s("Y")), (8, s("Done")), (9, s("Decline"))], "spare option keys hidden");
+        assert_eq!(tap(&mut a, &catalog, 2), None);
+        assert_eq!(tap(&mut a, &catalog, 1), None);
+        assert_eq!(tap(&mut a, &catalog, 2), None, "untick");
+        assert_eq!(tap(&mut a, &catalog, 2), None, "tick again");
+        match tap(&mut a, &catalog, 8) {
             Some(Decision::Answer(input)) => {
                 assert_eq!(input["answers"]["Which?"], "D");
                 assert_eq!(input["answers"]["Also?"], "X, Y");
@@ -1293,7 +1415,29 @@ mod tests {
             other => panic!("{other:?}"),
         }
         let (mut b, _rx) = asking(json!([{"question": "Q", "options": [{"label": "A"}, {"label": "B"}]}]));
-        assert_eq!(b.tap_question(3), None, "slot 3 has no option here");
-        assert_eq!(b.tap_question(9), Some(Decision::Deny));
+        assert_eq!(tap(&mut b, &catalog, 3), None, "slot 3 has no option here");
+        assert_eq!(tap(&mut b, &catalog, 9), Some(Decision::Deny));
+    }
+
+    #[test]
+    fn a_person_s_own_recipe_replaces_the_built_in_screen() {
+        let mut catalog = recipes();
+        let mine = r#"
+[pack]
+id = "user.my-claude"
+name = "Claude?"
+version = "0.1.0"
+source = "user"
+[match]
+agent = ["claude-code/permission"]
+[[key]]
+slot = 5
+label = "Yes"
+action = { kind = "agent", reply = "allow" }
+"#;
+        catalog.add(PathBuf::from("mine.toml"), Library::parse(mine).unwrap());
+        let (mut plain, _rx) = request(json!({"command": "ls"}), "Bash", false);
+        assert_eq!(shown(&plain, &catalog), vec![(5, "Yes".to_string(), None, false)]);
+        assert_eq!(tap(&mut plain, &catalog, 5), Some(Decision::Allow));
     }
 }

@@ -1,0 +1,25 @@
+# Claude wants the person but no session on this computer is behind it (a cloud session runs its
+# hooks on Anthropic's machines), so the board cannot answer. This key is laid over whatever the
+# board shows, for up to 30 minutes or until Claude is in front; a tap brings Claude forward.
+[pack]
+id = "builtin.agent-claude-code-elsewhere"
+name = "Claude elsewhere"
+version = "0.1.0"
+source = "builtin"
+description = "A key to bring Claude forward when the board cannot answer it."
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Claude desktop (cloud session)"
+
+[match]
+agent = ["claude-code/elsewhere"]
+
+[[key]]
+slot = 9
+label = "Go to Claude"
+speak = "Show Claude"
+icon = "open_in_new"
+action = { kind = "agent", reply = "go_to" }

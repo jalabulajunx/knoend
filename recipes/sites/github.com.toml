@@ -1,0 +1,89 @@
+# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Sundar. Tested on Linux only: other systems need their own match entries and a test.
+[[key]]
+icon = "search"
+label = "Search"
+
+[key.action]
+keys = "Slash"
+kind = "shortcut"
+
+[[key]]
+icon = "description"
+label = "Go to File"
+
+[key.action]
+keys = "T"
+kind = "shortcut"
+
+[[key]]
+icon = "smart_toy"
+label = "Copilot"
+
+[key.action]
+kind = "element"
+selector = 'button[aria-label="Open Copilot…"]'
+
+[[key]]
+icon = "star"
+label = "Star"
+
+[key.action]
+kind = "element"
+selector = '[data-testid="star-button"]'
+
+[[key]]
+icon = "notifications"
+label = "Notifications"
+
+[key.action]
+kind = "open"
+url = "/notifications"
+
+[[key]]
+icon = "task_alt"
+label = "Pull Requests"
+
+[key.action]
+kind = "open"
+url = "/pulls"
+
+[[key]]
+icon = "bug_report"
+label = "Issues"
+
+[key.action]
+kind = "open"
+url = "/issues"
+
+[[key]]
+icon = "home"
+label = "Home"
+
+[key.action]
+kind = "open"
+url = "/"
+
+[[key]]
+icon = "explore"
+label = "Explore"
+
+[key.action]
+kind = "open"
+url = "/explore"
+
+[match]
+web = ["github.com"]
+
+[pack]
+description = "Quick navigation, search, and repository tools for GitHub."
+id = "builtin.site-github-com"
+name = "GitHub"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"

@@ -31,7 +31,7 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | --- | --- | --- |
 | Extension for Firefox and Chrome: active site, per-site buttons, page actions, page inventory, favicon | `extension/`, `spec/browser.md` | `python3 tools/build_extension.py`; see `extension/README.md` |
 | Native messaging host + service socket | `companion/crates/cli/src/browser.rs` | `openpager browser install` |
-| Site layouts (`match.web`: host, routes incl. `#/` hash routes, `@fullscreen`); built-in YouTube, Google Slides presenting | `libraries/builtin/`, `core/src/focus.rs`, `core/src/catalog.rs` | YouTube; present a Slides deck |
+| Site layouts (`match.web`: host, routes incl. `#/` hash routes, `@fullscreen`); built-in YouTube, Google Slides presenting | `recipes/sites/`, `core/src/focus.rs`, `core/src/catalog.rs` | YouTube; present a Slides deck |
 | "Configure this site" (board or popup): AI drafts keys from the page's controls, site-wide then per kind of page | `agents/src/site.rs`, `cli/src/service.rs` | Configure on the board in any site |
 | Now playing (MPRIS, Linux): media keys reach the player; media row in slots 7-9 while something plays | `companion/crates/media` | play anything |
 | Material icons on keys (132 names, built into the firmware) | `spec/icons.txt`, `firmware/components/icons`, `tools/build_icons.py` | any built-in library |
@@ -39,6 +39,7 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | Desktop notifications from followed apps (Linux D-Bus) | `companion/crates/desktop` | Claude desktop notifications |
 | Launcher when nothing is focused: most used / recent apps and sites with their own colour icons; tap opens | `cli/src/launcher.rs`, `desktop/src/apps.rs`, `mac_apps.rs`, `openpager.image` | empty workspace |
 | Background service (systemd user unit / LaunchAgent) | `cli/src/background.rs` | `openpager service install` |
+| Recipes: apps, sites and Claude Code's screens as data, each with who tested it on which OS | `recipes/`, `spec/protocol.md` section 5 | `python3 tools/validate_spec.py` |
 
 ## Built, not yet tested
 

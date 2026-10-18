@@ -1,0 +1,89 @@
+# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Sundar. Tested on Linux only: other systems need their own match entries and a test.
+[[key]]
+icon = "add"
+label = "New Listing"
+speak = "Create new listing"
+
+[key.action]
+kind = "open"
+url = "/marketplace/create/"
+
+[[key]]
+icon = "upload"
+label = "Bulk Create"
+speak = "Create multiple listings"
+
+[key.action]
+kind = "open"
+url = "/marketplace/create/bulk/"
+
+[[key]]
+icon = "view_list"
+label = "Selling"
+speak = "Your listings"
+
+[key.action]
+kind = "open"
+url = "/marketplace/you/selling/"
+
+[[key]]
+icon = "dashboard"
+label = "Buying"
+speak = "Your marketplace items"
+
+[key.action]
+kind = "open"
+url = "/marketplace/you/"
+
+[[key]]
+icon = "chat"
+label = "Inbox"
+speak = "Marketplace messages"
+
+[key.action]
+kind = "open"
+url = "/marketplace/inbox/"
+
+[[key]]
+icon = "star"
+label = "Free Stuff"
+speak = "Browse free items"
+
+[key.action]
+kind = "open"
+url = "/marketplace/category/free/"
+
+[[key]]
+icon = "home"
+label = "Rentals"
+speak = "Property rentals"
+
+[key.action]
+kind = "open"
+url = "/marketplace/category/propertyrentals/"
+
+[[key]]
+icon = "info"
+label = "Status"
+speak = "Marketplace status"
+
+[key.action]
+kind = "open"
+url = "/marketplace/status/"
+
+[match]
+web = ["facebook.com/marketplace"]
+
+[pack]
+description = "Browse, create, and manage listings on Facebook Marketplace."
+id = "builtin.site-facebook-com-marketplace"
+name = "Facebook Marketplace"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"
