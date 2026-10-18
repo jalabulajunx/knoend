@@ -1,0 +1,47 @@
+# Claude Code asks permission to run a tool (its PermissionRequest hook). The service puts the
+# tool, its input and what each answer means in the panel between the rows. "Always" shows only
+# when Claude offers a rule to remember; Allow and Always ask for a second tap on commands that
+# look destructive.
+[pack]
+id = "builtin.agent-claude-code-permission"
+name = "Claude needs you"
+version = "0.1.0"
+source = "builtin"
+description = "Answer Claude Code's permission requests from the board."
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Claude desktop and Claude Code"
+
+[match]
+agent = ["claude-code/permission"]
+
+[[key]]
+slot = 1
+label = "Allow"
+speak = "Allow"
+icon = "check"
+action = { kind = "agent", reply = "allow" }
+
+[[key]]
+slot = 2
+label = "Always"
+speak = "Always allow this"
+icon = "done_all"
+action = { kind = "agent", reply = "always" }
+
+[[key]]
+slot = 3
+label = "Deny"
+speak = "Deny"
+icon = "close"
+action = { kind = "agent", reply = "deny" }
+
+[[key]]
+slot = 7
+label = "Stop"
+speak = "Deny and stop Claude"
+icon = "stop_circle"
+action = { kind = "agent", reply = "stop" }

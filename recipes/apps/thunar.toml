@@ -1,0 +1,90 @@
+# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Sundar. Tested on Linux only: other systems need their own match entries and a test.
+[[key]]
+label = "New Folder"
+speak = "Create new folder"
+
+[key.action]
+keys = "Primary+Shift+N"
+kind = "shortcut"
+
+[[key]]
+label = "New Tab"
+speak = "Open new tab"
+
+[key.action]
+keys = "Primary+T"
+kind = "shortcut"
+
+[[key]]
+label = "Search"
+speak = "Search files"
+
+[key.action]
+keys = "Primary+F"
+kind = "shortcut"
+
+[[key]]
+label = "Up Folder"
+speak = "Go to parent directory"
+
+[key.action]
+keys = "Alt+Up"
+kind = "shortcut"
+
+[[key]]
+label = "Home"
+speak = "Go to home folder"
+
+[key.action]
+keys = "Alt+Home"
+kind = "shortcut"
+
+[[key]]
+label = "Location"
+speak = "Enter location path"
+
+[key.action]
+keys = "Primary+L"
+kind = "shortcut"
+
+[[key]]
+label = "Hidden Files"
+speak = "Toggle hidden files"
+
+[key.action]
+keys = "Primary+H"
+kind = "shortcut"
+
+[[key]]
+label = "Reload"
+speak = "Reload folder"
+
+[key.action]
+keys = "Primary+R"
+kind = "shortcut"
+
+[[key]]
+confirm = true
+label = "Trash"
+speak = "Move selected to trash"
+
+[key.action]
+keys = "Delete"
+kind = "shortcut"
+
+[match]
+linux = ["thunar"]
+
+[pack]
+description = "Common shortcuts for file navigation and management in Thunar."
+id = "builtin.thunar"
+name = "Thunar"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11)"

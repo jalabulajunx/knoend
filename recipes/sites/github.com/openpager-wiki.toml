@@ -1,0 +1,73 @@
+# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Sundar. Tested on Linux only: other systems need their own match entries and a test.
+[[key]]
+icon = "code"
+label = "Code"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager"
+
+[[key]]
+icon = "task_alt"
+label = "Actions"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/actions"
+
+[[key]]
+icon = "dashboard"
+label = "Projects"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/projects"
+
+[[key]]
+icon = "settings"
+label = "Settings"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/settings"
+
+[[key]]
+icon = "history"
+label = "Insights"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/pulse"
+
+[[key]]
+icon = "lock"
+label = "Security"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/security"
+
+[[key]]
+icon = "person"
+label = "Owner"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx"
+
+[match]
+web = ["github.com/jalabulajunx/openpager/wiki"]
+
+[pack]
+description = "Repository navigation shortcuts for GitHub wiki pages."
+id = "builtin.site-github-com-openpager-wiki"
+name = "OpenPager Wiki"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"

@@ -1,0 +1,98 @@
+# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Sundar. Tested on Linux only: other systems need their own match entries and a test.
+[[key]]
+icon = "history"
+label = "Commits"
+speak = "Commit history"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/commits"
+
+[[key]]
+icon = "download"
+label = "Releases"
+speak = "Repository releases"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/releases"
+
+[[key]]
+icon = "task_alt"
+label = "Actions"
+speak = "Workflows and actions"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/actions"
+
+[[key]]
+icon = "code"
+label = "Branches"
+speak = "Switch branch"
+
+[key.action]
+kind = "element"
+selector = "#ref-picker-repos-header-ref-selector"
+
+[[key]]
+icon = "add"
+label = "Add File"
+speak = "Add new file"
+
+[key.action]
+kind = "element"
+selector = 'button[aria-label="Add file"]'
+
+[[key]]
+icon = "format_list_bulleted"
+label = "Outline"
+speak = "Readme outline"
+
+[key.action]
+kind = "element"
+selector = 'button[aria-label="Outline"]'
+
+[[key]]
+icon = "settings"
+label = "Settings"
+speak = "Repository settings"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/settings"
+
+[[key]]
+icon = "dashboard"
+label = "Insights"
+speak = "Repository insights"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/pulse"
+
+[[key]]
+icon = "description"
+label = "Wiki"
+speak = "Repository wiki"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/wiki"
+
+[match]
+web = ["github.com/jalabulajunx/openpager"]
+
+[pack]
+description = "Repository navigation, branches, commits, releases, and settings."
+id = "builtin.site-github-com-openpager"
+name = "OpenPager Repo"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"

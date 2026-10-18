@@ -1,0 +1,53 @@
+# Claude Code asks the person a question with options (its AskUserQuestion tool). Option keys
+# take Claude's options in order (their labels replace "Option"; unused ones are hidden); the
+# question and what each option means go in the panel. "Done" shows only when several options
+# may be ticked.
+[pack]
+id = "builtin.agent-claude-code-question"
+name = "Claude asks"
+version = "0.1.0"
+source = "builtin"
+description = "Answer Claude Code's questions from the board."
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Claude desktop (local session)"
+
+[match]
+agent = ["claude-code/question"]
+
+[[key]]
+slot = 1
+label = "Option"
+action = { kind = "agent", reply = "option" }
+
+[[key]]
+slot = 2
+label = "Option"
+action = { kind = "agent", reply = "option" }
+
+[[key]]
+slot = 3
+label = "Option"
+action = { kind = "agent", reply = "option" }
+
+[[key]]
+slot = 7
+label = "Option"
+action = { kind = "agent", reply = "option" }
+
+[[key]]
+slot = 8
+label = "Done"
+speak = "Answer with the ticked options"
+icon = "check"
+action = { kind = "agent", reply = "done" }
+
+[[key]]
+slot = 9
+label = "Decline"
+speak = "Do not answer"
+icon = "close"
+action = { kind = "agent", reply = "decline" }

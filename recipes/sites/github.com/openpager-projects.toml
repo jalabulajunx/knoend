@@ -1,0 +1,98 @@
+# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Sundar. Tested on Linux only: other systems need their own match entries and a test.
+[[key]]
+icon = "search"
+label = "Search Proj"
+speak = "Search projects"
+
+[key.action]
+kind = "focus"
+selector = "div > div > div:nth-of-type(1) > span > input"
+
+[[key]]
+icon = "code"
+label = "Code"
+speak = "Go to code"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager"
+
+[[key]]
+icon = "play_arrow"
+label = "Actions"
+speak = "Go to Actions"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/actions"
+
+[[key]]
+icon = "task_alt"
+label = "Milestones"
+speak = "Go to Milestones"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/milestones"
+
+[[key]]
+icon = "bookmark"
+label = "Labels"
+speak = "Go to Labels"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/labels"
+
+[[key]]
+icon = "view_list"
+label = "Views"
+speak = "Go to Views"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/issues/views"
+
+[[key]]
+icon = "dashboard"
+label = "Insights"
+speak = "Go to Insights"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/pulse"
+
+[[key]]
+icon = "description"
+label = "Wiki"
+speak = "Go to Wiki"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/wiki"
+
+[[key]]
+icon = "settings"
+label = "Settings"
+speak = "Go to Settings"
+
+[key.action]
+kind = "open"
+url = "/jalabulajunx/openpager/settings"
+
+[match]
+web = ["github.com/jalabulajunx/openpager/projects"]
+
+[pack]
+description = "Repository navigation and project controls for GitHub project boards."
+id = "builtin.site-github-com-openpager-projects"
+name = "OpenPager Projects"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"

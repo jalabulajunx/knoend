@@ -307,7 +307,10 @@ Actions (the only kinds allowed; anything else fails validation):
 | `shortcut` | `keys`, e.g. `"Primary+Shift+P"` | Board, as `hid` (companion resolves `Primary` per OS) |
 | `open` | `url`: a path on the matched site (must start with `/`) | Companion (via the extension) |
 | `element` | `selector`: CSS selector on the matched page | Companion (via the extension) |
+| `focus` | `selector`: a field on the matched page to type into | Companion (via the extension) |
+| `media` | `command` (toggle, play, pause, next, previous, mute, forward, back), optional `selector` | Companion (media player, else the extension) |
 | `command` | `name`: a command the user has defined on their computer | Companion; never a raw command line |
+| `agent` | `reply`: allow, always, deny, stop, option, done, decline, go_to | Companion, answering a coding agent (only in `match.agent` libraries) |
 
 Shortcut grammar: zero or more of `Primary`, `Ctrl`, `Shift`, `Alt`, `Meta` (Cmd/Super), each followed
 by `+`, then one key: `A`–`Z`, `0`–`9`, `F1`–`F24`, `Enter`, `Escape`, `Tab`, `Space`, `Backspace`,
@@ -320,6 +323,33 @@ action looks like buy/submit/send/delete without it. At most 9 keys; `slot` (1�
 otherwise keys fill slots in order.
 
 Precedence when several libraries match: user override → installed library → AI draft → default keys.
+
+**Tested.** `[[pack.tested]]` entries record who saw a library work, on which OS and when
+(`os` = linux | macos | windows, `by`, `date` YYYY-MM-DD, optional `note` such as the desktop and
+browser). An OS without an entry is untested there, even when `match` lists it.
+
+```toml
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"
+```
+
+**Recipes.** Libraries shipped with OpenPager live in the repository's `recipes/` folder and are
+compiled into the companion: `apps/` (desktop apps, one file covering every OS through its `match`
+entries and `Primary` shortcuts), `sites/` (`<host>.toml` for the whole site, `<host>/<page>.toml` for
+a kind of page), and `agents/`. Each has `source = "builtin"` and an id starting `builtin.`;
+`tools/validate_spec.py` checks every one. AI drafts stay on the computer that made them until a
+person has used them and they are promoted into `recipes/` with a `tested` entry.
+
+**Agent screens.** A library whose `match.agent` names an agent and a state
+(`claude-code/permission`, `claude-code/question`, `claude-code/elsewhere`) sets what the board shows
+for that state: which slot holds which answer (`agent` actions), labels, icons. The companion fills in
+what changes per request: the explanation panel, the agent's options on `reply = "option"` keys (in
+order; spare ones are hidden), `always` only when the agent offers a rule to remember, `done` only on
+several-choice questions, and a second tap on allow/always for commands that look destructive. A user
+library with the same `match.agent` replaces the built-in screen.
 
 ## 6. Open questions
 

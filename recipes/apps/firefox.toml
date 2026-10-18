@@ -1,0 +1,90 @@
+# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Sundar. Tested on Linux only: other systems need their own match entries and a test.
+[[key]]
+label = "New Tab"
+speak = "New tab"
+
+[key.action]
+keys = "Primary+T"
+kind = "shortcut"
+
+[[key]]
+confirm = true
+label = "Close Tab"
+speak = "Close tab"
+
+[key.action]
+keys = "Primary+W"
+kind = "shortcut"
+
+[[key]]
+label = "Undo Close"
+speak = "Reopen closed tab"
+
+[key.action]
+keys = "Primary+Shift+T"
+kind = "shortcut"
+
+[[key]]
+label = "Address Bar"
+speak = "Focus address bar"
+
+[key.action]
+keys = "Primary+L"
+kind = "shortcut"
+
+[[key]]
+label = "Reload"
+speak = "Reload page"
+
+[key.action]
+keys = "Primary+R"
+kind = "shortcut"
+
+[[key]]
+label = "Find"
+speak = "Find in page"
+
+[key.action]
+keys = "Primary+F"
+kind = "shortcut"
+
+[[key]]
+label = "Private Win"
+speak = "New private window"
+
+[key.action]
+keys = "Primary+Shift+P"
+kind = "shortcut"
+
+[[key]]
+label = "Downloads"
+speak = "Open downloads"
+
+[key.action]
+keys = "Primary+J"
+kind = "shortcut"
+
+[[key]]
+label = "Bookmarks"
+speak = "Toggle bookmarks sidebar"
+
+[key.action]
+keys = "Primary+B"
+kind = "shortcut"
+
+[match]
+linux = ["Navigator", "firefox"]
+
+[pack]
+description = "Essential navigation, tab management, and search shortcuts for Firefox."
+id = "builtin.firefox"
+name = "Firefox"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11)"

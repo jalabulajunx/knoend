@@ -137,7 +137,7 @@ firmware/             ESP-IDF project (C): one universal image
 companion/            Rust workspace; the `openpager` binary (service + CLI)
   crates/             core, transport, focus, input, flash, agents, cli
 web/                  web app served by the service (setup wizard, assistant, dashboard)
-libraries/builtin/    built-in layout libraries (*.toml)
+recipes/              keys for apps, sites and coding agents (*.toml), compiled in; see recipes/README.md
 docs/                 setup guide, knowledge base, board research, log, decisions/
 tools/                spec validator, firmware release packager, bench tools
 ```

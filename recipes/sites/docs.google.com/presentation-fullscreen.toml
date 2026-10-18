@@ -63,3 +63,9 @@ action = { kind = "shortcut", keys = "W" }
 label = "Captions"
 icon = "closed_caption"
 action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"

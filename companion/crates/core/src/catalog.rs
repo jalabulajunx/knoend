@@ -82,6 +82,19 @@ impl Catalog {
             .find(|l| l.matches.web.iter().any(|p| !p.contains('/') && web.matches_pattern(p)))
     }
 
+    /// The library for a coding agent's screen ("claude-code/permission"): the person's own first,
+    /// then built-in, then AI drafts.
+    pub fn agent(&self, name: &str) -> Option<&Library> {
+        let rank = |source: &Source| match source {
+            Source::User => 0,
+            Source::Builtin | Source::Community => 1,
+            Source::Ai => 2,
+        };
+        self.libraries.iter().map(|(_, l)| l)
+            .filter(|l| l.matches.agent.iter().any(|a| a.eq_ignore_ascii_case(name)))
+            .min_by_key(|l| rank(&l.pack.source))
+    }
+
     /// A library by its id.
     pub fn get(&self, id: &str) -> Option<&Library> {
         self.libraries.iter().map(|(_, l)| l).find(|l| l.pack.id == id)

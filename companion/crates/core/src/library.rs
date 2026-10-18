@@ -36,6 +36,18 @@ pub struct Pack {
     pub authors: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<String>,
+    /// Who saw it work, on which OS and when; an OS not listed is untested there.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tested: Vec<Tested>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tested {
+    pub os: String,
+    pub by: String,
+    pub date: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -68,6 +80,28 @@ pub enum Action {
         selector: Option<String>,
     },
     Command { name: String },
+    /// A key on a coding agent's screen (libraries matched by `match.agent`).
+    Agent { reply: AgentReply },
+}
+
+/// What a key on a coding agent's screen answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentReply {
+    Allow,
+    /// Allow and remember (the agent's own suggested rule); shown only when the agent offers one.
+    Always,
+    Deny,
+    /// Deny and stop the agent.
+    Stop,
+    /// One of the agent's options; these keys take the options in order, unused ones are hidden.
+    Option,
+    /// Send the ticked options (several-choice questions only).
+    Done,
+    /// Do not answer the question.
+    Decline,
+    /// Bring the agent's app to the front.
+    GoTo,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

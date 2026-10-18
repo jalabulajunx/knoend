@@ -850,3 +850,33 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   Never type into `sudo`/password prompts.
 - Sundar: board taps answered Claude's questions in the earlier tests (confirmed on the board).
   Terminal-waiting detection waits for Tom's terminal work.
+
+## 2026-10-18 - Sundar (Claude Code) - Recipes folder; Claude Code's screens as recipes
+
+- Sundar: working layouts should live in one folder for every OS and website, the Claude ones too;
+  all AI drafts made on his laptop work, record him as the tester for Linux. Leads to #15 and #16.
+- Changed (decision: [`docs/decisions/2026-10-18-recipes.md`](decisions/2026-10-18-recipes.md)):
+  - `libraries/builtin/` -> `recipes/` (`apps/`, `sites/<host>[/<page>].toml`, `agents/`); `build.rs`
+    compiles in every `recipes/**/*.toml`; `tools/validate_spec.py` validates each (builtin source
+    and id, unique ids).
+  - Spec (needs Tom's review): `[[pack.tested]]` (os, by, date, note) and the `agent` action
+    (`reply`); `spec/protocol.md` section 5 documents both, the folder, and agent screens. The
+    action table there now also lists `focus` and `media` (already in the schema).
+  - Promoted 15 AI drafts with "tested: linux, Sundar, 2026-10-18": Claude desktop, Firefox, Chrome,
+    Thunar, Xfce Terminal; docs.google.com, Google Drive (+ recent), Facebook (+ Marketplace),
+    GitHub (+ this repository's main, branches, projects and wiki pages). Not promoted: the three
+    Navidrome drafts (home server LAN address, positional selectors). YouTube and Slides presenting
+    got the same tested entry; VS Code has none (not seen tested).
+  - `recipes/agents/claude-code-{permission,question,elsewhere}.toml` now decide the slots, labels and
+    icons of those screens; the service fills in options, the explanation, Always only when offered,
+    Done only for several-choice, and confirm for destructive commands. A user library with the same
+    `match.agent` replaces a screen. Visible change: the several-choice key is "Done" (was "Send":
+    the validator requires a second tap on anything named send).
+  - Bug fixed: a tap on an unused key while a request was on the board removed the request
+    without answering (`pop_front()` ran inside the `if let` tuple). Now only an answering tap does.
+- Tested: workspace tests (new: every recipe loads; the permission screen matches the earlier
+  hard-coded one key for key; unused keys answer nothing; questions step through options, ticks and
+  Done; a user's recipe replaces the built-in screen; Go to Claude comes from its recipe); spec
+  validator (22 recipes, examples and board definitions, 0 problems). Not yet on the board.
+- Tom approved merging the recipes PR (#18) in a chat with Sundar on 2026-10-18; spec review of the
+  `tested` field and `agent` action by Tom while it is on main.

@@ -46,3 +46,9 @@ label = "Play/Pause"
 icon = "play_arrow"
 speak = "Play or pause"
 action = { kind = "media", command = "toggle" }
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"
