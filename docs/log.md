@@ -663,3 +663,22 @@ Entry template:
   Notifications no longer overwrite the status line while a request is pending.
 - Tested: unit test for the detail text; spec validator; firmware built (app 1.75 MB) and flashed to
   the ONX (hashes verified). Seen on the board: see the next entry.
+
+## 2026-10-18 - Sundar (Claude Code) - Readable request details; requests answered in the app leave the board
+
+- Sundar: the details worked but did not fit ("a small scroll could have helped by readjusting the
+  button heights"); and a request answered with keyboard/mouse in Claude stayed on the board whenever
+  he was on Claude.
+- Changed (firmware, flashed to the ONX, hashes verified): with a detail, the top and bottom rows
+  shrink to two thirds (label only, 14 px) and the detail panel takes the rest (about 104 px of the
+  ONX's 200 px grid), wraps, and scrolls with a swipe (starts at the top for each new detail).
+- Cause of the stuck request: Claude Code does not stop a PermissionRequest hook when the person
+  answers in its own window, so the hook kept waiting (up to 300 s). Changed: `claude-hooks install`
+  also adds PostToolUse, Stop and UserPromptSubmit hooks (`openpager hook event`, 5 s, report only).
+  A session cannot move on while its permission question is open, so the same session finishing that
+  tool (same tool and input), stopping, taking a new prompt or going idle withdraws its request and
+  brings the app's keys back. Installing again no longer replaces the first settings backup (it had,
+  once, on Sundar's machine: the backup now holds the first OpenPager hooks, not the original; uninstall
+  still removes only ours).
+- Tested: unit tests (settling rule: same session and tool/input, stop, other sessions ignored). Not
+  yet on the board: needs Sundar to restart `openpager serve` and a new Claude Code session.

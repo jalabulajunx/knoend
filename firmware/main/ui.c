@@ -38,6 +38,8 @@ static lv_obj_t *key_icons[UI_KEYS];
 static lv_obj_t *status_bar;
 static lv_obj_t *detail_box;   // over the middle row when the layout has a detail
 static lv_obj_t *detail_label;
+// Grid geometry, set in ui_start: rows shrink to `compact_h` while a detail is shown.
+static int key_w, key_h, compact_h, detail_h;
 static lv_obj_t *status_label;
 
 static uint32_t tap_count;
@@ -160,15 +162,26 @@ static void key_event(lv_event_t *event)
 static void draw_keys_locked(void)
 {
     const bool detail = layout.detail[0] != '\0';
+    // With a detail, the top and bottom rows get shorter (label only) and the text takes the
+    // middle, scrollable by swiping.
+    const int row_h = detail ? compact_h : key_h;
+    const int row_y[GRID_ROWS] = {GRID_GAP, GRID_GAP + row_h + GRID_GAP,
+                                  detail ? GRID_GAP + row_h + GRID_GAP + detail_h + GRID_GAP : GRID_GAP + 2 * (row_h + GRID_GAP)};
     if (detail) {
         lv_label_set_text(detail_label, layout.detail);
+        lv_obj_set_pos(detail_box, GRID_GAP, row_y[1]);
+        lv_obj_set_height(detail_box, detail_h);
+        lv_obj_scroll_to_y(detail_box, 0, LV_ANIM_OFF);
         lv_obj_clear_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
     }
     for (int i = 0; i < UI_KEYS; i++) {
+        const int row = i / GRID_COLS;
+        lv_obj_set_pos(key_buttons[i], GRID_GAP + (i % GRID_COLS) * (key_w + GRID_GAP), row_y[row]);
+        lv_obj_set_height(key_buttons[i], row_h);
         // The middle row gives way to the detail text.
-        if (detail && i / GRID_COLS == 1) {
+        if (detail && row == 1) {
             lv_obj_add_flag(key_buttons[i], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_clear_flag(key_buttons[i], LV_OBJ_FLAG_HIDDEN);
@@ -177,7 +190,7 @@ static void draw_keys_locked(void)
         const bool blank = key->send == UI_SEND_NONE;
         lv_obj_set_style_bg_color(key_buttons[i], lv_color_hex(blank ? COLOR_KEY_BLANK : COLOR_KEY), 0);
         lv_label_set_text(key_labels[i], blank ? "" : key->label);
-        const lv_img_dsc_t *icon = blank ? NULL : icons_find(key->icon);
+        const lv_img_dsc_t *icon = blank || detail ? NULL : icons_find(key->icon);
         if (icon != NULL) {
             // Icon above, a small label under it.
             lv_img_set_src(key_icons[i], icon);
@@ -189,8 +202,9 @@ static void draw_keys_locked(void)
         } else {
             lv_obj_add_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_text_font(key_labels[i],
-                                       strlen(key->label) <= 2 ? &lv_font_montserrat_28
-                                                               : &lv_font_montserrat_20, 0);
+                                       detail ? &lv_font_montserrat_14
+                                       : strlen(key->label) <= 2 ? &lv_font_montserrat_28
+                                                                 : &lv_font_montserrat_20, 0);
             lv_label_set_long_mode(key_labels[i], LV_LABEL_LONG_WRAP);
             lv_obj_center(key_labels[i]);
         }
@@ -216,8 +230,10 @@ void ui_start(void)
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
     const int grid_h = board->height - STATUS_HEIGHT;
-    const int key_w = (board->width - GRID_GAP * (GRID_COLS + 1)) / GRID_COLS;
-    const int key_h = (grid_h - GRID_GAP * (GRID_ROWS + 1)) / GRID_ROWS;
+    key_w = (board->width - GRID_GAP * (GRID_COLS + 1)) / GRID_COLS;
+    key_h = (grid_h - GRID_GAP * (GRID_ROWS + 1)) / GRID_ROWS;
+    compact_h = key_h * 2 / 3;
+    detail_h = grid_h - 2 * compact_h - GRID_GAP * (GRID_ROWS + 1);
 
     for (int i = 0; i < UI_KEYS; i++) {
         const int row = i / GRID_COLS;
@@ -252,12 +268,12 @@ void ui_start(void)
     lv_obj_set_style_bg_color(detail_box, lv_color_hex(COLOR_KEY_BLANK), 0);
     lv_obj_set_style_radius(detail_box, 8, 0);
     lv_obj_set_style_pad_all(detail_box, 6, 0);
-    lv_obj_clear_flag(detail_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(detail_box, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(detail_box, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_add_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
     detail_label = lv_label_create(detail_box);
     lv_obj_set_width(detail_label, lv_pct(100));
-    lv_label_set_long_mode(detail_label, LV_LABEL_LONG_DOT);
-    lv_obj_set_height(detail_label, key_h - 12);
+    lv_label_set_long_mode(detail_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(detail_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(detail_label, lv_color_white(), 0);
     lv_obj_align(detail_label, LV_ALIGN_TOP_LEFT, 0, 0);

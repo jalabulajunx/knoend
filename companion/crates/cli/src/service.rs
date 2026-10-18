@@ -366,7 +366,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Event::Agent(crate::agent_hooks::AgentEvent::Permission { request, answer }) => {
                     let summary = crate::agent_hooks::summary(&request);
                     println!("Permission request: {summary}");
-                    approvals.push_back(Approval { summary, detail: crate::agent_hooks::detail(&request), destructive: crate::agent_hooks::destructive(&request),
+                    approvals.push_back(Approval { request: request.clone(), summary, detail: crate::agent_hooks::detail(&request), destructive: crate::agent_hooks::destructive(&request),
                                                    can_remember: request["permission_suggestions"].as_array().is_some_and(|s| !s.is_empty()),
                                                    answer });
                     if approvals.len() == 1 {
@@ -374,6 +374,22 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::Agent(crate::agent_hooks::AgentEvent::Notification(n)) => {
+                    // Answered in Claude's own window? Then the request leaves the board.
+                    let before = approvals.len();
+                    approvals.retain(|a| !crate::agent_hooks::settles(&n, &a.request));
+                    if approvals.len() != before {
+                        println!("  permission request settled in the app; withdrawn from the board");
+                        shown = None;
+                        match approvals.front() {
+                            Some(a) => show_approval(&mut sender, a, &mut shown, &shared).await,
+                            None => if let Some(f) = effective(&focus, &tab) {
+                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                            },
+                        }
+                    }
+                    if n["hook_event_name"] != "Notification" {
+                        continue;
+                    }
                     let kind = n["notification_type"].as_str().unwrap_or("");
                     // Permission prompts arrive as PermissionRequest already.
                     if !matches!(kind, "permission_prompt" | "auth_success" | "elicitation_complete" | "elicitation_response") {
@@ -665,6 +681,8 @@ const APPROVE_SIGNATURE: &str = "approve|";
 
 /// A coding agent waiting for the person's answer.
 struct Approval {
+    /// The hook's event (session, tool, input), to tell when it was answered elsewhere.
+    request: Value,
     summary: String,
     detail: String,
     destructive: bool,

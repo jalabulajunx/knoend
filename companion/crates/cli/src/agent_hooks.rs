@@ -137,6 +137,21 @@ pub async fn serve(events: mpsc::Sender<AgentEvent>) {
 #[cfg(not(unix))]
 pub async fn serve(_events: mpsc::Sender<AgentEvent>) {}
 
+/// Whether `event` (any hook event) shows that the pending permission `request` was settled in the
+/// agent's own window: the same session finished that tool, stopped, took a new prompt, or went
+/// idle. (A session cannot move on while one of its permission questions is open.)
+pub fn settles(event: &Value, request: &Value) -> bool {
+    if event["session_id"].is_null() || event["session_id"] != request["session_id"] {
+        return false;
+    }
+    match event["hook_event_name"].as_str() {
+        Some("PostToolUse") => event["tool_name"] == request["tool_name"] && event["tool_input"] == request["tool_input"],
+        Some("Stop") | Some("UserPromptSubmit") => true,
+        Some("Notification") => event["notification_type"] == "idle_prompt",
+        _ => false,
+    }
+}
+
 /// A short line for the board: which agent wants what ("Claude: Bash rm -rf build").
 pub fn summary(request: &Value) -> String {
     let tool = request["tool_name"].as_str().unwrap_or("a tool");
@@ -214,7 +229,10 @@ pub fn with_hooks(mut settings: Value, exe: &str) -> Value {
     if !hooks.is_object() {
         *hooks = json!({});
     }
-    for (event, kind, timeout) in [("PermissionRequest", "permission", 600), ("Notification", "notification", 10)] {
+    // PermissionRequest waits for the board; the others only report, so the service knows a
+    // request was settled in the agent's own window (the session moved on).
+    for (event, kind, timeout) in [("PermissionRequest", "permission", 600), ("Notification", "notification", 10),
+                                   ("PostToolUse", "event", 5), ("Stop", "event", 5), ("UserPromptSubmit", "event", 5)] {
         let list = hooks.as_object_mut().unwrap().entry(event).or_insert_with(|| json!([]));
         if !list.is_array() {
             *list = json!([]);
@@ -251,15 +269,17 @@ pub fn install() -> Result<Vec<String>, String> {
         Err(_) => json!({}),
     };
     let mut lines = Vec::new();
-    if path.exists() {
-        let backup = path.with_extension("json.before-openpager");
+    // Keep the very first backup: installing again must not replace it with our own hooks.
+    let backup = path.with_extension("json.before-openpager");
+    if path.exists() && !backup.exists() {
         std::fs::copy(&path, &backup).map_err(|e| e.to_string())?;
         lines.push(format!("backup: {}", backup.display()));
     }
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
     let updated = with_hooks(current, exe.to_str().ok_or("path not UTF-8")?);
     std::fs::write(&path, serde_json::to_string_pretty(&updated).unwrap() + "\n").map_err(|e| e.to_string())?;
-    lines.push(format!("{}: PermissionRequest and Notification hooks run openpager", path.display()));
+    lines.push(format!("{}: PermissionRequest, Notification, PostToolUse, Stop and UserPromptSubmit hooks run openpager",
+                       path.display()));
     lines.push("Claude Code sessions started from now on use them (new sessions; restart running ones)".into());
     Ok(lines)
 }
@@ -284,8 +304,21 @@ mod tests {
         let twice = with_hooks(once.clone(), "/opt/openpager");
         assert_eq!(once, twice, "installing twice changes nothing");
         assert_eq!(twice["hooks"]["PermissionRequest"][0]["hooks"][0]["command"], "\"/opt/openpager\" hook permission");
+        assert_eq!(twice["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "\"/opt/openpager\" hook event");
         assert_eq!(twice["hooks"]["PreToolUse"], mine["hooks"]["PreToolUse"]);
         assert_eq!(without_hooks(twice), mine);
+    }
+
+    #[test]
+    fn later_events_of_the_same_session_settle_a_request() {
+        let request = json!({"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "git push"}});
+        let done = json!({"session_id": "s1", "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "git push"}});
+        assert!(settles(&done, &request));
+        let other_tool = json!({"session_id": "s1", "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}});
+        assert!(!settles(&other_tool, &request));
+        assert!(settles(&json!({"session_id": "s1", "hook_event_name": "Stop"}), &request));
+        assert!(!settles(&json!({"session_id": "s2", "hook_event_name": "Stop"}), &request));
+        assert!(!settles(&json!({"session_id": "s1", "hook_event_name": "Notification", "notification_type": "permission_prompt"}), &request));
     }
 
     #[test]
