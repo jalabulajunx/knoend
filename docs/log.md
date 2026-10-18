@@ -782,3 +782,26 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - **macOS gaps your side may hit:** no MPRIS (media row never appears), no notification watcher,
   launcher app icons untested (above), Claude Code hooks untested on macOS (socket in
   `~/Library/Application Support/openpager/agents.sock`; Unix socket paths max ~104 bytes there).
+
+## 2026-10-18 - Sundar (Claude Code) - Claude's questions answered from the board
+
+- Sundar: a new Claude Code session asked him a question (options to pick); the board only showed
+  "Claude needs your attention" in the status line, and he had to go to the computer to answer.
+- Found: that session was a cloud session (claude.ai/code, "Default" environment). Cloud sessions do
+  not read `~/.claude/settings.json`, and their hooks run on Anthropic's machine, which cannot reach
+  this computer's `agents.sock`: the only signal is Claude desktop's notification (D-Bus), text
+  only. Answering a cloud session from the board is not possible with hooks; local sessions (desktop
+  app on this computer, or the `claude` CLI) are.
+- Rejected: a "Go to Claude" key that raises the app's window (Sundar: the point of the board is
+  answering from wherever he is, e.g. another room). Code removed before commit.
+- Changed: a local session's AskUserQuestion (it arrives as a PermissionRequest) is shown as the
+  question: options on keys 1, 2, 3, 7, the question and each option's description in the detail
+  panel, Decline on 9; several-choice questions tick options and Send on 8; several questions go one
+  after another. The answer goes back as `decision.behavior = allow` with `updatedInput` = the
+  agent's own input plus `answers` (question -> label; several labels joined with ", "), as the
+  hooks docs describe for PermissionRequest.
+- Tested: unit tests (reading questions, answers added to the input, tapping through two questions
+  incl. ticks/untick/Send/Decline); the hook against a stand-in service prints
+  `{"hookSpecificOutput":{"decision":{"behavior":"allow","updatedInput":{...,"answers":{"Which?":"B"}}},...}}`.
+  Not tested: a real Claude Code session taking the answer (needs the new `serve` and a new local
+  session).

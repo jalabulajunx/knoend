@@ -19,7 +19,7 @@ pub fn socket_path() -> PathBuf {
 }
 
 /// The person's answer from the board.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     Allow,
     /// Allow, and remember it (the agent's first suggested permission update).
@@ -27,6 +27,9 @@ pub enum Decision {
     Deny,
     /// Deny and stop the agent.
     Stop,
+    /// Allow with this tool input instead: a question the agent asked (AskUserQuestion), with
+    /// the person's answers added.
+    Answer(Value),
 }
 
 /// A request from an agent, for the service loop.
@@ -68,6 +71,7 @@ pub fn run_hook(kind: &str) -> Result<(), String> {
         }
         Some("deny") => json!({"behavior": "deny", "message": "Denied on the OpenPager board."}),
         Some("stop") => json!({"behavior": "deny", "message": "Stopped from the OpenPager board.", "interrupt": true}),
+        Some("answer") if reply["input"].is_object() => json!({"behavior": "allow", "updatedInput": reply["input"]}),
         _ => return Ok(()),
     };
     println!("{}", json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": decision}}));
@@ -119,13 +123,14 @@ pub async fn serve(events: mpsc::Sender<AgentEvent>) {
             tokio::select! {
                 decision = decided => {
                     if let Ok(decision) = decision {
-                        let word = match decision {
-                            Decision::Allow => "allow",
-                            Decision::AlwaysAllow => "always",
-                            Decision::Deny => "deny",
-                            Decision::Stop => "stop",
+                        let reply = match decision {
+                            Decision::Allow => json!({"decision": "allow"}),
+                            Decision::AlwaysAllow => json!({"decision": "always"}),
+                            Decision::Deny => json!({"decision": "deny"}),
+                            Decision::Stop => json!({"decision": "stop"}),
+                            Decision::Answer(input) => json!({"decision": "answer", "input": input}),
                         };
-                        let _ = write.write_all(format!("{}\n", json!({"decision": word})).as_bytes()).await;
+                        let _ = write.write_all(format!("{reply}\n").as_bytes()).await;
                     }
                 }
                 _ = lines.next_line() => {}
@@ -200,6 +205,45 @@ pub fn detail(request: &Value) -> String {
         text += &format!(" Always = {remember} {place}.");
     }
     text
+}
+
+/// One question an agent asks the person (Claude Code's AskUserQuestion tool).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Question {
+    pub question: String,
+    pub header: String,
+    /// (label, description), 2 to 4 of them.
+    pub options: Vec<(String, String)>,
+    pub multi: bool,
+}
+
+/// The questions in an AskUserQuestion request (empty for any other tool).
+pub fn questions(request: &Value) -> Vec<Question> {
+    if request["tool_name"] != "AskUserQuestion" {
+        return Vec::new();
+    }
+    request["tool_input"]["questions"].as_array().into_iter().flatten().filter_map(|q| {
+        let options: Vec<(String, String)> = q["options"].as_array()?.iter()
+            .filter_map(|o| Some((o["label"].as_str()?.to_string(), o["description"].as_str().unwrap_or("").to_string())))
+            .collect();
+        (!options.is_empty()).then(|| Question {
+            question: q["question"].as_str().unwrap_or("").to_string(),
+            header: q["header"].as_str().unwrap_or("").to_string(),
+            options,
+            multi: q["multiSelect"].as_bool().unwrap_or(false),
+        })
+    }).collect()
+}
+
+/// The tool input to send back: the agent's own input plus `answers` (question text -> chosen
+/// label; several labels joined with ", ").
+pub fn answered(request: &Value, answers: &[(String, String)]) -> Value {
+    let mut input = request["tool_input"].clone();
+    let map: serde_json::Map<String, Value> = answers.iter().map(|(q, a)| (q.clone(), Value::String(a.clone()))).collect();
+    if let Some(object) = input.as_object_mut() {
+        object.insert("answers".into(), Value::Object(map));
+    }
+    input
 }
 
 /// Whether a request looks destructive enough to need a second tap to allow.
@@ -296,6 +340,21 @@ pub fn uninstall() -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn questions_are_read_and_answered_into_the_input() {
+        let request = json!({"tool_name": "AskUserQuestion", "tool_input": {"questions": [
+            {"question": "Which next?", "header": "Next", "multiSelect": false,
+             "options": [{"label": "Paging", "description": "More keys"}, {"label": "Windows", "description": "Focus"}]}]}});
+        let qs = questions(&request);
+        assert_eq!(qs.len(), 1);
+        assert_eq!(qs[0].options[1], ("Windows".to_string(), "Focus".to_string()));
+        assert!(!qs[0].multi);
+        let input = answered(&request, &[("Which next?".into(), "Paging".into())]);
+        assert_eq!(input["answers"]["Which next?"], "Paging");
+        assert_eq!(input["questions"], request["tool_input"]["questions"], "the agent's own input is kept");
+        assert!(questions(&json!({"tool_name": "Bash", "tool_input": {}})).is_empty());
+    }
 
     #[test]
     fn hooks_are_added_once_and_removed_without_touching_others() {
