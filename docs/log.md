@@ -878,3 +878,5 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   hard-coded one key for key; unused keys answer nothing; questions step through options, ticks and
   Done; a user's recipe replaces the built-in screen; Go to Claude comes from its recipe); spec
   validator (22 recipes, examples and board definitions, 0 problems). Not yet on the board.
+- Tom approved merging the recipes PR (#18) in a chat with Sundar on 2026-10-18; spec review of the
+  `tested` field and `agent` action by Tom while it is on main.
