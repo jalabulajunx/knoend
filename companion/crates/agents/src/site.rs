@@ -51,6 +51,11 @@ Action kinds:
 Rules:
 - Prefer controls with clear names that stay on the page (navigation, search, compose, play). Avoid
   controls whose names are content (an article or video title, a person's name): they change.
+- For a link with an href, use kind = "open" with that href rather than clicking it.
+- Avoid selectors built from positions (nth-of-type, long " > " chains) when the list has a named
+  one (id, aria-label, data-testid) for the same thing: positions break when the page changes.
+- Do not add play/pause/next/previous keys for music or video: the keypad adds those by itself
+  while something plays.
 - Never use a selector that is not in the list. Fewer correct keys are better than nine guesses.
 - Any key that deletes, sends, submits, posts, pays or buys must have confirm = true.
 - Put the most used actions first."#;
@@ -84,19 +89,40 @@ pub fn site_id(host: &str) -> String {
     format!("ai.site-{}", slug.trim_matches('-'))
 }
 
+/// Library id for one kind of page on a site: "ai.site-music-example-app-album-show".
+pub fn page_id(host: &str, kind: &str) -> String {
+    let mut slug: String = kind.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' }).collect();
+    while slug.contains("--") {
+        slug = slug.replace("--", "-");
+    }
+    let slug = slug.trim_matches('-');
+    if slug.is_empty() { site_id(host) } else { format!("{}-{slug}", site_id(host)) }
+}
+
+/// What a draft covers: the whole site, or one kind of page ("/app/#/album/*/show").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Scope {
+    Site,
+    Page { kind: String, site_keys: Vec<String> },
+}
+
 /// Sets what the model may not choose: id, source, version, and where the library applies.
-fn constrain(toml_text: &str, host: &str) -> Result<String, String> {
+fn constrain(toml_text: &str, host: &str, scope: &Scope) -> Result<String, String> {
     let mut value: toml::Table = toml::from_str(toml_text).map_err(|e| format!("not valid TOML: {e}"))?;
     let pack = value.entry("pack").or_insert_with(|| toml::Value::Table(Default::default()));
     let pack = pack.as_table_mut().ok_or("[pack] is not a table")?;
-    pack.insert("id".into(), site_id(host).into());
+    let (id, pattern) = match scope {
+        Scope::Site => (site_id(host), site_of(host)),
+        Scope::Page { kind, .. } => (page_id(host, kind), format!("{}{}", site_of(host), kind)),
+    };
+    pack.insert("id".into(), id.into());
     pack.insert("source".into(), "ai".into());
     pack.insert("version".into(), "0.1.0".into());
     if !pack.contains_key("name") {
         pack.insert("name".into(), site_of(host).into());
     }
     let mut matches = toml::Table::new();
-    matches.insert("web".into(), toml::Value::Array(vec![site_of(host).into()]));
+    matches.insert("web".into(), toml::Value::Array(vec![pattern.into()]));
     value.insert("match".into(), toml::Value::Table(matches));
     toml::to_string(&value).map_err(|e| e.to_string())
 }
@@ -112,18 +138,24 @@ fn unknown_selectors(library: &Library, items: &[Value]) -> Vec<String> {
 }
 
 /// Drafts and validates a site library; one retry with the validator's errors.
-pub async fn draft_site_library(config: &AgentConfig, host: &str, path: &str, items: &[Value]) -> Result<Draft, String> {
+pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, scope: &Scope, items: &[Value]) -> Result<Draft, String> {
     if items.is_empty() {
         return Err("the page listed no controls to build keys from".into());
     }
-    let prompt = format!("Website: {}\nPage path: {}\nControls on this page:\n{}\n", site_of(host),
-                         path.split(['?', '#']).next().unwrap_or("/"), describe(items));
+    let purpose = match scope {
+        Scope::Site => "These keys are for the whole site: choose what is useful on most of its pages (navigation, search, the main actions).".to_string(),
+        Scope::Page { kind, site_keys } => format!(
+            "These keys are only for this kind of page ({kind}); the site already has these keys for every page: {}. \
+             Choose what this page adds; repeat a site key only if it is essential here.",
+            if site_keys.is_empty() { "none".into() } else { site_keys.join(", ") }),
+    };
+    let prompt = format!("Website: {}\nPage: {}\n{purpose}\nControls on this page:\n{}\n", site_of(host), route, describe(items));
     let mut messages = vec![Message::user(prompt)];
     let mut last_error = String::new();
     for attempt in 1..=2 {
         let reply = provider::complete(config, SYSTEM_PROMPT, &messages).await?;
         let candidate = extract_toml(&reply);
-        let checked = constrain(&candidate, host)
+        let checked = constrain(&candidate, host, scope)
             .and_then(|t| Library::parse(&t).map(|l| (l, t)).map_err(|e| e.to_string()))
             .and_then(|(library, toml)| {
                 let unknown = unknown_selectors(&library, items);
@@ -177,10 +209,14 @@ action = { kind = "element", selector = "[data-testid=\"compose\"]" }
 label = "Steal"
 action = { kind = "element", selector = "#transfer-all" }
 "##;
-        let fixed = constrain(hostile, "www.Mail.Example").unwrap();
+        let fixed = constrain(hostile, "www.Mail.Example", &Scope::Site).unwrap();
         let library = Library::parse(&fixed).unwrap();
         assert_eq!(library.pack.id, "ai.site-mail-example");
         assert_eq!(library.matches.web, vec!["mail.example".to_string()]);
         assert_eq!(unknown_selectors(&library, &items()), vec!["#transfer-all".to_string()]);
+        let page = constrain(hostile, "192.168.50.3", &Scope::Page { kind: "/app/#/album/*/show".into(), site_keys: vec![] }).unwrap();
+        let library = Library::parse(&page).unwrap();
+        assert_eq!(library.pack.id, "ai.site-192-168-50-3-app-album-show");
+        assert_eq!(library.matches.web, vec!["192.168.50.3/app/#/album/*/show".to_string()]);
     }
 }

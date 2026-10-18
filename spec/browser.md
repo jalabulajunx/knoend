@@ -68,7 +68,8 @@ text or field values**:
 - `selector`: a CSS selector that finds exactly this element, built from stable attributes in this
   order: `id`, `data-testid` / `data-test` / `data-qa`, `aria-label`, `name`, then a short path.
 - `shortcut`: from `accesskey` or `aria-keyshortcuts`, when the page declares one.
-- `href` (links): same-site path and query only.
+- `href` (links): same-site path and query only, plus an in-page route (`#/album/all`) when the
+  site keeps its pages after `#`.
 - At most 300 items; hidden and disabled controls are left out.
 - A link's or button's own short text (40 characters or less) is used as its name when it has no
   label, so names can include visible titles (a video or article title shown as a link). Field
@@ -93,13 +94,25 @@ only when no player is found or for `mute`.
 ## 4a. Which keys a page gets
 
 `match.web` patterns name a host or parent domain (`youtube.com`), any ending (`amazon.*`), and
-optionally a path prefix (`youtube.com/watch`). The longest matching pattern wins, so a site can
-have different keys on different kinds of page. A site layout wins over the browser's own.
+optionally a route: path segments, with `*` for any one segment and `#` for an app's in-page route
+(`youtube.com/watch`, `music.example/app/#/album/*/show`). The longest matching pattern wins, so a
+site can have different keys on different kinds of page. A site layout wins over the browser's own.
+
+A page's **kind** is its route with id-like segments (numbers, long or random-looking strings)
+replaced by `*`: `/app/#/album/0CqaylqAigA1E6bOjrSyRD/show` is the kind `/app/#/album/*/show`.
+
+While the focused app's media player plays (or is paused mid-track), the service puts Previous,
+Play/Pause and Next in the bottom row (slots 7-9), unless the layout has media keys of its own;
+Previous/Next only when the player offers them.
 
 ## 4b. Drafting keys for a site
 
 "Make keys for this site with AI" (popup) or Configure (board, on a site with no keys) asks the
-extension for the page inventory, then the drafting agent for up to 9 keys. The agent receives the
+extension for the page inventory, then the drafting agent for up to 9 keys. The first draft for a
+site covers the whole site. After that, a kind of page with no keys of its own gets a draft for
+that kind only (told the site-wide keys, so it does not repeat them): from the popup, or by itself
+the first time the person opens that kind of page on a site they configured with the AI. Drafted
+kinds are remembered in `sites.json`. The agent receives the
 site's host, the page path without its query, and the inventory; its draft is pinned to the site
 (`match.web`), saved as an unreviewed AI library, and rejected if any selector is not in the
 inventory.

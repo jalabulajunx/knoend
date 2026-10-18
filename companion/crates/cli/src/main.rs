@@ -246,7 +246,7 @@ pub async fn configure(focus: &Focus, save: bool) -> Result<(PathBuf, Library), 
 
 /// Drafts keys for the website in `focus` from the page's controls (the extension lists them; the
 /// person must have turned board buttons on for the site), then saves them.
-pub async fn configure_site(shared: &service::Shared, focus: &Focus) -> Result<(PathBuf, Library), String> {
+pub async fn configure_site(shared: &service::Shared, focus: &Focus, scope: openpager_agents::site::Scope) -> Result<(PathBuf, Library), String> {
     let browser = &shared.browser;
     let web = focus.web.as_ref().ok_or("no website is focused")?;
     let site = openpager_agents::site::site_of(&web.host);
@@ -267,8 +267,9 @@ pub async fn configure_site(shared: &service::Shared, focus: &Focus) -> Result<(
     }
     let items = inventory["items"].as_array().cloned().unwrap_or_default();
     let started = std::time::Instant::now();
-    let draft = openpager_agents::site::draft_site_library(&config, &web.host, web.path(), &items).await?;
-    println!("  drafted keys for {site} by {} from {} controls in {:.1} s ({} attempt{}), {} keys",
+    let draft = openpager_agents::site::draft_site_library(&config, &web.host, &web.route(), &scope, &items).await?;
+    println!("  drafted keys for {site}{} by {} from {} controls in {:.1} s ({} attempt{}), {} keys",
+             match &scope { openpager_agents::site::Scope::Page { kind, .. } => format!(" (page {kind})"), _ => String::new() },
              config.describe(), items.len(), started.elapsed().as_secs_f32(), draft.attempts,
              if draft.attempts == 1 { "" } else { "s" }, draft.library.keys.len());
     let path = service::ai_libraries().join(format!("{}.toml", draft.library.pack.id.trim_start_matches("ai.")));

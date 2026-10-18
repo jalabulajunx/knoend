@@ -513,3 +513,24 @@ Entry template:
   after two minutes). The test now targets only the test browser's connection.
 - Open (for Tom's dynamic grid): a way to redo keys from the board on a site that already has them
   (all 9 slots used), e.g. a last page that always offers "Make keys again".
+
+## 2026-10-18 - Sundar (Claude Code) - Multi-page sites: page kinds, per-page keys, media row
+
+- Sundar on his Navidrome (`/app/#/...` routes): keys drafted once never changed on the album page,
+  and starting playback did not change the keys (only the status bar). Causes: routes after `#` were
+  ignored (every page looked the same); each draft overwrote the one site library; media keys came
+  only from drafts; several drafted selectors were positional.
+- Changed:
+  - Routes include an app's in-page route (`/app/#/album/<id>/show`); a page's kind replaces id-like
+    segments with `*`. `match.web` routes match segment by segment with `*`.
+  - Drafting has two scopes: the first draft covers the site; later drafts cover the kind of page
+    (told the site-wide keys). On a site configured with the AI, a new kind of page is drafted in the
+    background on first visit, once (`sites.json`). The prompt prefers `open` with a link's href,
+    avoids positional selectors, and leaves media keys to the keypad.
+  - Media row: while the focused app's player plays or is paused mid-track and the layout has no
+    media keys, slots 7-9 become Prev / Play-Pause / Next (MPRIS; Prev/Next only if the player offers
+    them). Board keys act on what is shown (layout + row).
+  - Inventory links keep `#/` routes.
+- Tested: Rust tests (routes, page kinds, page-scoped drafts). Live: the service sees Sundar's
+  Firefox player on the Navidrome album route (paused, next/prev available). Not tested: the media
+  row and per-page drafting on the board (needs Firefox focused on Navidrome).

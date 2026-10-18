@@ -9,7 +9,9 @@ use std::time::Duration;
 use openpager_core::catalog::Catalog;
 use openpager_core::focus::{Focus, WebPage};
 use openpager_core::library::{Action, MediaCommand};
+use openpager_agents::site::Scope;
 use openpager_media::NowPlaying;
+use std::collections::{HashMap, HashSet};
 use openpager_core::layout;
 use openpager_core::library::Library;
 use openpager_core::protocol::{LayoutBody, LayoutKey, Packet, Send};
@@ -201,6 +203,11 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     let mut focus: Option<Focus> = None;
     let mut tab: Option<WebPage> = None;
     let mut players: Vec<NowPlaying> = Vec::new();
+    // Kinds of page that have keys of their own, per site (saved), and those tried this run.
+    let mut drafted = DraftedPages::load();
+    let mut attempted: HashSet<(String, String)> = HashSet::new();
+    // What each slot on the board does right now (the layout plus any media row).
+    let mut shown_actions: HashMap<u8, KeyRef> = HashMap::new();
     loop {
         let pairings = Pairings::load();
         if pairings.boards.is_empty() {
@@ -231,7 +238,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
         if let Some(f) = effective(&focus, &tab) {
-            show(&mut sender, &catalog, &f, &players, &mut shown, &shared).await;
+            show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
         }
 
         // A board that restarts never closes its old connection, so silence is the only sign:
@@ -263,18 +270,20 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     println!("Focus: {} ({})", f.display_name(), f.instance);
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
-                    show(&mut sender, &catalog, &f, &players, &mut shown, &shared).await;
+                    show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                    draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                 }
                 Event::Focus(None) => {}
                 Event::Players(p) => {
                     players = p;
                     // Re-show only if this changes what the board shows (show() skips a repeat).
                     if let Some(f) = effective(&focus, &tab) {
-                        show(&mut sender, &catalog, &f, &players, &mut shown, &shared).await;
+                        show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
                     }
                 }
                 Event::Tab(t) => {
-                    let changed = t.as_ref().map(|p| (&p.host, p.granted)) != tab.as_ref().map(|p| (&p.host, p.granted));
+                    // A new site, a change of permission, or another kind of page on the same site.
+                    let changed = t.as_ref().map(|p| (&p.host, p.granted, p.page_kind())) != tab.as_ref().map(|p| (&p.host, p.granted, p.page_kind()));
                     tab = t;
                     let browser_focused = focus.as_ref().is_some_and(|f| crate::browser::is_browser(&f.app, &f.instance));
                     if changed && browser_focused {
@@ -282,13 +291,15 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         println!("Site: {}", f.display_name());
                         let name = f.display_name().to_string();
                         shared.update(|s| s.app = Some(name)).await;
-                        show(&mut sender, &catalog, &f, &players, &mut shown, &shared).await;
+                        show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &shared).await;
+                        draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                     }
                 }
                 Event::Board(packet) => {
                     let current = effective(&focus, &tab);
-                    if let Some(target) = on_board_packet(&packet, current.as_ref(), &catalog, &players, &mut sender, &shared).await {
-                        start_configure(target, &events, &shared).await;
+                    if let Some(target) = on_board_packet(&packet, current.as_ref(), &shown_actions, &players, &mut sender, &shared).await {
+                        let scope = site_scope(&catalog, &target);
+                        start_configure(target, scope, &events, &shared).await;
                     }
                 }
                 Event::Status(text) => {
@@ -298,7 +309,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     Some(target) => {
                         let text = format!("Configuring {}: reading the page...", board_text(target.display_name(), 40));
                         let _ = sender.send("openpager.status", json!({"text": text, "level": "attention"})).await;
-                        start_configure(target, &events, &shared).await;
+                        let scope = site_scope(&catalog, &target);
+                        start_configure(target, scope, &events, &shared).await;
                     }
                     None => shared.browser.notify(json!({"type": "configure-status", "ok": false,
                                                          "text": "Focus the browser window with the site first."})),
@@ -308,6 +320,9 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     match result {
                         Ok((path, library)) => {
                             let keys = library.keys.len();
+                            if let Some(web) = &target.web {
+                                drafted.add(&web.host, &web.page_kind());
+                            }
                             shared.emit("configured", json!({"text": format!("  saved {} -> {}", library.pack.id, path.display()),
                                                              "app": target.display_name(), "library": library.pack.id}));
                             catalog.add(path, library);
@@ -320,7 +335,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             let same_site = |f: &Focus| f.web.as_ref().map(|w| &w.host) == target.web.as_ref().map(|w| &w.host);
                             if effective(&focus, &tab).is_some_and(|f| f.app == target.app && f.instance == target.instance && same_site(&f)) {
                                 shown = None;
-                                show(&mut sender, &catalog, &target, &players, &mut shown, &shared).await;
+                                show(&mut sender, &catalog, &target, &players, &mut shown, &mut shown_actions, &shared).await;
                             }
                         }
                         Err(error) => {
@@ -432,11 +447,15 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
 /// media player, its play/pause key and the status bar follow what it plays. Sends nothing when the
 /// board already shows exactly this.
 async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, players: &[NowPlaying],
-              shown: &mut Option<String>, shared: &Shared) {
+              shown: &mut Option<String>, shown_actions: &mut HashMap<u8, KeyRef>, shared: &Shared) {
     let player = openpager_media::for_focus(players, &focus.app, &focus.instance);
+    let mut actions: HashMap<u8, KeyRef> = HashMap::new();
     let (mut body, mut status) = match catalog.find(focus) {
         Some(library) => match layout::build(library, focus.os) {
             Ok(mut body) => {
+                for (key, slot) in library.keys.iter().zip(library.slots()) {
+                    actions.insert(slot, KeyRef { label: key.label.clone(), action: key.action.clone() });
+                }
                 if let Some(player) = player {
                     for (key, slot) in library.keys.iter().zip(library.slots()) {
                         if let Action::Media { command: MediaCommand::Toggle, .. } = key.action {
@@ -462,13 +481,33 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
             status = json!({"text": format!("{}: {what}", if player.playing() { "Playing" } else { "Paused" }), "level": "info"});
         }
     }
+    // While the focused app plays something, the bottom row controls it (as KDE Connect's media
+    // controls do), unless the layout has media keys of its own.
+    if let Some(player) = player.filter(|p| p.playing() || (p.status == "Paused" && !p.title.is_empty())) {
+        if !actions.values().any(|k| matches!(k.action, Action::Media { .. })) {
+            let row = [(7u8, player.can_go_previous, "Prev", "Previous track", MediaCommand::Previous),
+                       (8, true, if player.playing() { "Pause" } else { "Play" }, "Play or pause", MediaCommand::Toggle),
+                       (9, player.can_go_next, "Next", "Next track", MediaCommand::Next)];
+            for (slot, offered, label, speak, command) in row {
+                if !offered {
+                    continue;
+                }
+                body.keys.retain(|k| k.key != slot);
+                body.keys.push(LayoutKey { key: slot, label: label.into(), speak: Some(speak.into()), confirm: false, send: Send::Event(true) });
+                actions.insert(slot, KeyRef { label: label.into(), action: Action::Media { command, selector: None } });
+            }
+            body.keys.sort_by_key(|k| k.key);
+        }
+    }
     body.name = board_text(&body.name, 128);
+    *shown_actions = actions;
     let signature = format!("{}|{}", serde_json::to_string(&body).unwrap_or_default(), status);
     if shown.as_deref() == Some(signature.as_str()) {
         return;
     }
     let id = body.layout.clone();
-    println!("  -> {} ({}){}", body.name, id, status["text"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" [{t}]")).unwrap_or_default());
+    println!("  -> {} ({}){} keys: {}", body.name, id, status["text"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" [{t}]")).unwrap_or_default(),
+             body.keys.iter().map(|k| format!("{}={}", k.key, k.label)).collect::<Vec<_>>().join(", "));
     let summary = json!({"id": id, "name": body.name, "source": body.source, "reviewed": body.reviewed,
                          "keys": body.keys.iter().map(|k| json!({"key": k.key, "label": k.label})).collect::<Vec<_>>()});
     let body = serde_json::to_value(&body).expect("serialisable");
@@ -489,15 +528,80 @@ fn board_text(text: &str, max: usize) -> String {
     out
 }
 
+/// What a site draft should cover: the whole site the first time; once the site has keys, the
+/// kind of page the person is on (told the site-wide keys, so it does not repeat them).
+fn site_scope(catalog: &Catalog, focus: &Focus) -> Scope {
+    let Some(web) = &focus.web else { return Scope::Site };
+    match catalog.site_wide(web) {
+        Some(site) => Scope::Page { kind: web.page_kind(), site_keys: site.keys.iter().map(|k| k.label.clone()).collect() },
+        None => Scope::Site,
+    }
+}
+
+/// Once the person made keys for a site, a kind of page with no keys of its own gets them drafted
+/// in the background (once per kind; remembered across runs).
+async fn draft_new_page(catalog: &Catalog, focus: &Focus, drafted: &DraftedPages, attempted: &mut HashSet<(String, String)>,
+                        events: &mpsc::Sender<Event>, shared: &Arc<Shared>) {
+    let Some(web) = focus.web.as_ref().filter(|w| w.granted) else { return };
+    let Some(site) = catalog.site_wide(web) else { return };
+    // Only sites the person configured with the AI, and only where nothing more specific applies.
+    if site.pack.source != openpager_core::library::Source::Ai || catalog.find(focus).map(|l| &l.pack.id) != Some(&site.pack.id) {
+        return;
+    }
+    let kind = web.page_kind();
+    if drafted.has(&web.host, &kind) || !attempted.insert((web.host.clone(), kind.clone())) {
+        return;
+    }
+    if shared.status.read().await.configuring.is_some() {
+        attempted.remove(&(web.host.clone(), kind));
+        return;
+    }
+    println!("  new kind of page on {}: {kind}; drafting its keys", web.host);
+    shared.board_status("Making keys for this page...".into());
+    start_configure(focus.clone(), site_scope(catalog, focus), events, shared).await;
+}
+
+/// What one key on the board does now.
+#[derive(Debug, Clone)]
+pub struct KeyRef {
+    pub label: String,
+    pub action: Action,
+}
+
+/// Kinds of page that have their own drafted keys, per site (`sites.json` in the config folder).
+#[derive(Default, Serialize, serde::Deserialize)]
+struct DraftedPages {
+    sites: HashMap<String, Vec<String>>,
+}
+
+impl DraftedPages {
+    fn path() -> PathBuf {
+        config_dir().join("sites.json")
+    }
+    fn load() -> DraftedPages {
+        std::fs::read_to_string(Self::path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    }
+    fn has(&self, host: &str, kind: &str) -> bool {
+        self.sites.get(host).is_some_and(|k| k.iter().any(|x| x == kind))
+    }
+    fn add(&mut self, host: &str, kind: &str) {
+        let kinds = self.sites.entry(host.to_string()).or_default();
+        if !kinds.iter().any(|k| k == kind) {
+            kinds.push(kind.to_string());
+        }
+        let _ = std::fs::write(Self::path(), serde_json::to_string_pretty(self).unwrap_or_default());
+    }
+}
+
 /// Drafts keys for `target` (an app, or the site in its browser tab) in the background; the
 /// result comes back as `Event::Configured`.
-async fn start_configure(target: Focus, events: &mpsc::Sender<Event>, shared: &Arc<Shared>) {
+async fn start_configure(target: Focus, scope: Scope, events: &mpsc::Sender<Event>, shared: &Arc<Shared>) {
     let (events, shared) = (events.clone(), shared.clone());
     let name = target.display_name().to_string();
     shared.update(|s| s.configuring = Some(name)).await;
     tokio::spawn(async move {
         let result = if target.web.is_some() {
-            crate::configure_site(&shared, &target).await
+            crate::configure_site(&shared, &target, scope).await
         } else {
             crate::configure(&target, true).await
         };
@@ -535,7 +639,7 @@ fn unsupported_layout(focus: &Focus) -> LayoutBody {
 }
 
 /// Handles a packet from the board; returns the app to configure when Configure was tapped.
-async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, catalog: &Catalog, players: &[NowPlaying],
+async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: &HashMap<u8, KeyRef>, players: &[NowPlaying],
                          sender: &mut wifi::WifiSender, shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
         "openpager.layout.ack" if packet.body["ok"] != true => println!("  board rejected layout: {}", packet.body),
@@ -560,8 +664,8 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, catalog: &Catal
                 return None;
             }
             // A key whose action happens on the web page: the browser extension carries it out.
-            if let Some(library) = catalog.get(layout) {
-                if let Some((library_key, _)) = library.keys.iter().zip(library.slots()).find(|(_, slot)| u64::from(*slot) == key) {
+            if layout != UNSUPPORTED || key != u64::from(CONFIGURE_SLOT) {
+                if let Some(library_key) = u8::try_from(key).ok().and_then(|k| shown_actions.get(&k)) {
                     // Media keys go to the focused app's media player first (like the keyboard's
                     // media keys): the browser then allows starting playback.
                     let player = focus.and_then(|f| openpager_media::for_focus(players, &f.app, &f.instance));

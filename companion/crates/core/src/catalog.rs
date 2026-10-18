@@ -76,6 +76,12 @@ impl Catalog {
             .min_by_key(|l| rank(&l.pack.source))
     }
 
+    /// The library that covers a whole site (a `match.web` pattern without a route), if any.
+    pub fn site_wide(&self, web: &crate::focus::WebPage) -> Option<&Library> {
+        self.libraries.iter().map(|(_, l)| l)
+            .find(|l| l.matches.web.iter().any(|p| !p.contains('/') && web.matches_pattern(p)))
+    }
+
     /// A library by its id.
     pub fn get(&self, id: &str) -> Option<&Library> {
         self.libraries.iter().map(|(_, l)| l).find(|l| l.pack.id == id)

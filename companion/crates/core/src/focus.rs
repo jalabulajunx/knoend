@@ -52,11 +52,12 @@ pub struct WebPage {
 impl WebPage {
     /// Whether one library `match.web` pattern names this page: the host itself or a parent
     /// domain ("youtube.com" matches "www.youtube.com"); "amazon.*" matches any ending
-    /// ("amazon.ca", "www.amazon.co.uk"); a path after the host narrows it to pages under that
-    /// path ("youtube.com/watch").
+    /// ("amazon.ca", "www.amazon.co.uk"); a route after the host narrows it to pages under it,
+    /// segment by segment, where `*` stands for any one segment ("youtube.com/watch",
+    /// "music.example/app/#/album/*/show": `#` marks an app's in-page route).
     pub fn matches_pattern(&self, pattern: &str) -> bool {
         let pattern = pattern.trim().to_ascii_lowercase();
-        let (site, path) = match pattern.find('/') {
+        let (site, route) = match pattern.find('/') {
             Some(i) => (&pattern[..i], Some(&pattern[i..])),
             None => (pattern.as_str(), None),
         };
@@ -65,7 +66,11 @@ impl WebPage {
             Some(base) => host.starts_with(&format!("{base}.")) || host.contains(&format!(".{base}.")),
             None => host == site || host.ends_with(&format!(".{site}")),
         };
-        host_ok && path.is_none_or(|p| self.path().to_ascii_lowercase().starts_with(p))
+        host_ok && route.is_none_or(|r| {
+            let want = segments(r);
+            let have = segments(&self.route().to_ascii_lowercase()).into_iter().map(str::to_string).collect::<Vec<_>>();
+            want.len() <= have.len() && want.iter().zip(&have).all(|(w, h)| *w == "*" || w == h)
+        })
     }
 
     /// The URL's path ("/watch").
@@ -74,7 +79,40 @@ impl WebPage {
         let path = rest.find('/').map(|i| &rest[i..]).unwrap_or("/");
         path.split(['?', '#']).next().unwrap_or("/")
     }
+
+    /// The path plus an app's in-page route when the fragment holds one ("#/album/1/show"), as
+    /// single-page apps keep their pages there: "/app/#/album/1/show". No query.
+    pub fn route(&self) -> String {
+        let fragment = self.url.split_once('#').map(|(_, f)| f).unwrap_or("");
+        match fragment.strip_prefix('/') {
+            Some(inner) => format!("{}#/{}", self.path().trim_end_matches('/').to_string() + "/", inner.split('?').next().unwrap_or("")),
+            None => self.path().to_string(),
+        }
+    }
+
+    /// The kind of page: the route with id-like segments replaced by `*`
+    /// ("/app/#/album/0CqaylqAigA1E6bOjrSyRD/show" -> "/app/#/album/*/show").
+    pub fn page_kind(&self) -> String {
+        let route = self.route();
+        let kind: Vec<String> = route.split('/').map(|s| if looks_like_id(s) { "*".to_string() } else { s.to_string() }).collect();
+        let kind = kind.join("/");
+        let kind = kind.trim_end_matches('/');
+        if kind.is_empty() { "/".into() } else { kind.to_string() }
+    }
 }
+
+/// Route segments, empty ones dropped ("/app/#/album" -> ["app", "#", "album"]).
+fn segments(route: &str) -> Vec<&str> {
+    route.split('/').filter(|s| !s.is_empty()).collect()
+}
+
+/// A segment that names one thing rather than a kind of page: numbers, hex or random-looking ids.
+fn looks_like_id(segment: &str) -> bool {
+    let digits = segment.chars().filter(char::is_ascii_digit).count();
+    (digits > 0 && segment.len() >= 6) || segment.len() >= 20 || (!segment.is_empty() && digits == segment.len())
+        || segment.contains('@') || segment.contains('%')
+}
+
 
 impl Focus {
     /// A short, human name for messages ("Unsupported app: Claude").
@@ -116,5 +154,15 @@ mod tests {
         assert!(watch.matches_pattern("youtube.com/watch"));
         assert!(!page("www.youtube.com").matches_pattern("youtube.com/watch"));
         assert_eq!(watch.path(), "/watch");
+        let album = WebPage { host: "192.168.50.3".into(), url: "http://192.168.50.3:4533/app/#/album/0CqaylqAigA1E6bOjrSyRD/show".into(), title: String::new(), granted: true };
+        assert_eq!(album.route(), "/app/#/album/0CqaylqAigA1E6bOjrSyRD/show");
+        assert_eq!(album.page_kind(), "/app/#/album/*/show");
+        assert!(album.matches_pattern("192.168.50.3/app/#/album/*/show"));
+        assert!(album.matches_pattern("192.168.50.3"));
+        assert!(!album.matches_pattern("192.168.50.3/app/#/artist/*/show"));
+        let home = WebPage { url: "http://192.168.50.3:4533/app/#/".into(), ..album.clone() };
+        assert_eq!(home.page_kind(), "/app/#");
+        let plain = WebPage { url: "https://example.com/a/b?x=1#section".into(), ..album.clone() };
+        assert_eq!(plain.route(), "/a/b");
     }
 }
