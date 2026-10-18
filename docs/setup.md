@@ -240,7 +240,10 @@ python3 tools/validate_spec.py
 ```
 
 This checks `spec/examples/` and the board definitions against `spec/schemas/`. It needs Python
-3.11+ and `jsonschema`. On Arch, install `python-jsonschema`, or use a virtualenv. Changes under
+3.11+ and `jsonschema`. On Arch, install `python-jsonschema`, or use a virtualenv. On macOS
+(Homebrew): `brew install python@3.13`, `python3.13 -m venv ~/.venvs/openpager`,
+`~/.venvs/openpager/bin/pip install jsonschema`, then run the script with
+`~/.venvs/openpager/bin/python`. Changes under
 `spec/` need review from both maintainers.
 
 CI (`.github/workflows/ci.yml`) runs the spec checks, the companion on Linux and macOS, and the

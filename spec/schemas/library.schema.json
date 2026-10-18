@@ -6,6 +6,11 @@
   "type": "object",
   "required": ["pack", "match", "key"],
   "additionalProperties": false,
+  "if": { "properties": { "match": { "not": { "required": ["agent"] } } } },
+  "then": {
+    "description": "Agent answers (action kind agent) only on a coding agent's screen (match.agent); elsewhere the key would do nothing.",
+    "properties": { "key": { "items": { "properties": { "action": { "properties": { "kind": { "not": { "const": "agent" } } } } } } } }
+  },
   "properties": {
     "pack": {
       "type": "object",

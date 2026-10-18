@@ -880,3 +880,32 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   validator (22 recipes, examples and board definitions, 0 problems). Not yet on the board.
 - Tom approved merging the recipes PR (#18) in a chat with Sundar on 2026-10-18; spec review of the
   `tested` field and `agent` action by Tom while it is on main.
+
+## 2026-10-18 - Tom (Claude Code) - Review of #6-#18 after merge; recipes fixes; Mac build SDK
+
+- Reviewed after merge: #6-#14 and #18 (code and `spec/`). The recipes additions (`[[pack.tested]]`,
+  the `agent` action) are fine. Spec feedback for Sundar (what reaches the drafting AI in
+  `browser.md` sections 3-5; the fixed `openpager.image` pixel format; 3x3 slot numbers now used by
+  agent screens, `detail`, the media row and the launcher) left as a comment on #18 for him to
+  decide; the slot numbers come into Tom's grid work.
+- Changed (branch `tom/recipes-fixes`):
+  - `OPENPAGER_BUILTIN` loads a recipes tree again: since #18 every recipe is in a subfolder and
+    `Catalog::load` reads folders flat, so pointing it at `recipes/` loaded nothing. New
+    `Catalog::folders`; the person's own library folder stays flat (its `ai/` is listed separately).
+  - `spec/schemas/library.schema.json`: an `agent` key in a library without `match.agent` is
+    rejected (it did nothing when tapped); `protocol.md` section 5 says so. New invalid example
+    `library-agent-key-in-app-layout.toml`.
+  - `docs/knowledge/setup.md`: the Mac build's stray-SDK failure, corrected. On 2026-10-17 it was
+    worked around per command with `SDKROOT`, which did not last: today's shells failed again.
+- Tested (macOS 26.6, Apple silicon): workspace tests pass (new: a recipes tree loads from its
+  subfolders, agents/apps/site pages included; the new invalid example is rejected at
+  `/key/0/action/kind`). `validate_spec.py`: 22 valid, 12 invalid examples, 0 problems (the new
+  example rejected; the three agent recipes pass). It needed Python 3.13 from Homebrew and a
+  virtualenv for `jsonschema` (this Mac had only Homebrew's 3.9); steps added to `docs/setup.md`.
+  The service itself was not started with `OPENPAGER_BUILTIN`.
+- Mac toolchain: `cargo` failed to link (`tapi error: malformed file ... MacOSX27.0.sdk ... unknown
+  architecture arm64e.x1`). Cause: Command Line Tools 26.5, 27.0 and 26.6 installed together on
+  2026-10-17; 26.6's linker stayed with 27.0's SDK, which no installed package owns, and `xcrun`
+  picks the highest SDK (`xcrun --kill-cache` did not change it). Tom removed the stray SDK; plain
+  `cargo test` links since.
+- Open: Mac versions of the app recipes (bundle ids, shortcut check, Tom's `tested` entries).

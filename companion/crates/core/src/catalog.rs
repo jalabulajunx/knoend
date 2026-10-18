@@ -40,6 +40,22 @@ impl Catalog {
         (catalog, rejected)
     }
 
+    /// `root` and every folder below it, for a tree of libraries such as `recipes/` (`apps/`,
+    /// `sites/<host>/`, `agents/`). `load` reads only the folders it is given.
+    pub fn folders(root: &Path) -> Vec<PathBuf> {
+        let mut out = vec![root.to_path_buf()];
+        let mut i = 0;
+        while i < out.len() {
+            if let Ok(entries) = fs::read_dir(&out[i]) {
+                let mut subs: Vec<PathBuf> = entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+                subs.sort();
+                out.extend(subs);
+            }
+            i += 1;
+        }
+        out
+    }
+
     pub fn add(&mut self, path: PathBuf, library: Library) {
         self.libraries.retain(|(p, l)| p != &path && l.pack.id != library.pack.id);
         self.libraries.push((path, library));
@@ -126,10 +142,21 @@ mod tests {
         let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../spec/examples");
         let (catalog, rejected) = Catalog::load(&[examples.clone(), examples.join("invalid")]);
         assert_eq!(catalog.len(), 2, "the two valid example libraries");
-        assert_eq!(rejected.len(), 3, "the three invalid example libraries");
+        assert_eq!(rejected.len(), 4, "the four invalid example libraries");
         assert_eq!(catalog.find(&focus("Code", "code")).map(|l| l.pack.id.as_str()), Some("builtin.vscode"));
         assert_eq!(catalog.find(&focus("code-oss", "")).map(|l| l.pack.id.as_str()), Some("builtin.vscode"));
         assert!(catalog.find(&focus("com.anthropic.Claude", "com.anthropic.claude")).is_none());
+    }
+
+    #[test]
+    fn a_recipes_tree_loads_from_its_subfolders() {
+        let recipes = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../recipes");
+        let (catalog, rejected) = Catalog::load(&Catalog::folders(&recipes));
+        assert!(rejected.is_empty(), "every recipe loads");
+        assert!(catalog.agent("claude-code/permission").is_some(), "agents/");
+        assert!(catalog.get("builtin.vscode").is_some(), "apps/");
+        let pages = catalog.libraries.iter().filter(|(p, _)| p.parent().and_then(|d| d.parent()).is_some_and(|d| d.ends_with("sites"))).count();
+        assert!(pages > 0, "sites/<host>/ pages");
     }
 
     #[test]
