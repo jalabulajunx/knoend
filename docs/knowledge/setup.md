@@ -173,6 +173,17 @@ devices and whether each has a port, the WCH driver state, and whether openpager
   `SDKROOT=$(xcrun --sdk macosx26.5 --show-sdk-path)` (the SDK matching the tools; see
   `ls /Library/Developer/CommandLineTools/SDKs`), or remove the stray SDK.
 
+### Running in the background
+
+- **Board stops following apps after the computer or Claude Code restarts.** `openpager serve` was
+  started by hand (or by a coding agent's session) and stopped with it. Install it as a background
+  service: `openpager service install` (systemd user service on Linux, LaunchAgent on macOS), then
+  `openpager service status`. Never run a second copy beside it.
+- **Service runs but the layout does not follow the focused app (Linux).** The systemd user manager
+  lacks the graphical session's `DISPLAY`/`XAUTHORITY` (`systemctl --user show-environment`); most
+  desktop sessions import them. Run `systemctl --user import-environment DISPLAY XAUTHORITY` once in
+  the session, or add it to the window manager's start-up (i3: an `exec` line).
+
 ### The browser extension
 
 - **Popup says "not set up".** The browser could not start openpager: `openpager browser install` was

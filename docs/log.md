@@ -607,3 +607,20 @@ Entry template:
 - Tested on the ONX2432G028: icon firmware flashed (`idf.py flash`, hashes verified); the board came
   back and reconnected over Wi-Fi. Not yet seen by Sundar on the board.
 - Generated icon preview checked (all 132 render as the Material designs).
+
+## 2026-10-18 - Sundar (Claude Code) - Background service install
+
+- After Sundar restarted Claude desktop, `openpager serve` (started inside the previous Claude Code
+  session) was gone: no notifications or layouts reached the board. Sundar: running in the background
+  should be part of installing the service.
+- Changed: `openpager service install|uninstall|status`: a systemd user service on Linux
+  (`openpager.service`, `Restart=always`, starts at login, journal log) and a LaunchAgent on macOS
+  (`KeepAlive`, log in `~/Library/Logs/openpager.log`; Accessibility must then allow the `openpager`
+  binary itself). Setup guide and knowledge base updated.
+- Tested: unit tests for the unit/plist text; the generated unit passes `systemd-analyze --user
+  verify`; `service status` reports "not installed". Not installed on Sundar's machine yet (he runs
+  `serve` in a terminal; switching is his call). LaunchAgent untested (no Mac).
+- Notifications design note (Sundar asked why the board kept the app's keys): notifications go to the
+  status line and do not change keys; while Claude is in front it usually sends none, so its waiting
+  state needs the accessibility adapter. Proposed: an agent notification also turns one key into
+  "<app> needs you" (tap to switch to it).

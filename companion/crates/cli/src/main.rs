@@ -6,9 +6,11 @@
 //!   openpager devices / flash              find, identify and flash boards from a firmware release
 //!   openpager draft --class C --instance I  ask the configure agent for a library (no board needed)
 //!   openpager browser install              let the browser extension reach openpager
+//!   openpager service install              run `serve` in the background, from login
 //!
 //! A browser that starts this binary as its native messaging host (spec/browser.md) gets the host.
 
+mod background;
 mod browser;
 mod diagnostics;
 mod firmware;
@@ -93,6 +95,21 @@ enum Command {
         #[command(subcommand)]
         action: BrowserAction,
     },
+    /// Run the service in the background, started at login and restarted if it stops.
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ServiceAction {
+    /// Run `openpager serve` in the background from now on (systemd user service / LaunchAgent).
+    Install,
+    /// Stop it and remove it.
+    Uninstall,
+    /// Whether it is installed and running.
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -142,6 +159,14 @@ fn main() {
             Ok(())
         }
         Command::Browser { action: BrowserAction::Host } => browser::run_host(),
+        Command::Service { action } => {
+            let lines = match action {
+                ServiceAction::Install => background::install(),
+                ServiceAction::Uninstall => background::uninstall(),
+                ServiceAction::Status => Ok(vec![background::status()]),
+            };
+            lines.map(|lines| lines.into_iter().for_each(|l| println!("{l}")))
+        }
         Command::Draft { class, instance, save } => tokio::runtime::Runtime::new().expect("tokio")
             .block_on(draft(Focus { os: Os::current(), app: class, instance, title: String::new(), web: None }, save)),
     };
