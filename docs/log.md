@@ -711,3 +711,74 @@ Entry template:
   render); real apps on this machine render from the Buuf theme (Firefox, Claude, Xfce Terminal,
   Thunar, Chrome, VLC; preview checked). Not tested: anything on the board (firmware not flashed),
   launching from the board, favicons from the extension.
+
+## 2026-10-18 - Sundar (Claude Code) - Launcher on the board; macOS app and site icons; handoff to Tom
+
+- Tested on the ONX (Arch Linux, i3/X11), Sundar's report:
+  - Request details (previous flash): top and bottom rows shrink, the explanation below scrolls with
+    a swipe. Confirmed.
+  - PR #12 firmware flashed (hashes verified; boot log clean, Wi-Fi up, the service reconnected).
+    On an empty workspace the board showed the launcher with the apps' own icons in colour; tapping
+    one opened that app. Sites (GitHub, YouTube) show the generic globe icon until a favicon is
+    saved (needs the rebuilt extension reloaded; not yet done).
+  - Ranking is most used and most recent together (seconds in front, halved per week, +600 if
+    used today); counting started when the service on this build started.
+- Changed:
+  - `openpager-desktop::picture` (new, every system): decoding/fitting PNG, ICO, JPEG, GIF, WebP,
+    SVG and PNG encoding, moved out of the Linux-only `apps`. `image`/`resvg` are now plain
+    dependencies. Before this, site icons (favicons) silently did nothing on macOS.
+  - `openpager-desktop::mac_apps` (new): an app's icon from its bundle id: Spotlight (`mdfind
+    kMDItemCFBundleIdentifier`, id checked to [A-Za-z0-9._-]), else `<name>.app` in /Applications,
+    /System/Applications(/Utilities), ~/Applications; the `.icns` from Info.plist (`plutil`:
+    CFBundleIconFile, CFBundleIconName, else AppIcon.icns, else any .icns); `sips` to PNG; cached for
+    the service's life, misses too. Only tools macOS ships.
+- Tested: unit tests (bundle id check, icns names, SVG render) on Linux; Windows type-check of the
+  non-Linux paths. macOS: compiled in CI only; NOT run on a Mac.
+- Decided: icons stay as pictures, not an icon font: the same 132 glyphs at 32 px as a 4-bit font
+  hold about the same data (~66 KB flash), and app/site logos are colour pictures (3 KB each, 48 kept
+  in PSRAM, about 150 KB of 8 MB).
+- Open: Tom to try the launcher on his Mac (focus Finder's desktop with no window; app icons should
+  appear; check `openpager serve` output for `sips`/`mdfind` problems). Rebuild + reload the
+  extension for favicons (both browsers).
+
+### Handoff for Tom's agents (dynamic layouts, terminal-aware actions)
+
+What Sundar's side built that your work can reuse, and where it plugs in:
+
+- **One place decides what the board shows:** `companion/crates/cli/src/service.rs`, `show()`.
+  Order today: a pending agent request (`system.approve`) wins; nothing focused -> launcher
+  (`system.launcher`); else the focused app's or site's library (`catalog.find`, most specific
+  `match.web` first) plus the media row (slots 7-9 while a player plays). `shown_actions:
+  HashMap<u8, KeyRef>` maps each visible slot to its action; key taps resolve through it. Pagination
+  belongs here (build pages of `LayoutKey`s, keep the slot map per page) and in `firmware/main/ui.c`.
+- **Layout packet extras** (`spec/protocol.md` 3.6a-c, `packet.schema.json`): key `icon` (a Material
+  name from `spec/icons.txt`, or `app:`/`site:` + id for a picture sent with `openpager.image`),
+  layout `detail` (<= 240 chars; middle row becomes a scrollable panel, top/bottom rows compact).
+  The firmware keeps up to 48 pictures; the service tracks what it sent per connection
+  (`sent_images`) and must resend after a reconnect.
+- **Coding-agent state for terminal-aware keys:** `cli/src/agent_hooks.rs`. Claude Code hooks
+  (installed with `openpager claude-hooks install`, all sessions, `~/.claude/settings.json`) run
+  `openpager hook permission|notification|event`, which relay the hook's JSON (has `session_id`,
+  `cwd`, `transcript_path`, tool name/input) to the service over `agents.sock` (0600; Linux
+  `$XDG_RUNTIME_DIR/openpager/`, macOS `~/Library/Application Support/openpager/`). The service receives `Event::Agent(AgentEvent)`. So per terminal/session you
+  already know: waiting for permission (PermissionRequest), idle / needs input (Notification),
+  working (UserPromptSubmit, PostToolUse), finished (Stop). Matching a session to the focused
+  terminal window is the missing piece (e.g. by `cwd` vs the terminal's working directory, or the
+  process tree of the focused window). Reuse `summary`/`detail`/`destructive` for any agent.
+- **Answers back to the agent:** PermissionRequest prints `{"hookSpecificOutput": {"hookEventName":
+  "PermissionRequest", "decision": {"behavior": "allow"|"deny", "updatedPermissions": [..],
+  "interrupt": ..}}}`; nothing printed = the agent asks as usual. Claude Code does not stop the hook
+  when the person answers in its own UI: requests are settled by the session's next event
+  (`settles`). Codex/others need their own `hook` entry point; the board side is shared.
+- **AI that edits keys:** `agents/src/site.rs` is the pattern for "an agent configures buttons
+  behind the scenes": the prompt gets the OS, the icon list and only verifiable facts (the page's
+  controls); the draft is constrained (id, source, where it applies set by us) and every selector is
+  checked against the inventory, one retry with the errors. Per-app/per-terminal drafting should do
+  the same (`agents/src/lib.rs` draft for apps already gets the icon list). Drafts land in the AI
+  library folder; `DraftedPages` (`sites.json`) remembers what was drafted per page kind.
+- **Desktop notifications** (`openpager-desktop::watch_notifications`, Linux D-Bus only) are shown
+  in the status line unless an agent request is pending. Claude desktop's accessibility tree is
+  empty without `--force-renderer-accessibility`, so the hooks are the reliable channel.
+- **macOS gaps your side may hit:** no MPRIS (media row never appears), no notification watcher,
+  launcher app icons untested (above), Claude Code hooks untested on macOS (socket in
+  `~/Library/Application Support/openpager/agents.sock`; Unix socket paths max ~104 bytes there).

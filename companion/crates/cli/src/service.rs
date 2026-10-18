@@ -745,7 +745,7 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
         let mut icon = Some(match entry.target { crate::launcher::Target::Site { .. } => "public", _ => "apps" }.to_string());
         if sent_images.contains(&name) {
             icon = Some(name.clone());
-        } else if let Some(pixels) = crate::launcher::icon_pixels(&entry.target, apps, favicons) {
+        } else if let Some(pixels) = crate::launcher::icon_pixels(&entry.target, &entry.name, apps, favicons) {
             if send_image(sender, &name, &pixels).await {
                 sent_images.insert(name.clone());
                 icon = Some(name.clone());
@@ -799,10 +799,7 @@ fn spawn_favicon_fetch(host: String, url: String, events: mpsc::Sender<Event>) {
         };
         let Some(bytes) = bytes.filter(|b| b.len() <= 512 * 1024) else { return };
         let svg = url.contains("svg");
-        #[cfg(target_os = "linux")]
-        let pixels = tokio::task::spawn_blocking(move || openpager_desktop::apps::render_bytes(&bytes, svg, 32)).await.ok().flatten();
-        #[cfg(not(target_os = "linux"))]
-        let pixels: Option<Vec<u8>> = { let _ = (bytes, svg); None };
+        let pixels = tokio::task::spawn_blocking(move || openpager_desktop::picture::render_bytes(&bytes, svg, 32)).await.ok().flatten();
         if let Some(pixels) = pixels {
             let _ = events.send(Event::Favicon(host, pixels)).await;
         }
@@ -812,12 +809,11 @@ fn spawn_favicon_fetch(host: String, url: String, events: mpsc::Sender<Event>) {
 /// Saved site icons from the cache folder.
 fn load_favicons() -> HashMap<String, Vec<u8>> {
     let mut out = HashMap::new();
-    #[cfg(target_os = "linux")]
     if let Ok(entries) = std::fs::read_dir(crate::launcher::favicon_dir()) {
         for entry in entries.flatten() {
             let path = entry.path();
             let host = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-            if let Some(pixels) = openpager_desktop::apps::render(&path, 32) {
+            if let Some(pixels) = openpager_desktop::picture::render(&path, 32) {
                 out.insert(host, pixels);
             }
         }
@@ -827,15 +823,7 @@ fn load_favicons() -> HashMap<String, Vec<u8>> {
 
 /// 32x32 RGBA as PNG bytes (for the favicon cache).
 fn image_png(rgba: &[u8]) -> Option<Vec<u8>> {
-    #[cfg(target_os = "linux")]
-    {
-        openpager_desktop::apps::png(rgba, 32, 32)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = rgba;
-        None
-    }
+    openpager_desktop::picture::png(rgba, 32, 32)
 }
 
 /// Layout id of a coding agent's permission request on the board.

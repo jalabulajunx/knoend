@@ -154,18 +154,25 @@ pub fn installed_apps() -> Vec<AppInfo> {
     Vec::new()
 }
 
-/// 32x32 RGBA icon for a launcher target: the app's theme icon, or a site's saved favicon.
-pub fn icon_pixels(target: &Target, apps: &[AppInfo], favicons: &HashMap<String, Vec<u8>>) -> Option<Vec<u8>> {
+/// 32x32 RGBA icon for a launcher target: the app's icon (Linux: icon theme; macOS: the app
+/// bundle's .icns), or a site's saved favicon.
+pub fn icon_pixels(target: &Target, name: &str, apps: &[AppInfo], favicons: &HashMap<String, Vec<u8>>) -> Option<Vec<u8>> {
     match target {
         Target::Site { host } => favicons.get(host).cloned(),
         #[cfg(target_os = "linux")]
         Target::App { id } => {
+            let _ = name;
             let app = apps.iter().find(|a| &a.id == id)?;
-            openpager_desktop::apps::render(&openpager_desktop::apps::icon_file(&app.icon)?, 32)
+            openpager_desktop::picture::render(&openpager_desktop::apps::icon_file(&app.icon)?, 32)
         }
-        #[cfg(not(target_os = "linux"))]
-        Target::App { .. } => {
+        #[cfg(target_os = "macos")]
+        Target::App { id } => {
             let _ = apps;
+            openpager_desktop::mac_apps::icon(id, name, 32)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        Target::App { .. } => {
+            let _ = (name, apps);
             None
         }
     }

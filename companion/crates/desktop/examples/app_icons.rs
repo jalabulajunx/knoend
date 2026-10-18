@@ -11,7 +11,7 @@ fn main() {
         let Some(app) = apps::for_window(&installed, class, class) else { println!("{class}: no app"); continue };
         let file = apps::icon_file(&app.icon);
         println!("{class}: {} ({}) icon {:?} -> {:?}", app.name, app.id, app.icon, file);
-        if let Some(pixels) = file.as_deref().and_then(|f| apps::render(f, 32)) {
+        if let Some(pixels) = file.as_deref().and_then(|f| openpager_desktop::picture::render(f, 32)) {
             let icon = image::RgbaImage::from_raw(32, 32, pixels).unwrap();
             image::imageops::overlay(&mut sheet, &icon, 4 + 40 * i as i64, 4);
         }
