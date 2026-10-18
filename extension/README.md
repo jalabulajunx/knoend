@@ -33,7 +33,8 @@ the browser's native messaging (no network port).
      open the signed `.xpi` it returns in Firefox. The add-on id stays `openpager@jalabulajunx.github.io`,
      which is what `openpager browser install` allows.
 3. Run `openpager serve`. The popup shows "connected".
-4. Open a site that has a layout (YouTube is built in), open the popup, and turn board buttons on.
+4. Open a site, open the popup, and turn board buttons on. YouTube has keys built in (different
+   ones on a video page); for any other site press "Make keys for this site with AI".
 
 Tested, against a stand-in for the service and the real `openpager` host:
 

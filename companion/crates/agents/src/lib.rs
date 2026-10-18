@@ -9,6 +9,7 @@
 pub mod assistant;
 pub mod provider;
 pub mod secrets;
+pub mod site;
 
 use openpager_core::focus::{Focus, Os};
 use openpager_core::library::Library;
@@ -77,7 +78,7 @@ pub fn slug(focus: &Focus) -> String {
 }
 
 /// Strips code fences or prose around the TOML, if the model added any.
-fn extract_toml(reply: &str) -> String {
+pub(crate) fn extract_toml(reply: &str) -> String {
     let text = reply.trim();
     if let Some(start) = text.find("```") {
         let after = &text[start + 3..];

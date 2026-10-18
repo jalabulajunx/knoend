@@ -40,6 +40,14 @@ async function render() {
   toggle.hidden = false;
   toggle.textContent = on ? "Turn off board buttons here" : "Turn on board buttons here";
   toggle.className = on ? "off" : "";
+  const configure = $("configure");
+  configure.hidden = !on || !(status && status.service);
+  configure.onclick = async () => {
+    configure.disabled = true;
+    showConfigure(await api.runtime.sendMessage({ type: "configure" }));
+    watchConfigure();
+  };
+  showConfigure(status && status.configure);
   toggle.onclick = async () => {
     try {
       if (on) await api.permissions.remove({ origins: [pattern] });
@@ -49,6 +57,24 @@ async function render() {
     }
     render();
   };
+}
+
+function showConfigure(state) {
+  const line = $("configure-status");
+  if (!state) { line.hidden = true; return; }
+  line.hidden = false;
+  line.textContent = state.text;
+  line.style.color = state.done && !state.ok ? "var(--bad)" : "";
+  $("configure").disabled = !state.done;
+}
+
+/** While the AI works, check every second (the popup may stay open). */
+function watchConfigure() {
+  const timer = setInterval(async () => {
+    const status = await api.runtime.sendMessage({ type: "status" }).catch(() => null);
+    showConfigure(status && status.configure);
+    if (!status || !status.configure || status.configure.done) clearInterval(timer);
+  }, 1000);
 }
 
 render();

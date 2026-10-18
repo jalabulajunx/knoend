@@ -13,6 +13,8 @@ let port = null;
 let serviceRunning = false;
 let hostError = "";
 let retry = null;
+/** The last "Configure keys for this site" progress, for the popup. */
+let configureStatus = null;
 
 function connect() {
   clearTimeout(retry);
@@ -86,6 +88,10 @@ api.permissions.onRemoved.addListener(reportTab);
 // ---- acting on the page ----
 
 async function onMessage(message) {
+  if (message.type === "configure-status") {
+    configureStatus = { ok: !!message.ok, text: String(message.text || ""), done: true };
+    return;
+  }
   if (message.type === "service") {
     serviceRunning = !!message.running;
     if (serviceRunning) reportTab();
@@ -135,7 +141,7 @@ async function inventory() {
 // The two functions below run inside the page (scripting.executeScript), so they must not use
 // anything from this file.
 
-function pageAction(action) {
+async function pageAction(action) {
   const find = (selector) => { try { return document.querySelector(selector); } catch { return null; } };
   if (action.kind === "element" || action.kind === "focus") {
     const el = find(action.selector);
@@ -160,16 +166,20 @@ function pageAction(action) {
       .filter((m) => m.currentSrc || m.src)
       .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
     if (!media) return { ok: false, error: "not-found" };
+    // Report what actually happened: browsers refuse play() from a script without a click.
+    const play = async () => {
+      try { await media.play(); } catch { /* refused */ }
+      return media.paused ? { ok: false, error: "blocked" } : { ok: true };
+    };
     switch (action.command) {
-      case "toggle": media.paused ? media.play() : media.pause(); break;
-      case "play": media.play(); break;
-      case "pause": media.pause(); break;
-      case "mute": media.muted = !media.muted; break;
-      case "forward": media.currentTime = Math.min(media.duration || Infinity, media.currentTime + 10); break;
-      case "back": media.currentTime = Math.max(0, media.currentTime - 10); break;
+      case "toggle": return media.paused ? play() : (media.pause(), { ok: media.paused });
+      case "play": return play();
+      case "pause": media.pause(); return { ok: media.paused };
+      case "mute": media.muted = !media.muted; return { ok: true };
+      case "forward": media.currentTime = Math.min(media.duration || Infinity, media.currentTime + 10); return { ok: true };
+      case "back": media.currentTime = Math.max(0, media.currentTime - 10); return { ok: true };
       default: return { ok: false, error: "not-found" };
     }
-    return { ok: true };
   }
   return { ok: false, error: "bad-action" };
 }
@@ -260,7 +270,11 @@ function pageInventory() {
 
 api.runtime.onMessage.addListener((message, sender, reply) => {
   if (message && message.type === "status") {
-    reply({ host: !!port, service: serviceRunning, hostError });
+    reply({ host: !!port, service: serviceRunning, hostError, configure: configureStatus });
+  } else if (message && message.type === "configure") {
+    configureStatus = { ok: true, text: "Reading the page and asking the AI for keys (about 10 seconds)...", done: false };
+    send({ type: "configure" });
+    reply(configureStatus);
   }
 });
 

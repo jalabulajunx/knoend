@@ -469,3 +469,30 @@ Entry template:
   action -> `not-granted`, `open` ok. Popup no longer uses innerHTML (Mozilla's checker flags it).
 - Keeping it in Firefox across restarts needs Mozilla's signing (self-distribution); steps in
   `extension/README.md`. Not done: that upload is Sundar's (his Mozilla account).
+
+## 2026-10-18 - Sundar (Claude Code) - Media keys through MPRIS; "Make keys for this site with AI"
+
+- Sundar tried the YouTube keys in his Firefox: after turning buttons on, every key reported "done in
+  the browser" but only Search had an effect. Reproduced in headless Firefox reading the video's state
+  before and after: `play()` from a page script is refused without a click (still paused), yet the
+  extension said ok. He pointed at KDE Connect, which uses MPRIS.
+- Changed:
+  - New crate `openpager-media`: MPRIS players over D-Bus (zbus; list, play/pause, next, previous,
+    seek). Firefox publishes its playing tab there (title, channel, state). The service polls every
+    second; the board's status bar shows "Playing/Paused: title - artist" (ASCII only: the board's
+    Montserrat font has no other glyphs) and the play/pause key is labelled Play or Pause. Media keys
+    go to the focused app's player first; the extension is the fallback and now reports `blocked`
+    when the page refuses to play.
+  - `match.web` takes a path prefix; most specific wins. YouTube split into browsing keys and video
+    keys (`builtin.youtube`, `builtin.youtube-watch`). `open` may now go to `/`.
+  - Site drafting (`agents/src/site.rs`): from the page inventory, pinned to the site, every selector
+    must be in the inventory (one retry with the errors). Triggered by the popup ("Make keys for this
+    site with AI") or Configure on the board for a site with no keys; progress shown in both.
+- Tested (Arch Linux): Rust tests (new: player matching, path patterns, site constraints and unknown
+  selectors). The media crate lists Sundar's real Firefox player with title, channel and state; the
+  service showed "Paused: ... - Sathya Jyothi Films" on the board. Gemini drafted Wikipedia keys from
+  236 controls in 6.5 s, first attempt (Search, Random article, Current events, Main page, Recent
+  changes, Talk, History, Help, Dark mode); in headless Firefox, Search focused the box and Random
+  article navigated to a random article.
+- Not tested: MPRIS commands (headless Firefox does not register a player until something plays;
+  needs Sundar's board), the popup button end to end, Configure on the board for a site.

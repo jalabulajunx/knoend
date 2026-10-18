@@ -74,17 +74,30 @@ impl Browser {
         }
     }
 
+    /// Tells the active extension something it does not answer (e.g. configure progress).
+    pub fn notify(&self, message: Value) {
+        let active = *self.active.lock().unwrap();
+        if let Some(link) = active.and_then(|id| self.links.lock().unwrap().get(&id).cloned()) {
+            let _ = link.send(message.to_string());
+        }
+    }
+
     pub fn connected(&self) -> bool {
         !self.links.lock().unwrap().is_empty()
     }
 }
 
-/// The active tab as the service sees it: `None` when no browser window is focused.
-pub type TabUpdate = Option<WebPage>;
+/// What the extension tells the service.
+pub enum BrowserEvent {
+    /// The active tab; `None` when no browser window is focused.
+    Tab(Option<WebPage>),
+    /// "Configure keys for this site" was pressed in the popup.
+    Configure,
+}
 
 /// Listens for hosts; tab changes go to `tabs`.
 #[cfg(unix)]
-pub async fn serve(browser: Arc<Browser>, tabs: mpsc::Sender<TabUpdate>) {
+pub async fn serve(browser: Arc<Browser>, tabs: mpsc::Sender<BrowserEvent>) {
     use std::os::unix::fs::PermissionsExt;
     let path = socket_path();
     if let Some(dir) = path.parent() {
@@ -109,10 +122,10 @@ pub async fn serve(browser: Arc<Browser>, tabs: mpsc::Sender<TabUpdate>) {
 }
 
 #[cfg(not(unix))]
-pub async fn serve(_browser: Arc<Browser>, _tabs: mpsc::Sender<TabUpdate>) {}
+pub async fn serve(_browser: Arc<Browser>, _tabs: mpsc::Sender<BrowserEvent>) {}
 
 #[cfg(unix)]
-async fn connection(id: u64, stream: tokio::net::UnixStream, browser: Arc<Browser>, tabs: mpsc::Sender<TabUpdate>) {
+async fn connection(id: u64, stream: tokio::net::UnixStream, browser: Arc<Browser>, tabs: mpsc::Sender<BrowserEvent>) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
     let (read, mut write) = stream.into_split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
@@ -138,7 +151,11 @@ async fn connection(id: u64, stream: tokio::net::UnixStream, browser: Arc<Browse
                     continue;
                 }
                 let page = focused.then(|| page_from(&message)).flatten();
-                let _ = tabs.send(page).await;
+                let _ = tabs.send(BrowserEvent::Tab(page)).await;
+            }
+            Some("configure") => {
+                *browser.active.lock().unwrap() = Some(id);
+                let _ = tabs.send(BrowserEvent::Configure).await;
             }
             Some("result") | Some("inventory") => {
                 if let Some(request) = message["request"].as_str() {
@@ -160,7 +177,7 @@ async fn connection(id: u64, stream: tokio::net::UnixStream, browser: Arc<Browse
         was
     };
     if was_active {
-        let _ = tabs.send(None).await;
+        let _ = tabs.send(BrowserEvent::Tab(None)).await;
     }
     writer.abort();
 }

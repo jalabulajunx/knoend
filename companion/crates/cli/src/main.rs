@@ -244,6 +244,35 @@ pub async fn configure(focus: &Focus, save: bool) -> Result<(PathBuf, Library), 
     Ok((path, draft.library))
 }
 
+/// Drafts keys for the website in `focus` from the page's controls (the extension lists them; the
+/// person must have turned board buttons on for the site), then saves them.
+pub async fn configure_site(browser: &browser::Browser, focus: &Focus) -> Result<(PathBuf, Library), String> {
+    let web = focus.web.as_ref().ok_or("no website is focused")?;
+    let site = openpager_agents::site::site_of(&web.host);
+    let config = agent_config()?;
+    let inventory = browser.request(serde_json::json!({"type": "inventory"}), std::time::Duration::from_secs(10)).await?;
+    if inventory["ok"] != true {
+        return Err(match inventory["error"].as_str() {
+            Some("not-granted") => format!("turn on board buttons for {site} in the OpenPager extension first"),
+            Some(other) => format!("the page could not be read ({other})"),
+            None => "the page could not be read".into(),
+        });
+    }
+    let items = inventory["items"].as_array().cloned().unwrap_or_default();
+    let started = std::time::Instant::now();
+    let draft = openpager_agents::site::draft_site_library(&config, &web.host, web.path(), &items).await?;
+    println!("  drafted keys for {site} by {} from {} controls in {:.1} s ({} attempt{}), {} keys",
+             config.describe(), items.len(), started.elapsed().as_secs_f32(), draft.attempts,
+             if draft.attempts == 1 { "" } else { "s" }, draft.library.keys.len());
+    let path = service::ai_libraries().join(format!("{}.toml", draft.library.pack.id.trim_start_matches("ai.")));
+    std::fs::create_dir_all(service::ai_libraries()).map_err(|e| e.to_string())?;
+    let header = format!("# Drafted by the OpenPager configure agent ({}) from the controls on {site}. Unreviewed:\n\
+                          # check the keys, then change source to \"user\" (and the id prefix to \"user.\") to keep your edits.\n\n",
+                         config.describe());
+    std::fs::write(&path, header + &draft.toml).map_err(|e| e.to_string())?;
+    Ok((path, draft.library))
+}
+
 async fn draft(focus: Focus, save: bool) -> Result<(), String> {
     println!("Drafting a library for {} ({}) with {}", focus.display_name(), focus.instance, agent_config()?.describe());
     let (path, library) = configure(&focus, save).await?;

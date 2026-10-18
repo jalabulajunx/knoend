@@ -183,6 +183,11 @@ devices and whether each has a port, the WCH driver state, and whether openpager
 - **The board does not change for a site.** The site needs a layout (`match.web`), and the focused
   window must be the browser. A key that acts on the page answers "not-granted" until board buttons
   are turned on for that site in the popup.
+- **Media keys report done but nothing plays.** A page script may not start playback (browsers need a
+  click). On Linux, media keys therefore go to the browser's media player (MPRIS), which acts like the
+  keyboard's media keys; the extension reports `blocked` if it had to try and the page refused.
+- **"Make keys for this site" fails with "turn on board buttons first".** The page can only be read
+  after the site is granted (popup switch). The keys are saved under `libraries/ai/site-<site>.toml`.
 - **Testing in Chrome:** Google Chrome 137 and later ignore `--load-extension`; load it from
   `chrome://extensions` (Developer mode), or in automation with DevTools' `Extensions.loadUnpacked`
   (`--remote-debugging-pipe --enable-unsafe-extension-debugging`).

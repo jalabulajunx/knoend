@@ -50,16 +50,29 @@ pub struct WebPage {
 }
 
 impl WebPage {
-    /// Whether one library `match.web` pattern names this site: the host itself or a parent
+    /// Whether one library `match.web` pattern names this page: the host itself or a parent
     /// domain ("youtube.com" matches "www.youtube.com"); "amazon.*" matches any ending
-    /// ("amazon.ca", "www.amazon.co.uk").
+    /// ("amazon.ca", "www.amazon.co.uk"); a path after the host narrows it to pages under that
+    /// path ("youtube.com/watch").
     pub fn matches_pattern(&self, pattern: &str) -> bool {
         let pattern = pattern.trim().to_ascii_lowercase();
+        let (site, path) = match pattern.find('/') {
+            Some(i) => (&pattern[..i], Some(&pattern[i..])),
+            None => (pattern.as_str(), None),
+        };
         let host = self.host.as_str();
-        if let Some(base) = pattern.strip_suffix(".*") {
-            return host.starts_with(&format!("{base}.")) || host.contains(&format!(".{base}."));
-        }
-        host == pattern || host.ends_with(&format!(".{pattern}"))
+        let host_ok = match site.strip_suffix(".*") {
+            Some(base) => host.starts_with(&format!("{base}.")) || host.contains(&format!(".{base}.")),
+            None => host == site || host.ends_with(&format!(".{site}")),
+        };
+        host_ok && path.is_none_or(|p| self.path().to_ascii_lowercase().starts_with(p))
+    }
+
+    /// The URL's path ("/watch").
+    pub fn path(&self) -> &str {
+        let rest = self.url.split("://").nth(1).unwrap_or("");
+        let path = rest.find('/').map(|i| &rest[i..]).unwrap_or("/");
+        path.split(['?', '#']).next().unwrap_or("/")
     }
 }
 
@@ -99,5 +112,9 @@ mod tests {
         assert!(page("www.amazon.co.uk").matches_pattern("amazon.*"));
         assert!(page("amazon.ca").matches_pattern("amazon.*"));
         assert!(!page("amazonia.org").matches_pattern("amazon.*"));
+        let watch = WebPage { host: "www.youtube.com".into(), url: "https://www.youtube.com/watch?v=1".into(), title: String::new(), granted: true };
+        assert!(watch.matches_pattern("youtube.com/watch"));
+        assert!(!page("www.youtube.com").matches_pattern("youtube.com/watch"));
+        assert_eq!(watch.path(), "/watch");
     }
 }

@@ -35,6 +35,7 @@ Every message is a JSON object with a `type`. Extension to service:
 | `hello` | `browser` ("chrome", "firefox", ...), `version` | The extension started. |
 | `tab` | `url`, `title`, `windowFocused` (bool), `granted` (bool: board buttons are on for this site) | The active tab of the focused window changed, navigated, or the window gained or lost focus. Sent only for `http`/`https` pages; other pages send `url: null`. |
 | `inventory` | `request`, `url`, `items` (see 3) | Answer to `inventory`. |
+| `configure` | (none) | The person pressed "Make keys for this site with AI" in the popup. |
 | `result` | `request`, `ok`, `error?` | Answer to `act`. |
 
 Service to extension:
@@ -44,6 +45,7 @@ Service to extension:
 | `act` | `request`, `action` (see 4) | Carry out a key's action in the active tab. |
 | `inventory` | `request` | Describe the active page's controls (only on a granted site). |
 | `service` | `running` (bool) | Sent by the host itself when the service is (not) reachable. |
+| `configure-status` | `ok`, `text` | How `configure` ended (keys made, or why not). |
 
 `request` is an opaque string chosen by the service. The extension answers every `act` and
 `inventory`, with `ok: false` and a short `error` if it could not (`"not-granted"`, `"not-found"`,
@@ -83,6 +85,23 @@ A layout library key for a website uses one of these actions (`spec/protocol.md`
 | `media` | `command`: `toggle`, `play`, `pause`, `next`, `previous`, `mute`, `forward`, `back` | Acts on the page's main `<video>`/`<audio>` element; `next`/`previous` click the player's own buttons when the library gives a `selector`. |
 
 `shortcut` keys are typed by the board or the service as for any app, not by the extension.
+On Linux, `media` keys go first to the browser's media player over MPRIS (as the keyboard's media
+keys and KDE Connect do), which may start playback where a page script may not; the extension acts
+only when no player is found or for `mute`.
+
+## 4a. Which keys a page gets
+
+`match.web` patterns name a host or parent domain (`youtube.com`), any ending (`amazon.*`), and
+optionally a path prefix (`youtube.com/watch`). The longest matching pattern wins, so a site can
+have different keys on different kinds of page. A site layout wins over the browser's own.
+
+## 4b. Drafting keys for a site
+
+"Make keys for this site with AI" (popup) or Configure (board, on a site with no keys) asks the
+extension for the page inventory, then the drafting agent for up to 9 keys. The agent receives the
+site's host, the page path without its query, and the inventory; its draft is pinned to the site
+(`match.web`), saved as an unreviewed AI library, and rejected if any selector is not in the
+inventory.
 `element`, `focus` and `media` need the site to be granted; `open` needs only the `tabs` permission.
 
 ## 5. Permissions and privacy

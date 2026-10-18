@@ -16,3 +16,5 @@ button { width: 100%; padding: 8px 12px; font: inherit; border-radius: 8px; curs
   border: 1px solid var(--accent); background: var(--accent); color: #fff; }
 button.off { background: transparent; color: var(--text); border-color: var(--line); }
 code { font-size: 12px; }
+#configure { margin-top: 8px; }
+button:disabled { opacity: .6; cursor: default; }

@@ -63,7 +63,7 @@
                 "type": "object", "additionalProperties": false, "required": ["kind", "url"],
                 "properties": {
                   "kind": { "const": "open" },
-                  "url": { "type": "string", "pattern": "^/[^/]", "maxLength": 512 }
+                  "url": { "type": "string", "pattern": "^/([^/]|$)", "maxLength": 512 }
                 }
               },
               {

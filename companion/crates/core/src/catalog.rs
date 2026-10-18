@@ -62,9 +62,11 @@ impl Catalog {
             Source::Ai => 2,
         };
         if let Some(web) = &focus.web {
+            // The most specific pattern wins ("youtube.com/watch" over "youtube.com"), then source.
             let site = self.libraries.iter().map(|(_, l)| l)
-                .filter(|l| l.matches.web.iter().any(|p| web.matches_pattern(p)))
-                .min_by_key(|l| rank(&l.pack.source));
+                .filter_map(|l| l.matches.web.iter().filter(|p| web.matches_pattern(p)).map(|p| p.len()).max().map(|n| (l, n)))
+                .min_by_key(|(l, n)| (std::cmp::Reverse(*n), rank(&l.pack.source)))
+                .map(|(l, _)| l);
             if site.is_some() {
                 return site;
             }

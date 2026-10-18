@@ -1,10 +1,9 @@
-# Built-in library for YouTube in the browser. Media keys act on the page's video through the
-# OpenPager extension (turn board buttons on for youtube.com in its popup); F and C are YouTube's
-# own shortcuts, typed like any key.
+# Built-in library for browsing YouTube. Page keys need the OpenPager extension with board buttons
+# turned on for youtube.com; a video page uses youtube-watch.toml instead.
 [pack]
 id = "builtin.youtube"
 name = "YouTube"
-version = "0.1.0"
+version = "0.2.0"
 source = "builtin"
 license = "MIT"
 
@@ -12,39 +11,31 @@ license = "MIT"
 web = ["youtube.com"]
 
 [[key]]
-label = "Play/Pause"
-speak = "Play or pause"
-action = { kind = "media", command = "toggle" }
-
-[[key]]
-label = "Back 10s"
-action = { kind = "media", command = "back" }
-
-[[key]]
-label = "Fwd 10s"
-speak = "Forward ten seconds"
-action = { kind = "media", command = "forward" }
-
-[[key]]
-label = "Mute"
-action = { kind = "media", command = "mute" }
-
-[[key]]
-label = "Next video"
-action = { kind = "media", command = "next", selector = ".ytp-next-button" }
-
-[[key]]
 label = "Search"
 action = { kind = "focus", selector = "input[name=\"search_query\"]" }
 
 [[key]]
-label = "Fullscreen"
-action = { kind = "shortcut", keys = "F" }
-
-[[key]]
-label = "Captions"
-action = { kind = "shortcut", keys = "C" }
+label = "Home"
+action = { kind = "open", url = "/" }
 
 [[key]]
 label = "Subscriptions"
 action = { kind = "open", url = "/feed/subscriptions" }
+
+[[key]]
+label = "History"
+action = { kind = "open", url = "/feed/history" }
+
+[[key]]
+label = "Shorts"
+action = { kind = "open", url = "/shorts" }
+
+[[key]]
+label = "You"
+speak = "Your library"
+action = { kind = "open", url = "/feed/you" }
+
+[[key]]
+label = "Play/Pause"
+speak = "Play or pause"
+action = { kind = "media", command = "toggle" }
