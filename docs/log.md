@@ -1198,7 +1198,7 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   follow apps and sites, and a Claude Code question reached the board; Sundar's Decline came back as
   "Denied on the KnoEnd board." (hooks re-registered to `knoend`).
 
-## 2026-10-19 — AI tools on this computer as providers (Sundar + Claude Code, Opus 5.5)
+## 2026-10-19 - Sundar (Claude Code, Opus 5.5) - AI tools on this computer as providers
 
 - Branch `sundar/cli-provider`, on top of the rename branch (#32).
 - Why: people with a Claude or Google plan but no API key. Two new providers in AI settings,
