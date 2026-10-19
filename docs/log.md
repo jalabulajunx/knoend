@@ -982,3 +982,7 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   from the running windows. Not yet: the Antigravity keys on the board (Sundar's board still showed
   the draft: the running service predates this branch).
 - Sundar: the Antigravity recipe's keys work on the board (2026-10-18); tested entry added.
+- Added `recipes/sites/protege.lexis.com.toml` from Sundar's working AI draft (tested Linux,
+  Sundar, Firefox): 7 keys (New chat, Ask, Skills, Library, Add options, Review tables, Workrooms).
+  Left out the draft's two position-based keys (Search chats, Switch product); name "Protege" (the
+  board's font is ASCII only, so "Protégé" showed as "Prot g"). Published with Sundar's OK.
