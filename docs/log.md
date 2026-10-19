@@ -1011,3 +1011,16 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   Sundar, Firefox): 7 keys (New chat, Ask, Skills, Library, Add options, Review tables, Workrooms).
   Left out the draft's two position-based keys (Search chats, Switch product); name "Protege" (the
   board's font is ASCII only, so "Protégé" showed as "Prot g"). Published with Sundar's OK.
+
+## 2026-10-18 - Sundar (Claude Code) - Chrome: "Make keys for this site" said "Focus the browser window"
+
+- Sundar, first time with the Chrome extension (linkedin.com, board buttons on): the popup's "Make
+  keys for this site with AI" answered "Focus the browser window with the site first."
+- Cause: while the extension's popup is open, Chrome reports its window as not focused
+  (`windows.getLastFocused().focused` false); the extension then sent `tab` with `windowFocused:
+  false`, the service cleared the page, and the `configure` request that followed found no site.
+  Firefox does not do this, so it had not shown up there.
+- Changed (`extension/src/background.js`): `tabMessage(forceFocused)`; on "configure" the extension
+  sends the active tab as focused (the person is using our popup in this browser), then the request.
+- Tested: `node --check`, extension rebuilt for both browsers. Not tested: Chrome with the fix (needs
+  the extension reloaded in Sundar's Chrome).

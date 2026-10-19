@@ -82,18 +82,25 @@ registerWatcher();
 api.permissions.onAdded.addListener(registerWatcher);
 api.permissions.onRemoved.addListener(registerWatcher);
 
+/**
+ * The active tab as a "tab" message. `focused`: whether this browser window is the one in front;
+ * forced true when the person is using our popup (Chrome reports its window as not focused while
+ * the popup is open, which would make the service forget the site).
+ */
+async function tabMessage(forceFocused) {
+  const window = await api.windows.getLastFocused().catch(() => null);
+  const tab = await activeTab().catch(() => null);
+  const url = tab && isWeb(tab.url) ? tab.url : null;
+  return { type: "tab", url, title: url ? (tab.title || "") : "", windowFocused: forceFocused || !!(window && window.focused),
+           granted: url ? await granted(url) : false, fullscreen: !!(tab && fullscreenTabs.has(tab.id)),
+           // The tab's icon, for the board's launcher (an address or a small data: URL).
+           favicon: url && tab.favIconUrl && /^(https?:|data:image\/)/.test(tab.favIconUrl) && tab.favIconUrl.length <= 100000 ? tab.favIconUrl : "" };
+}
+
 let reportTimer = null;
 function reportTab() {
   clearTimeout(reportTimer);
-  reportTimer = setTimeout(async () => {
-    const window = await api.windows.getLastFocused().catch(() => null);
-    const tab = await activeTab().catch(() => null);
-    const url = tab && isWeb(tab.url) ? tab.url : null;
-    send({ type: "tab", url, title: url ? (tab.title || "") : "", windowFocused: !!(window && window.focused),
-           granted: url ? await granted(url) : false, fullscreen: !!(tab && fullscreenTabs.has(tab.id)),
-           // The tab's icon, for the board's launcher (an address or a small data: URL).
-           favicon: url && tab.favIconUrl && /^(https?:|data:image\/)/.test(tab.favIconUrl) && tab.favIconUrl.length <= 100000 ? tab.favIconUrl : "" });
-  }, 150);
+  reportTimer = setTimeout(async () => send(await tabMessage(false)), 150);
 }
 
 api.tabs.onActivated.addListener(reportTab);
@@ -340,7 +347,8 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
     settleGrant(message.request, !!message.granted);
   } else if (message && message.type === "configure") {
     configureStatus = { ok: true, text: "Reading the page and asking the AI for keys (about 10 seconds)...", done: false };
-    send({ type: "configure" });
+    // The site first (as focused: the person is in this browser, using our popup), then the request.
+    tabMessage(true).then((tab) => { send(tab); send({ type: "configure" }); });
     reply(configureStatus);
   }
 });
