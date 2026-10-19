@@ -1063,3 +1063,14 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   (the Slides remote), are complete layouts and stay as they are. The page draft prompt now says the
   site keys stay, asks for the 3 most useful additions, and prefers what the person starts on that
   page (a new post, compose, upload, a filter). Unit test with LinkedIn-like site and feed drafts.
+- Sundar: the combined layout worked (Home, Search, My Network, Jobs, Messages, Notifications + feed
+  keys), but the drafted "New posts" key was LinkedIn's "load new posts" button (it refreshes the
+  feed, then disappears: second tap `not-found`), not "Start a post".
+- Cause: the extension's page inventory drops a control it cannot point at uniquely (id, test id,
+  aria-label, name, else a short tag path); LinkedIn's "Start a post" has none, so the AI never saw
+  it. Changed (`pageInventory` in `extension/src/background.js`): also tries the control's readable
+  class names, alone or in pairs (letters, `-`, `_`, a vowel; not generated ones with digits).
+- Tested: the real `pageInventory` on a local test page in the browser pane: "Start a post"
+  (classes `artdeco-button share-box-feed-entry__trigger`) -> `button.share-box-feed-entry__trigger`;
+  a button with only generated classes (`x1n2onr6`) is still left out; repeated buttons sharing a
+  class keep their path selectors. Not tested on LinkedIn itself (needs the extension reloaded).

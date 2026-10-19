@@ -297,6 +297,13 @@ function pageInventory() {
     if (aria) tries.push(`${tag}[aria-label=${quote(aria)}]`);
     const name = el.getAttribute("name");
     if (name) tries.push(`${tag}[name=${quote(name)}]`);
+    // Readable class names ("share-box-feed-entry__trigger"), alone or in pairs; not generated ones
+    // (digits, or short random runs like "x1n2onr6"), which change with each release of a site.
+    const classes = [...el.classList].filter((c) => /^[A-Za-z][A-Za-z_-]{3,60}$/.test(c) && /[aeiou]/i.test(c)).slice(0, 6);
+    for (const c of classes) tries.push(`${tag}.${CSS.escape(c)}`);
+    for (let i = 0; i < classes.length; i++) {
+      for (let j = i + 1; j < classes.length; j++) tries.push(`${tag}.${CSS.escape(classes[i])}.${CSS.escape(classes[j])}`);
+    }
     for (const s of tries) if (unique(s)) return s;
     // A short path of tags and positions.
     const parts = [];
