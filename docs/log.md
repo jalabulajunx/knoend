@@ -958,3 +958,4 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   (missing port 502, blank name 400), and the switch back to the full setup wizard (a bug where
   steps 2-3 stayed hidden was found and fixed: `step()` rewrites class names). Not tested: an actual
   change of network (needs the person's Wi-Fi password).
+- Sundar changed the board's Wi-Fi with it on the ONX (2026-10-18): worked.
