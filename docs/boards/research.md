@@ -46,6 +46,12 @@ first researched; those two boards now install as "unverified".
    target.
 5. **Small definition-format additions** some boards need: display init command lists (ILI9342C on
    the S3-BOX-3), an active-high reset option, a reset line shared by display and touch.
+6. **Dense screens (e.g. 800x600 at about this size) are not handled; not for the demo.** The board
+   UI sizes everything in pixels: fonts 14/20/28 px, icons 32 px, status bar 40 px, smallest key
+   64x44 px (which sets the largest grid). On a screen with 2.5x the pixel density all of it would be
+   about half as big physically. Needed then: the screen's physical size in the definition, minimum
+   key and bar sizes in mm, bigger fonts and icons pre-drawn at 64 px (LVGL 8 cannot zoom our 4-bit
+   icons). Discussed by Tom on 2026-10-19 with grids and pages.
 
 ## Sources
 
