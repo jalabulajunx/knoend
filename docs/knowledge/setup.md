@@ -198,6 +198,10 @@ devices and whether each has a port, the WCH driver state, and whether openpager
 - **Nothing reaches the board from Claude:** the session was started before the hooks were installed
   (restart it), or the running `openpager serve` is older than the hooks (no `agents.sock` in
   `$XDG_RUNTIME_DIR/openpager/`): restart it.
+  Also: Claude Code's auto-approval (or a command it allows by itself, such as `ls`) asks nothing,
+  so no request is made and nothing reaches the board. Switch the session to manual approval and
+  ask for a command that needs it (seen on macOS 2026-10-18; manual approval then worked: Deny,
+  Allow and questions from the board).
 - **Claude desktop's own screen is not readable yet:** with session accessibility on, the Electron app
   still exposes only its window frames; reading its content needs it launched with
   `--force-renderer-accessibility`. The hooks make that unnecessary for Claude Code sessions.
