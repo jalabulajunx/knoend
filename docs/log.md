@@ -909,3 +909,17 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   picks the highest SDK (`xcrun --kill-cache` did not change it). Tom removed the stray SDK; plain
   `cargo test` links since.
 - Open: Mac versions of the app recipes (bundle ids, shortcut check, Tom's `tested` entries).
+
+## 2026-10-18 - Tom (Claude Code) - Freenove FNK0104B works: picture, colours, touch
+
+- Changed (branch `tom/fnk0104b`): Freenove definition + catalog "supported"; firmware passes a
+  definition's mirror/swap to `esp_lvgl_port` (it re-applied its own all-false values, so every
+  definition's mirror settings were ignored); ONX definition `mirror_y` true -> false so its picture
+  stays as it was; Freenove touch `mirror_x` + `mirror_y` (the picture flipped both ways, touch did
+  not).
+- Tested (Freenove FNK0104B, macOS 26.6): built with ESP-IDF v5.4.4 (installed today), flashed with
+  `idf.py flash`, definition written with `esptool write_flash 0x310000`. Picture right way round,
+  colours and icons right, taps land on the key under the finger (service log: keys 1, 2, 4, 5, 8 on
+  VS Code typed). Not tested: the ONX with this firmware.
+- Open: Sundar to check the ONX picture with this firmware, installed with its new definition, before
+  merging.

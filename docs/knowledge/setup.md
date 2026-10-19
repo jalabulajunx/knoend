@@ -22,7 +22,7 @@ When you learn something new on the bench, add it here (symptom, cause, fix, how
 | Board | USB-C goes to | Serial line | Can be a USB keyboard? | Notes |
 | --- | --- | --- | --- | --- |
 | ONX2432G028 (Nextion Open G-series) | CH340K serial chip (USB `1a86:7522`) | UART0, 115200 | **No**: the S3's own USB pins go to the mic connector | ST7789 display, CST826 touch at 0x15, PCF8574 expander at 0x38, 16 MB flash, 8 MB octal PSRAM |
-| Freenove FNK0104B | the ESP32-S3's own USB (Espressif `303a:xxxx`) | USB-Serial-JTAG | Yes (not built yet) | ILI9341 display, FT6336 touch at 0x38; definition not written yet |
+| Freenove FNK0104B | the ESP32-S3's own USB (Espressif `303a:xxxx`) | USB-Serial-JTAG | Yes (not built yet) | ILI9341 display (BGR, inverted, mirror_y), FT6336 touch at 0x38 (mirror_x + mirror_y); picture, colours and touch confirmed 2026-10-18 |
 | Waveshare ESP32-S3-Touch-LCD-2 (**unverified**) | the S3's own USB | USB-Serial-JTAG | Yes | ST7789T3 SPI 240x320 (colour inversion on), CST816D touch at 0x15, backlight GPIO 1 |
 | Espressif ESP32-S3-BOX-3 (**unverified**) | the S3's own USB | USB-Serial-JTAG | Yes | ILI9342C (ILI9341 driver + init commands) 320x240, BGR, mirrored x+y; GT911 touch at 0x5D or 0x14; active-high reset shared by display and touch on GPIO 48 |
 
@@ -85,7 +85,13 @@ C3, C6) are not supported.
   tell them apart. Since 2026-10-18 the wizard does not pre-select when the top boards tie; it asks
   the person to pick. Ask the person which board they have (name on the box or the back of the
   board) before installing. Seen 2026-10-17: a Freenove FNK0104B got the
-  BOX-3 definition; it ran (Wi-Fi, pairing, keys) with a dark screen. Once OpenPager runs, the board
+  BOX-3 definition; it ran (Wi-Fi, pairing, keys) with a dark screen.
+- **Picture mirrored, or taps landing on the opposite key** (seen on the Freenove FNK0104B,
+  2026-10-18): firmware before `tom/fnk0104b` ignored a definition's `display` mirror/swap (the LVGL
+  port re-applied its own). With the fix the picture follows `display.mirror_*`; touch has its own
+  `touch.mirror_x/mirror_y/swap_xy` and must be flipped the same way. A definition alone can be
+  rewritten with `esptool write_flash 0x310000 <definition.json>` (no firmware flash); confirm by
+  tapping the corner keys. Once OpenPager runs, the board
   reports its definition and identify ranks that board first, even if it was the wrong one.
 
 ### After flashing

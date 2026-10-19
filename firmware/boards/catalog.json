@@ -22,8 +22,7 @@
       "bridges": [
         "espressif-native"
       ],
-      "status": "unverified",
-      "note": "Definition written from Freenove's schematic; colours and orientation not yet confirmed on the board."
+      "status": "supported"
     },
     "waveshare_s3_touch_lcd_2": {
       "name": "Waveshare ESP32-S3-Touch-LCD-2 (2\")",
