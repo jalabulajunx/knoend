@@ -199,27 +199,45 @@ async function inventory() {
 // anything from this file.
 
 async function pageAction(action) {
-  const find = (selector) => { try { return document.querySelector(selector); } catch { return null; } };
+  // The first match that is on screen (pages often keep hidden copies of a control), else the first.
+  const find = (selector) => {
+    try {
+      const all = [...document.querySelectorAll(selector)];
+      return all.find((e) => e.getClientRects().length) || all[0] || null;
+    } catch { return null; }
+  };
+  // A whole press, not just "click": many web apps (Google Docs, Slides, Sheets) act on the mouse
+  // going down and up and ignore a bare click event.
+  const press = (target) => {
+    const r = target.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, composed: true, view: window, button: 0,
+                 clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    const pointer = { ...at, pointerId: 1, pointerType: "mouse", isPrimary: true };
+    target.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1 }));
+    target.dispatchEvent(new MouseEvent("mousedown", { ...at, buttons: 1 }));
+    target.dispatchEvent(new PointerEvent("pointerup", pointer));
+    target.dispatchEvent(new MouseEvent("mouseup", at));
+    target.dispatchEvent(new MouseEvent("click", at));
+  };
   if (action.kind === "element" || action.kind === "focus") {
     const el = find(action.selector);
     if (!el) return { ok: false, error: "not-found" };
     el.scrollIntoView({ block: "nearest" });
     if (action.kind === "element") {
-      // A whole press, not just "click": many web apps (Google Docs, Slides, Sheets) act on the
-      // mouse going down and up and ignore a bare click event.
-      const r = el.getBoundingClientRect();
-      const at = { bubbles: true, cancelable: true, composed: true, view: window, button: 0,
-                   clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
-      const pointer = { ...at, pointerId: 1, pointerType: "mouse", isPrimary: true };
-      el.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1 }));
-      el.dispatchEvent(new MouseEvent("mousedown", { ...at, buttons: 1 }));
-      el.dispatchEvent(new PointerEvent("pointerup", pointer));
-      el.dispatchEvent(new MouseEvent("mouseup", at));
-      el.dispatchEvent(new MouseEvent("click", at));
-    } else {
-      el.focus();
-      if (typeof el.select === "function") el.select();
+      press(el);
+      return { ok: true };
     }
+    const there = () => document.activeElement === el || el.contains(document.activeElement);
+    el.focus();
+    if (!there()) {
+      // Some sites open their search box only when it (or what holds it) is pressed.
+      let target = el;
+      while (target && !target.getClientRects().length) target = target.parentElement;
+      if (target) press(target);
+      el.focus();
+    }
+    if (!there()) return { ok: false, error: "not-focusable" };
+    if (typeof el.select === "function") el.select();
     return { ok: true };
   }
   if (action.kind === "media") {

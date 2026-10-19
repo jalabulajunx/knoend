@@ -1074,3 +1074,12 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   (classes `artdeco-button share-box-feed-entry__trigger`) -> `button.share-box-feed-entry__trigger`;
   a button with only generated classes (`x1n2onr6`) is still left out; repeated buttons sharing a
   class keep their path selectors. Not tested on LinkedIn itself (needs the extension reloaded).
+- Sundar: LinkedIn's Search key (focus `[data-testid="typeahead-input"]`) put the cursor in the box
+  on /jobs but not on /feed, though the service logged "done" each time: the focus action called
+  `focus()` and reported success without checking. Changed (`pageAction`): a selector that matches
+  several elements uses the first one on screen; when focus does not take, the box (or its nearest
+  visible parent) gets a whole mouse press and focus again (search boxes that open when pressed);
+  success only when the cursor is really there, else `not-focusable`.
+- Tested: the real `pageAction` on a local test page: plain box, a hidden copy before the visible
+  one, a box shown only after its container is pressed, a box hidden for good (`not-focusable`), a
+  missing one (`not-found`); element presses unchanged. Not tested on LinkedIn's feed.
