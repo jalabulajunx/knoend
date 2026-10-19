@@ -70,7 +70,9 @@ Rules:
 - Anything that starts a presentation, goes full screen, or opens a file picker MUST be a shortcut:
   browsers refuse those from a click made by a program.
 - Never use a selector that is not in the list. Fewer correct keys are better than guesses.
-- Any key that deletes, sends, submits, posts, pays or buys must have confirm = true.
+- Any key that deletes, sends, submits, posts, pays or buys must have confirm = true. So must every
+  key whose label, speak or action contains one of these words: buy, purchase, pay, checkout,
+  submit, send, delete, remove, erase (the library is rejected otherwise).
 - Put the most used actions first.
 - Give each key the icon that best shows its action, from the icon list only; leave icon out if
   none fits. Keep labels short (one or two words) when there is an icon."#;
@@ -203,6 +205,13 @@ mod tests {
         vec![json!({"role": "button", "name": "Compose", "selector": "[data-testid=\"compose\"]", "shortcut": "c"}),
              json!({"role": "searchbox", "name": "Search", "selector": "input[name=\"q\"]"}),
              json!({"role": "link", "name": "Inbox", "selector": "#inbox", "href": "/inbox?tab=1"})]
+    }
+
+    #[test]
+    fn prompt_names_every_word_that_needs_confirm() {
+        for word in knoend_core::library::RISKY_WORDS {
+            assert!(SYSTEM_PROMPT.contains(&format!(" {word}")), "{word} missing from the site prompt");
+        }
     }
 
     #[test]

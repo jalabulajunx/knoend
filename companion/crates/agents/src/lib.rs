@@ -62,7 +62,9 @@ Rules:
   "About the app" is given, draft for the product, version and description it names, not for a
   better-known product with the same name.
 - Any key that deletes, sends, submits, closes without saving or buys something must have
-  confirm = true.
+  confirm = true. So must every key whose label, speak or action contains one of these words:
+  buy, purchase, pay, checkout, submit, send, delete, remove, erase (the library is rejected
+  otherwise).
 - Put the most used actions first.
 - Give each key the icon that best shows its action, from the icon list only; leave icon out if
   none fits."#;
@@ -197,6 +199,13 @@ mod tests {
     }
 
     #[test]
+    fn prompt_names_every_word_that_needs_confirm() {
+        for word in knoend_core::library::RISKY_WORDS {
+            assert!(SYSTEM_PROMPT.contains(&format!(" {word}")), "{word} missing from the drafting prompt");
+        }
+    }
+
+    #[test]
     fn prompt_never_contains_the_window_title() {
         assert!(!user_prompt(&focus(), &[]).contains("secret"));
     }
@@ -282,3 +291,4 @@ mod live {
         }
     }
 }
+

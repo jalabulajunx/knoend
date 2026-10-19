@@ -1234,3 +1234,10 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - Tested on Arch Linux: workspace tests; `knoend serve` from this branch found Claude Code 2.1.283
   and agy 1.4.2, both signed in, Codex not installed (2.4 s); the board connected over Wi-Fi.
   Not tested: macOS and Windows lookups, Codex.
+- Sundar drafted MKVToolNix with Claude Code (haiku): 80 s, 2 attempts. Cause: Claude Code turns
+  on extended thinking by default (13,923 output tokens for a 1,200-character draft, 104 s when
+  timed alone; `--effort low` still 55 s). Calls now set `MAX_THINKING_TOKENS=0`, as the API
+  providers send no thinking: 5 to 8 s. The second attempt was the validator's "looks risky but has
+  no confirm": the app and site prompts now list the exact words it checks
+  (`library::RISKY_WORDS`, with a test for each prompt). Antigravity (default model) took 14 s.
+  A Haiku draft can still name a key the schema does not know ("Return"); the retry fixes it.

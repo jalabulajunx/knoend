@@ -6,7 +6,8 @@
 //! is locked down and runs in an empty folder of its own, removed afterwards. The reply is only
 //! ever read as text.
 //!   - Claude Code: no tools at all, restricted mode (no user, project or local settings, so none
-//!     of KnoEnd's own hooks fire and no plugins load), no MCP servers, no saved session.
+//!     of KnoEnd's own hooks fire and no plugins load), no MCP servers, no saved session, and no
+//!     extended thinking (as with the API providers).
 //!   - Antigravity: no switch turns its tools off, but print mode cannot ask permission, so running
 //!     commands and reading files outside its folder are refused (checked 2026-10-19, agy 1.4.2);
 //!     it may only write into the empty folder. It also runs sandboxed, with slash commands off, and
@@ -270,6 +271,9 @@ async fn run_claude(path: &Path, dir: &Path, model: Option<&str>, timeout_secs: 
         .args(claude_args(&system_file, model))
         .current_dir(dir)
         .env_remove("CLAUDECODE")
+        // No extended thinking, as with the API providers: Claude Code thinks by default, and a
+        // Haiku draft took 104 s (13,923 output tokens) with it and 5 s (532) without.
+        .env("MAX_THINKING_TOKENS", "0")
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn().map_err(|e| explain(&format!("could not start {}: {e}", path.display())))?;
