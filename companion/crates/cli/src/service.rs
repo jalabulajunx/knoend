@@ -702,7 +702,8 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     }
     let player = openpager_media::for_focus(players, &focus.app, &focus.instance);
     let mut actions: HashMap<u8, KeyRef> = HashMap::new();
-    let (mut body, mut status) = match catalog.find(focus) {
+    let found = catalog.layout_for(focus);
+    let (mut body, mut status) = match found.as_ref() {
         Some(library) => match layout::build(library, focus.os) {
             Ok(mut body) => {
                 for (key, slot) in library.keys.iter().zip(library.slots()) {

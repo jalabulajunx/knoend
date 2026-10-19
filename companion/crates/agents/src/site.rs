@@ -158,9 +158,11 @@ pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, o
     let purpose = match scope {
         Scope::Site => "These keys are for the whole site: choose what is useful on most of its pages (navigation, search, the main actions).".to_string(),
         Scope::Page { kind, site_keys } => format!(
-            "These keys are only for this kind of page ({kind}); the site already has these keys for every page: {}. \
-             Choose what this page adds; repeat a site key only if it is essential here.",
-            if site_keys.is_empty() { "none".into() } else { site_keys.join(", ") }),
+            "These keys are only for this kind of page ({kind}). The board keeps the site's own keys on every page ({}) \
+             and adds at most {} keys for this page after them: choose the {} most useful things this page adds, most useful first, \
+             and none the site keys already do. Prefer what the person starts on this page (a new post, compose, upload, a filter).",
+            if site_keys.is_empty() { "none".into() } else { site_keys.join(", ") },
+            openpager_core::catalog::PAGE_EXTRAS, openpager_core::catalog::PAGE_EXTRAS),
     };
     let prompt = format!("Website: {}\nPage: {}\nOperating system: {os}\n{purpose}\nIcon list: {}\nControls on this page:\n{}\n",
                          site_of(host), route, openpager_core::library::icon_names().join(" "), describe(items));

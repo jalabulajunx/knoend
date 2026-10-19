@@ -1053,3 +1053,13 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - His "Make keys" on the front page remade the site-wide keys (as intended); the board kept LinkedIn
   Feed's own older keys because LinkedIn's home is /feed and a page's keys win over the site's.
   Making keys once on /feed replaces those.
+- Sundar: with the focus fix the board followed Chrome, but LinkedIn's feed showed only Sort Feed,
+  Analytics, Newsletters, Events: the page draft (now without games and post buttons) replaced the
+  site's keys (Home, Search, My Network, Jobs, Messages, Notifications, Me, Saved, Groups). He wanted
+  the site's keys plus a "new post" key.
+- Changed: `Catalog::layout_for` (used by the service's `show`): on a kind of page whose keys are an
+  AI draft, the site's keys stay in their places and the page's first `PAGE_EXTRAS` (3) keys the site
+  does not already have take the last slots. Built-in and user page libraries, and full-screen ones
+  (the Slides remote), are complete layouts and stay as they are. The page draft prompt now says the
+  site keys stay, asks for the 3 most useful additions, and prefers what the person starts on that
+  page (a new post, compose, upload, a filter). Unit test with LinkedIn-like site and feed drafts.
