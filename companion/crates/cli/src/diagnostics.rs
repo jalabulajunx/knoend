@@ -137,7 +137,8 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
         "firmware_source": shared.firmware_source,
         "browser_extension_connected": shared.browser.connected(),
         "ai_provider": agent.map(|a| a.describe()),
-        "ai_tools_on_this_computer": {"claude_code": knoend_agents::cli_tool::claude_status().await},
+        "ai_tools_on_this_computer": {"claude_code": knoend_agents::cli_tool::claude_status().await,
+                                       "antigravity": knoend_agents::cli_tool::agy_status().await},
         "from_the_web_app": ui_context,
     })
 }

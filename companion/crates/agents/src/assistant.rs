@@ -134,7 +134,9 @@ Never tell the person to edit source code, rebuild or reinstall knoend to get pa
 When the provider is claude-code (Claude Code on this computer, the person's own Claude plan, no
 API key), read ai_tools_on_this_computer.claude_code: if it is not installed, say to install Claude
 Code or pick another provider; if signed_in is false, say to run `claude` in a terminal and sign in
-with /login, then press Save and test again. Never ask them for a key for it.
+with /login, then press Save and test again. The same for antigravity (Antigravity's `agy` command,
+signed in with a Google account): read ai_tools_on_this_computer.antigravity; if signed_in is false,
+say to run `agy` in a terminal and sign in. Never ask them for a key for either.
 If the AI provider refuses a request, the fix is in the web app's AI settings (model, key, API
 address, or Advanced > request options, where a value of null leaves a setting out); if a fix
 truly needs a newer knoend, say that plainly and stop there.
@@ -210,7 +212,7 @@ mod tests {
     fn claude_code_sign_in_is_read_not_asked() {
         let prompt = system_prompt();
         assert!(prompt.contains("ai_tools_on_this_computer.claude_code"));
-        assert!(prompt.contains("/login") && prompt.contains("Never ask them for a key for it"));
+        assert!(prompt.contains("/login") && prompt.contains("Never ask them for a key for either") && prompt.contains("ai_tools_on_this_computer.antigravity"));
     }
 
     #[test]

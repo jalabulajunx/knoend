@@ -260,3 +260,25 @@ action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
         assert_eq!(slug(&f), "com-anthropic-claude");
     }
 }
+
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    /// Drafts a real app library through each AI tool on this computer:
+    /// `cargo test -p knoend-agents live_draft -- --ignored --nocapture`.
+    #[tokio::test]
+    #[ignore]
+    async fn live_draft_through_tools_on_this_computer() {
+        let focus = Focus { os: Os::Linux, app: "Gnome-calculator".into(), instance: "gnome-calculator".into(), title: String::new(), web: None };
+        for provider in [Provider::ClaudeCode, Provider::Antigravity] {
+            let config = AgentConfig { provider, ..Default::default() };
+            let started = std::time::Instant::now();
+            match draft_library(&config, &focus, &[]).await {
+                Ok(draft) => println!("{provider:?}: {} keys, {} attempt(s), {:?}\n{}", draft.library.keys.len(),
+                                      draft.attempts, started.elapsed(), draft.toml),
+                Err(e) => println!("{provider:?}: error after {:?}: {e}", started.elapsed()),
+            }
+        }
+    }
+}

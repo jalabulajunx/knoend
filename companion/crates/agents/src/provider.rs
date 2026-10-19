@@ -2,8 +2,8 @@
 //!   - OpenAI-compatible chat completions: OpenAI, OpenRouter, Gemini (its OpenAI-compatible
 //!     endpoint), Ollama, and any other compatible server;
 //!   - Anthropic Messages API.
-//! and one that is not a web API: Claude Code on this computer (`cli_tool.rs`), for a person with a
-//! Claude plan but no API key.
+//! and two that are not web APIs: Claude Code and Antigravity's CLI on this computer
+//! (`cli_tool.rs`), for a person with a plan but no API key.
 //!
 //! Configuration: `~/.config/knoend/agent.toml` (provider, model, and optionally base_url,
 //! `[options]` added to every request and `omit` for parameters never to send). API keys come from
@@ -32,6 +32,8 @@ pub enum Provider {
     OpenaiCompatible,
     /// The `claude` command on this computer, signed in with the person's own account.
     ClaudeCode,
+    /// Antigravity's `agy` command on this computer, signed in with the person's own account.
+    Antigravity,
 }
 
 impl Provider {
@@ -45,6 +47,7 @@ impl Provider {
             Provider::Anthropic => "anthropic",
             Provider::OpenaiCompatible => "openai-compatible",
             Provider::ClaudeCode => "claude-code",
+            Provider::Antigravity => "antigravity",
         }
     }
 }
@@ -96,7 +99,7 @@ impl AgentConfig {
             Provider::Gemini => "https://generativelanguage.googleapis.com/v1beta/openai",
             Provider::Anthropic => "https://api.anthropic.com",
             Provider::OpenaiCompatible => return Err("openai-compatible needs base_url in agent.toml".into()),
-            Provider::ClaudeCode => "",
+            Provider::ClaudeCode | Provider::Antigravity => "",
         }.to_string())
     }
 
@@ -113,7 +116,7 @@ impl AgentConfig {
             Provider::Gemini => "GEMINI_MODEL",
             Provider::Anthropic => "ANTHROPIC_MODEL",
             // No model: Claude Code uses the one the person chose there.
-            Provider::ClaudeCode => return Ok(String::new()),
+            Provider::ClaudeCode | Provider::Antigravity => return Ok(String::new()),
         };
         if let Ok(model) = std::env::var(env) {
             if !model.is_empty() {
@@ -132,7 +135,7 @@ impl AgentConfig {
     pub fn api_key_name(&self) -> Option<String> {
         Some(match (&self.api_key_env, self.provider) {
             (Some(var), _) => var.clone(),
-            (None, Provider::Ollama | Provider::OpenaiCompatible | Provider::ClaudeCode) => return None,
+            (None, Provider::Ollama | Provider::OpenaiCompatible | Provider::ClaudeCode | Provider::Antigravity) => return None,
             (None, Provider::Openai) => "OPENAI_API_KEY".into(),
             (None, Provider::Openrouter) => "OPENROUTER_API_KEY".into(),
             (None, Provider::Gemini) => "GEMINI_API_KEY".into(),
@@ -190,11 +193,14 @@ static REJECTED: Mutex<Option<HashMap<String, Vec<String>>>> = Mutex::new(None);
 pub async fn complete(config: &AgentConfig, system: &str, messages: &[Message]) -> Result<String, String> {
     let timeout = config.timeout_secs.unwrap_or(match config.provider {
         Provider::Ollama => 900,
-        Provider::ClaudeCode => 300,
+        Provider::ClaudeCode | Provider::Antigravity => 300,
         _ => 180,
     });
     if config.provider == Provider::ClaudeCode {
         return crate::cli_tool::complete_claude(config.model.as_deref(), timeout, system, messages).await;
+    }
+    if config.provider == Provider::Antigravity {
+        return crate::cli_tool::complete_agy(config.model.as_deref(), timeout, system, messages).await;
     }
     let client = reqwest::Client::builder().timeout(Duration::from_secs(timeout)).build().map_err(|e| e.to_string())?;
     let base = config.base_url()?;
@@ -345,6 +351,9 @@ pub async fn list_models(config: &AgentConfig, key: Option<&str>) -> Result<Vec<
     if config.provider == Provider::ClaudeCode {
         // Claude Code's own short names; empty means its default.
         return Ok(["haiku", "opus", "sonnet"].map(String::from).to_vec());
+    }
+    if config.provider == Provider::Antigravity {
+        return crate::cli_tool::agy_models().await;
     }
     let client = reqwest::Client::builder().timeout(Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
     let base = config.base_url()?;

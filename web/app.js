@@ -535,19 +535,27 @@ function setMode(mode) {
 }
 document.querySelectorAll('input[name="mode"]').forEach((i) => i.addEventListener("change", () => setMode(i.value)));
 
+/** AI tools on this computer, signed in with the person's own account: what the settings say. */
+const CLI_TOOLS = {
+  "claude-code": "Uses the <code>claude</code> command signed in with your own account, with its tools switched off: it only reads the request and writes the answer. Not signed in yet? Run <code>claude</code> in a terminal and type <code>/login</code>. Leave the model empty for Claude Code's own choice.",
+  antigravity: "Uses the <code>agy</code> command signed in with your Google account. It may not run commands or read your files, and works in an empty folder that is removed afterwards. Antigravity keeps these requests in its own conversation history. Not signed in yet? Run <code>agy</code> in a terminal. Leave the model empty for Antigravity's own choice.",
+};
+
 function providerFields() {
   const provider = $("ai-provider").value;
   $("ai-base-wrap").hidden = provider !== "openai-compatible";
   $("ai-base-alt-wrap").hidden = provider === "openai-compatible";
-  $("ai-key-wrap").hidden = provider === "ollama" || provider === "claude-code";
-  $("ai-cli-note").hidden = provider !== "claude-code";
+  const tool = CLI_TOOLS[provider];
+  $("ai-key-wrap").hidden = provider === "ollama" || !!tool;
+  $("ai-cli-note").hidden = !tool;
+  $("ai-cli-note").innerHTML = tool || "";
   // No API address or request options for a command on this computer.
-  $("ai-advanced").hidden = provider === "claude-code";
+  $("ai-advanced").hidden = !!tool;
 }
 /** The API address: the main field for a generic server, the advanced one otherwise. */
 function baseUrl() {
   const provider = $("ai-provider").value;
-  if (provider === "claude-code") return null;
+  if (CLI_TOOLS[provider]) return null;
   return (provider === "openai-compatible" ? $("ai-base").value : $("ai-base-alt").value).trim() || null;
 }
 $("ai-provider").addEventListener("change", () => {

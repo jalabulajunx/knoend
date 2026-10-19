@@ -59,7 +59,7 @@
         <h2>How would you like to set up?</h2>
         <ul class="choices">
           <li><label><input type="radio" name="mode" value="ai"> <span><strong>Guided by AI <span class="badge ok-badge">Recommended</span></strong>
-            <span class="sub">If you'd rather not troubleshoot. When something goes wrong, the assistant looks at what happened and tells you the next step. Needs an API key for an AI provider, a local model, or Claude Code signed in on this computer.</span></span></label></li>
+            <span class="sub">If you'd rather not troubleshoot. When something goes wrong, the assistant looks at what happened and tells you the next step. Needs an API key for an AI provider, a local model, or Claude Code or Antigravity's CLI signed in on this computer.</span></span></label></li>
           <li><label><input type="radio" name="mode" value="manual"> <span><strong>I'll do it myself</strong>
             <span class="sub">Same steps, no AI. Errors are shown as they are; you can still ask the assistant later.</span></span></label></li>
         </ul>
@@ -72,6 +72,7 @@
                 <option value="openai">OpenAI</option>
                 <option value="openrouter">OpenRouter</option>
                 <option value="claude-code">Claude Code on this computer (your Claude plan, no key)</option>
+                <option value="antigravity">Antigravity CLI on this computer (your Google account, no key)</option>
                 <option value="ollama">Ollama (local, no key)</option>
                 <option value="openai-compatible">Other OpenAI-compatible server</option>
               </select></label>
@@ -85,7 +86,7 @@
           </div>
           <label id="ai-key-wrap">API key <span class="muted">(stored only on this computer; never shown again)</span>
             <input id="ai-key" type="password" maxlength="300"></label>
-          <p id="ai-cli-note" class="muted" hidden>Uses the <code>claude</code> command signed in with your own account, with its tools switched off: it only reads the request and writes the answer. Not signed in yet? Run <code>claude</code> in a terminal and type <code>/login</code>. Leave the model empty for Claude Code's own choice.</p>
+          <p id="ai-cli-note" class="muted" hidden></p>
           <label id="ai-base-wrap" hidden>Server URL <input id="ai-base" maxlength="200" placeholder="http://localhost:8000/v1"></label>
           <details id="ai-advanced">
             <summary>Advanced: if the test fails with a setting the model does not take</summary>

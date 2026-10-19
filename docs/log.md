@@ -1197,3 +1197,27 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - With both sides on KnoEnd (Sundar's machine and the ONX): the board connects over Wi-Fi, keys
   follow apps and sites, and a Claude Code question reached the board; Sundar's Decline came back as
   "Denied on the KnoEnd board." (hooks re-registered to `knoend`).
+
+## 2026-10-19 — AI tools on this computer as providers (Sundar + Claude Code, Opus 5.5)
+
+- Branch `sundar/cli-provider`, on top of the rename branch (#32).
+- Why: people with a Claude or Google plan but no API key. Two new providers in AI settings,
+  `claude-code` (`claude -p`) and `antigravity` (Antigravity's CLI, `agy -p`), behind the same
+  `provider::complete` as the others, so app drafts, site drafts and the setup assistant send the
+  same prompts and the replies go through the same checks (`agents/src/cli_tool.rs`).
+- Locked down, because site drafts carry text from web pages: every call runs in a new empty
+  folder, removed afterwards. Claude Code: `--restricted --tools "" --strict-mcp-config
+  --permission-prompts none --no-session-persistence --disable-slash-commands`, system prompt from a
+  file (`--bare` was rejected: it needs an API key). Antigravity has no switch for tools or a system
+  prompt: `--sandbox --disable-slash-commands`, our instructions first in the prompt, told not to
+  use tools. Checked with agy 1.4.2: print mode refuses running commands and reading files outside
+  its folder (cannot ask permission); it can write into its folder (the empty one). It keeps
+  these requests in its own conversation history (said in the web app).
+- Codex left out for now (not on Sundar's machine). Antigravity's desktop `agentapi` was rejected:
+  it starts conversations in the app with full agent powers and answers later.
+- Setup snapshot: `ai_tools_on_this_computer` (installed, signed in) for both; the assistant is told
+  to read it and never to ask for a key for these.
+- Tested on Arch Linux (X11): workspace tests; the real `claude` (2.1.283) and `agy` (1.4.2)
+  through `complete` (correct reply), the not-signed-in error for Claude Code (says to `/login`),
+  and a GNOME Calculator draft through each (valid, first attempt, about 17 s each).
+  Not yet: through the web app and service, a site draft, macOS.
