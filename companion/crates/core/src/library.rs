@@ -264,7 +264,16 @@ impl Library {
                 }
             }
         }
+        let mut numbers: Vec<u8> = self.pages.iter().map(|p| p.number).collect();
+        numbers.sort_unstable();
+        if numbers.windows(2).any(|w| w[0] == w[1]) {
+            problems.push("a page number has two [[page]] entries".to_string());
+        }
         let placed = self.placements();
+        // Agent screens are shown as one layout (the request and its answers).
+        if !self.matches.agent.is_empty() && placed.iter().flatten().any(|(page, _)| *page != 1) {
+            problems.push("an agent screen has one page: every key on page 1".to_string());
+        }
         let mut sorted = placed.clone();
         sorted.sort_unstable();
         sorted.dedup();
@@ -314,6 +323,8 @@ mod tests {
             ("library-risky-without-confirm.toml", "looks risky"),
             ("library-agent-key-in-app-layout.toml", "at /key/0/action/kind"),
             ("library-slot-past-grid.toml", "run past the grid"),
+            ("library-duplicate-page.toml", "two [[page]] entries"),
+            ("library-agent-two-pages.toml", "agent screen has one page"),
         ];
         for (name, expected) in cases {
             let text = fs::read_to_string(examples().join("invalid").join(name)).unwrap();

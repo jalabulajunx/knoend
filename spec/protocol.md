@@ -345,7 +345,7 @@ punctuation keys by US-layout position: `Backquote`, `Minus`, `Equal`, `BracketL
 action looks like buy/submit/send/delete without it.
 
 **Grid and pages.** `grid = "2x2"` in `[pack]` (cols x rows, 1-4 each; default `"3x3"`) sets the
-grid of every page; a `[[page]]` entry overrides it for one page. A key's `page` (1-8, default 1) and
+grid of every page; a `[[page]]` entry overrides it for one page (one entry per page number). A key's `page` (1-8, default 1) and
 `slot` (1 to cols×rows of its page) are optional: a key with neither takes the next free slot,
 running onto the next page when one is full; a key with only `page` takes the next free slot on
 that page. At most 64 keys. On a board whose `grid` is smaller, the companion splits each page onto
@@ -395,7 +395,7 @@ for that state: which slot holds which answer (`agent` actions), labels, icons. 
 what changes per request: the explanation panel, the agent's options on `reply = "option"` keys (in
 order; spare ones are hidden), `always` only when the agent offers a rule to remember, `done` only on
 several-choice questions, and a second tap on allow/always for commands that look destructive. Agent
-screens use `grid = "3x3"`: the explanation panel needs three rows. A user
+screens use `grid = "3x3"` (the explanation panel needs three rows) and have one page. A user
 library with the same `match.agent` replaces the built-in screen. An `agent` key in a library without
 `match.agent` is rejected (it would do nothing there).
 

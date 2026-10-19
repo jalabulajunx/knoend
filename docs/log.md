@@ -996,6 +996,13 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   big-key tap was seen before icons were kept at 32 px (no backtrace captured; none since).
 - Found: opening the Freenove's USB-Serial-JTAG port resets it (`rst:0x15 USB_UART_CHIP_RESET`)
   even with DTR and RTS held low.
+- Changed after the first board photos: a label under an icon takes two lines where they fit (3x3:
+  lines 2 px closer, text into the icon's empty 3 px margin, 59 of 61 px), else one line with "...".
+  Checked with the Mac's camera: VS Code's "Source control" on two lines, the other keys unchanged.
+- Codex review (gpt-6.1-sol, xhigh) found two validation gaps, both fixed in both validators with an
+  invalid example each: an agent screen with keys on page 2 passed but is drawn as one layout (both
+  answers on slot 1, board rejects it), now rejected; two `[[page]]` entries for one page number were
+  read differently by Rust (first) and Python (last), now rejected.
 - Tried and removed: page buttons in the dashboard. Clicking them focuses the browser, so the board
   showed the browser's keys and the buttons turned those.
 - Open (Tom, next task): an edit mode in the web app: pick any app the board knows, see its pages,

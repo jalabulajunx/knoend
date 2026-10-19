@@ -122,9 +122,14 @@ def check_library(path):
     data = tomllib.loads(path.read_text())
     errors = [e.message for e in LIBRARY.iter_errors(data)]
     if not errors:
+        numbers = [p["number"] for p in data.get("page", [])]
+        if len(numbers) != len(set(numbers)):
+            errors.append("a page number has two [[page]] entries")
         placed = placements(data)
         if None in placed or len(placed) != len(set(placed)):
             errors.append("key slots collide or run past the grid")
+        if "agent" in data["match"] and any(p and p[0] != 1 for p in placed):
+            errors.append("an agent screen has one page: every key on page 1")
         errors += risky_without_confirm(
             data["key"], lambda k: " ".join([k["label"], k.get("speak", ""), json.dumps(k["action"])]))
     return errors

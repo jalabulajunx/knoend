@@ -1,0 +1,22 @@
+# Page 1 has two [[page]] entries: which grid applies would be ambiguous.
+[pack]
+id = "user.duplicate-page"
+name = "Duplicate page"
+version = "0.1.0"
+source = "user"
+
+[[page]]
+number = 1
+grid = "1x1"
+
+[[page]]
+number = 1
+grid = "4x4"
+
+[match]
+linux = ["example"]
+
+[[key]]
+slot = 16
+label = "Save"
+action = { kind = "shortcut", keys = "Primary+S" }
