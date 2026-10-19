@@ -956,3 +956,28 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   keys; the tapped option came back as Claude's answer.
 - Note: with auto-approval on, Claude Code asks nothing, so nothing reaches the board.
 - Not tested on macOS: "Go to Claude" (cloud sessions), the LaunchAgent.
+
+## 2026-10-18 - Sundar (Claude Code) - Change Wi-Fi over USB (#17, first part)
+
+- Decided (Sundar): #17 starts with "Change Wi-Fi" over USB, which covers every case including a
+  computer that already moved to the new network. The cable-free route (a paired computer sending
+  the network, encrypted with a key from the pairing key, with a confirm tap on the board) and a
+  Bluetooth route for a board whose network is gone are later steps; both change `spec/`.
+- Changed:
+  - `provision::change_wifi`: identity, then the new network over serial and wait to join (30 s),
+    without pairing again; says so when the board is not paired with this computer. The join wait is
+    shared with setup (`join_wifi`); its error now names the board's last `WIFI disconnected` line.
+  - `POST /api/wifi/change` {port, ssid, password} (name 1-32 bytes, password up to 64).
+  - Web app: "Change Wi-Fi" on the dashboard's Board card opens the wizard as two steps (Find the
+    board, Wi-Fi: the same scan-and-pick screen as setup); the Set up tab restores the full wizard.
+    The assistant gets a `change_wifi` action and the wizard task in its context.
+  - Knowledge: "Board worked, then stopped connecting after the router changed" -> Change Wi-Fi.
+  - No firmware change: the board already applies a new network from `openpager.wifi` over serial
+    and keeps its pairings (`link_wifi_set_credentials`).
+- Tested: unit tests (assistant prompt carries the action and the knowledge entry); a separate copy
+  of the service (empty config, own sockets, port 7399) in the browser pane: the dashboard button,
+  the two-step wizard, the board's real Wi-Fi scan over USB (ONX, lists networks), the API's errors
+  (missing port 502, blank name 400), and the switch back to the full setup wizard (a bug where
+  steps 2-3 stayed hidden was found and fixed: `step()` rewrites class names). Not tested: an actual
+  change of network (needs the person's Wi-Fi password).
+- Sundar changed the board's Wi-Fi with it on the ONX (2026-10-18): worked.

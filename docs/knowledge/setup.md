@@ -119,6 +119,13 @@ C3, C6) are not supported.
 - **Board never joins Wi-Fi.** The ESP32-S3 joins **2.4 GHz only**; a 5 GHz-only network, or a band
   steering router that hides 2.4 GHz, will fail (`WIFI disconnected reason=201` = network not found;
   reason 15 or 204 = wrong password). Captive-portal networks (hotels, offices) do not work.
+- **Board worked, then stopped connecting after the router changed** (new router, new Wi-Fi
+  password, moved house): the board keeps retrying the network it knows (`WIFI disconnected
+  reason=201` network not found, 15 or 204 wrong password). Fix: plug it in with USB and use
+  **Change Wi-Fi** on the dashboard (or the assistant's Change Wi-Fi button): pick the new network;
+  pairing and settings stay. Pair again is not needed, and erasing is never needed for this. Over
+  USB only for now (the board takes Wi-Fi details only over the cable), which also covers a
+  computer that already moved to the new network. Confirmed from the code 2026-10-18.
 - **Companion cannot find the board** although it joined: mDNS (`_openpager._tcp`) is blocked
   between the computer and the board (guest networks, client isolation, some mesh systems, a VPN
   on the computer). Same network, not a guest one; disconnect the VPN.

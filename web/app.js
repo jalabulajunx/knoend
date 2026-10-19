@@ -39,7 +39,10 @@ function show(view) {
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.view === view));
   if (view === "setup" && setup.step === 1) scanPorts();
 }
-document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
+  if (b.dataset.view === "setup" && setup.task !== "setup") { setTask("setup"); step(1); }
+  show(b.dataset.view);
+}));
 document.addEventListener("click", (e) => {
   const go = e.target.closest("[data-goto]");
   if (go) { e.preventDefault(); show(go.dataset.goto); }
@@ -127,7 +130,36 @@ function connectEvents() {
 
 // ---- setup wizard ----
 
-const setup = { step: 1, port: null, board: null, firmware: null, identified: null, mode: null };
+const setup = { step: 1, port: null, board: null, firmware: null, identified: null, mode: null, task: "setup" };
+
+/**
+ * The wizard does two jobs: set up a board (find, firmware, install, pair and Wi-Fi), or move a
+ * board that is already set up to another Wi-Fi network (find, Wi-Fi): over USB, keeping its
+ * pairings, so it works when the board cannot reach its old network.
+ */
+function setTask(task) {
+  setup.task = task;
+  const wifi = task === "wifi";
+  // Firmware and Install are not part of changing Wi-Fi (step() rewrites the class names, so by number).
+  document.querySelectorAll('.steps li[data-step="2"], .steps li[data-step="3"]').forEach((el) => (el.hidden = wifi));
+  $("mode-card").hidden = wifi;
+  $("step4-name").textContent = wifi ? "Wi-Fi" : "Pair and Wi-Fi";
+  $("step4-title").textContent = wifi ? "Change Wi-Fi" : "Pair and Wi-Fi";
+  $("step4-intro").textContent = wifi
+    ? "Pick the network the board should use from now on. Its pairing with this computer and its settings stay as they are; the password goes to the board over the cable only and is not stored here."
+    : "The board and this computer agree on a secret key over the cable. Wi-Fi lets the board work away from the desk; your password goes to the board over the cable only and is not stored here.";
+  $("step4-submit").textContent = wifi ? "Change Wi-Fi" : "Pair";
+  $("step4-back").dataset.back = wifi ? "1" : "3";
+  $("identify").textContent = wifi ? "Next" : "Identify";
+  $("pair-log").replaceChildren();
+  $("pair-done").hidden = true;
+}
+
+$("change-wifi").addEventListener("click", () => {
+  setTask("wifi");
+  step(1);
+  show("setup");
+});
 
 function step(n) {
   setup.step = n;
@@ -249,6 +281,7 @@ function noPortAdvice(d, os, wch) {
 }
 
 $("identify").addEventListener("click", async () => {
+  if (setup.task === "wifi") { step(4); scanWifi(); return; }
   const status = $("identify-status");
   status.hidden = false;
   status.className = "note";
@@ -452,6 +485,23 @@ $("pair-form").addEventListener("submit", async (e) => {
   const ssid = (chosenNetwork && chosenNetwork !== "other" ? chosenNetwork.ssid : $("ssid").value).trim();
   const password = $("password").value;
   const button = e.submitter;
+  if (setup.task === "wifi") {
+    if (!ssid) { logTo($("pair-log"), "Pick a network, or type its name under Other network.", "error"); return; }
+    button.disabled = true;
+    logTo($("pair-log"), `Sending "${ssid}" to the board over USB...`);
+    try {
+      const result = await api("/wifi/change", { port: setup.port, ssid, password });
+      logTo($("pair-log"), `Board ${result.board} joined "${ssid}"${result.ip ? ` as ${result.ip}` : ""}. It keeps its pairing; this computer finds it again on that network.`);
+      $("pair-done").hidden = false;
+    } catch (err) {
+      logTo($("pair-log"), `Could not change Wi-Fi: ${err.message}`, "error");
+      autoAssist(`Changing the board's Wi-Fi failed: ${err.message}`);
+    } finally {
+      $("password").value = "";
+      button.disabled = false;
+    }
+    return;
+  }
   button.disabled = true;
   logTo($("pair-log"), "Pairing over USB...");
   try {
@@ -650,7 +700,8 @@ const ACTIONS = {
   identify: ["Identify the board", () => { step(1); $("identify").click(); }],
   install: ["Install", () => { if (setup.board) { $("erase").checked = false; $("install").click(); } else step(1); }],
   install_erase: ["Erase and install", () => { if (setup.board) { $("erase").checked = true; $("install").click(); } else step(1); }],
-  pair: ["Go to pairing", () => { step(4); scanWifi(); }],
+  pair: ["Go to pairing", () => { setTask("setup"); step(4); scanWifi(); }],
+  change_wifi: ["Change Wi-Fi", () => { setTask("wifi"); step(1); show("setup"); }],
   dashboard: ["Open the dashboard", () => show("dashboard")],
   open_accessibility_settings: ["Open Accessibility settings", () => openOnMac("accessibility_settings")],
   open_driver_settings: ["Open Driver Extensions", () => openOnMac("driver_settings")],
@@ -770,7 +821,7 @@ async function ask(question, error) {
   $("advice-text").textContent = "Thinking...";
   $("advice-actions").replaceChildren();
   $("advice-fix").hidden = true;
-  const context = { wizard_step: setup.step, port: setup.port, chosen_board: setup.board,
+  const context = { wizard_task: setup.task, wizard_step: setup.step, port: setup.port, chosen_board: setup.board,
                     identify_result: setup.identified, error: error || null, setup_mode: setup.mode,
                     ai_models_available: models.slice(0, 200) };
   try {

@@ -13,7 +13,7 @@ use crate::provider::{self, AgentConfig, Message};
 const KNOWLEDGE: &str = include_str!("../../../../docs/knowledge/setup.md");
 
 /// Actions the web app can offer as buttons.
-pub const ACTIONS: &[&str] = &["rescan", "identify", "install", "install_erase", "pair", "dashboard",
+pub const ACTIONS: &[&str] = &["rescan", "identify", "install", "install_erase", "pair", "change_wifi", "dashboard",
                                 "open_accessibility_settings", "open_driver_settings", "install_usb_driver"];
 
 #[derive(Debug, Clone, Serialize)]
@@ -98,7 +98,9 @@ Reply with ONLY a JSON object, no code fences:
 {{"answer": "<your reply to the person>", "actions": [<zero or more of: {actions}>], "fix": <optional, see below>}}
 Actions are buttons the person can press in the setup wizard: "rescan" (look for ports again),
 "identify" (ask the board what it is; restarts it briefly), "install" (install the firmware),
-"install_erase" (erase first, then install), "pair" (pair over USB and give it Wi-Fi), "dashboard".
+"install_erase" (erase first, then install), "pair" (pair over USB and give it Wi-Fi), "change_wifi"
+(move a board that is already set up to another network over USB, keeping its pairing; for a new
+router, a changed password or another place), "dashboard".
 On macOS only: "open_accessibility_settings" (opens Privacy & Security > Accessibility, where the
 person switches on the app named in system_checks.accessibility.app_to_allow), "open_driver_settings"
 (opens Login Items & Extensions, where the person switches on a driver under Driver Extensions), and
@@ -198,6 +200,14 @@ mod tests {
         assert!(prompt.contains("system_checks.desktop_session"));
         assert!(prompt.contains("X11 (Xorg) session at login"));
         assert!(prompt.contains("GNOME on Xorg"), "the knowledge entry is in the prompt");
+    }
+
+    #[test]
+    fn change_wifi_is_offered_for_a_moved_board() {
+        let prompt = system_prompt();
+        assert!(prompt.contains("\"change_wifi\""));
+        assert!(prompt.contains("router changed"), "the knowledge entry is in the prompt");
+        assert_eq!(parse(r#"{"answer": "Plug it in.", "actions": ["change_wifi"]}"#).actions, vec!["change_wifi"]);
     }
 
     #[test]

@@ -55,6 +55,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/flash", post(flash))
         .route("/provision", post(provision))
         .route("/wifi/scan", post(wifi_scan))
+        .route("/wifi/change", post(wifi_change))
         .route("/drafts", get(drafts))
         .route("/ai", get(ai_settings).post(save_ai_settings))
         .route("/ai/models", post(ai_models))
@@ -410,6 +411,30 @@ async fn ai_models(Json(request): Json<ModelsRequest>) -> ApiResult {
 }
 
 /// Wi-Fi networks the board on this port can hear.
+#[derive(Deserialize)]
+struct WifiChangeRequest {
+    port: String,
+    ssid: String,
+    #[serde(default)]
+    password: String,
+}
+
+/// Moves a board to another Wi-Fi network over USB, keeping its pairings.
+async fn wifi_change(State(app): State<App>, Json(request): Json<WifiChangeRequest>) -> ApiResult {
+    let ssid = request.ssid.trim().to_string();
+    if ssid.is_empty() || ssid.len() > 32 || request.password.len() > 64 {
+        return Err(fail(StatusCode::BAD_REQUEST, "a network name of 1-32 bytes (and a password up to 64) is needed"));
+    }
+    let _serial = app.shared.serial.clone().try_lock_owned()
+        .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;
+    let shared = app.shared.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        crate::provision::change_wifi(&request.port, &ssid, &request.password, &mut |line| shared.emit("provision", json!({"text": line})))
+    }).await.map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let done = result.map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(serde_json::to_value(done).unwrap_or_default()))
+}
+
 async fn wifi_scan(State(app): State<App>, Json(request): Json<PortRequest>) -> ApiResult {
     let _serial = app.shared.serial.clone().try_lock_owned()
         .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;

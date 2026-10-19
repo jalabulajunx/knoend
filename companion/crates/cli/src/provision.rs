@@ -88,6 +88,32 @@ pub fn provision(port: &str, wifi: Option<(&str, &str)>, log: &mut dyn FnMut(Str
     let Some((ssid, password)) = wifi else {
         return Ok(Provisioned { board, profile, firmware, ip: None });
     };
+    let ip = join_wifi(&mut link, ssid, password, log)?;
+    Ok(Provisioned { board, profile, firmware, ip })
+}
+
+/// Moves the board on `port` to another Wi-Fi network (new router, new password, another house)
+/// and keeps everything else: its pairings with computers and its settings. Over USB serial,
+/// like setup, so it works when the board cannot reach its old network.
+pub fn change_wifi(port: &str, ssid: &str, password: &str, log: &mut dyn FnMut(String)) -> Result<Provisioned, String> {
+    let pairings = Pairings::load();
+    let mut link = SerialLink::open(port)?;
+    settle(&mut link);
+    let identity = ask(&mut link, "openpager.identity", hello(&pairings), "openpager.identity", Duration::from_secs(3))?;
+    let board = identity.body["deviceId"].as_str().ok_or("board sent no deviceId")?.to_string();
+    let profile = identity.body["board"]["profile"].as_str().unwrap_or("?").to_string();
+    let firmware = identity.body["firmware"].as_str().unwrap_or("?").to_string();
+    log(format!("Board {board} ({profile}, firmware {firmware}) answered"));
+    if !pairings.boards.contains_key(&board) {
+        log("This board is not paired with this computer: its Wi-Fi changes, but use Set up > Pair to have it follow this computer".into());
+    }
+    let ip = join_wifi(&mut link, ssid, password, log)?;
+    Ok(Provisioned { board, profile, firmware, ip })
+}
+
+/// Sends the network name and password and waits for the board to join (30 s). The password is
+/// never passed to `log`.
+fn join_wifi(link: &mut SerialLink, ssid: &str, password: &str, log: &mut dyn FnMut(String)) -> Result<Option<String>, String> {
     let ack = link.request("openpager.wifi", json!({"ssid": ssid, "password": password}),
                            "openpager.wifi.ack", Duration::from_secs(3))?;
     if ack.body["ok"] != true {
@@ -98,6 +124,7 @@ pub fn provision(port: &str, wifi: Option<(&str, &str)>, log: &mut dyn FnMut(Str
     // A board that already had Wi-Fi only reports its address again (its services are already up),
     // so an address counts as success after a short grace for the "services up" line.
     let mut ip = None;
+    let mut last_failure = None;
     let mut deadline = Instant::now() + Duration::from_secs(30);
     while let Some(left) = deadline.checked_duration_since(Instant::now()) {
         let Some(line) = link.read_line(left) else { break };
@@ -107,15 +134,17 @@ pub fn provision(port: &str, wifi: Option<(&str, &str)>, log: &mut dyn FnMut(Str
             deadline = Instant::now() + Duration::from_secs(3);
         } else if line.starts_with("WIFI disconnected") {
             log(format!("Board: {line}"));
+            last_failure = Some(line);
         } else if line.starts_with("WIFI services up") {
             log("Board is reachable on Wi-Fi".into());
-            return Ok(Provisioned { board, profile, firmware, ip });
+            return Ok(ip);
         }
     }
     if ip.is_some() {
-        return Ok(Provisioned { board, profile, firmware, ip });
+        return Ok(ip);
     }
-    Err("the board did not join Wi-Fi within 30 s (check the network name and password; 2.4 GHz only)".into())
+    Err(format!("the board did not join \"{ssid}\" within 30 s{} (check the network name and password; 2.4 GHz only)",
+                last_failure.map(|f| format!("; last: {f}")).unwrap_or_default()))
 }
 
 /// Networks the board on `port` can hear (it scans; 2.4 GHz only). Over serial only.
