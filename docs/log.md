@@ -956,3 +956,28 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   keys; the tapped option came back as Claude's answer.
 - Note: with auto-approval on, Claude Code asks nothing, so nothing reaches the board.
 - Not tested on macOS: "Go to Claude" (cloud sessions), the LaunchAgent.
+
+## 2026-10-18 - Sundar (Claude Code) - Antigravity recipes; drafts told which product an app is
+
+- Sundar: xed's AI keys work (promoted to `recipes/apps/xed.toml`, tested Linux, Sundar). Antigravity
+  got the wrong keys: there are two products, the Antigravity IDE (VS Code-based, 1.107, window class
+  `antigravity-ide`) and the Antigravity agent desktop app (2.23.1, "Agentic Desktop Application",
+  class `antigravity`, like Claude or Codex). The draft matched the right window but the model, told
+  only the name, wrote the IDE's shortcuts (Quick Open, Command Palette, Terminal).
+- Changed:
+  - `recipes/apps/antigravity.toml` (agent app): New Chat Ctrl+N, Chats Ctrl+K, Type Ctrl+L, Prev/Next
+    Chat Alt+Up/Down, Find File Ctrl+P, New Window Ctrl+Shift+N, Close Esc. Sources: the "Navigation
+    shortcuts" of antigravity.google/docs/getting-started (desktop app section) and the app's own
+    menu code (New Window). Untested (no `tested` entry yet). As a built-in recipe it outranks the
+    local AI draft for the same window.
+  - `recipes/apps/antigravity-ide.toml`: the draft's IDE keys, matched to `antigravity-ide`. Untested.
+  - Drafting: `app_facts::about` (Linux) finds the window's process (`_NET_WM_PID`,
+    `openpager_focus::window_pid`) and tells the drafting agent the program file name and, for
+    Electron apps, the package's name, version and description (`resources/app.asar` read directly,
+    or `resources/app/product.json` for VS Code-style apps). No paths are sent. Prompt rule: products
+    can share a name; draft for the one "About the app" names.
+- Tested: unit tests (prompt carries the facts and the rule; VS Code-style and asar packages are
+  described, with a hand-built asar); a one-off check on this machine read "Antigravity 2.23.1:
+  Antigravity - Agentic Desktop Application" and "Claude 2.7032.0: Desktop application for Claude.ai"
+  from the running windows. Not yet: the Antigravity keys on the board (Sundar's board still showed
+  the draft: the running service predates this branch).

@@ -106,6 +106,26 @@ pub fn bring_to_front(names: &[&str]) -> Result<(), String> {
     conn.flush().map_err(|e| e.to_string())
 }
 
+/// The process id of the first window of the app called any of `names` (EWMH `_NET_WM_PID`), so
+/// its program can be looked at. None when no window has one.
+pub fn window_pid(names: &[&str]) -> Option<u32> {
+    let (conn, screen) = x11rb::connect(None).ok()?;
+    let root = conn.setup().roots[screen].root;
+    let atom = |name: &str| conn.intern_atom(false, name.as_bytes()).ok()?.reply().ok().map(|r| r.atom);
+    let (clients, pid) = (atom("_NET_CLIENT_LIST")?, atom("_NET_WM_PID")?);
+    let list = conn.get_property(false, root, clients, AtomEnum::WINDOW, 0, 4096).ok()?.reply().ok()?;
+    let windows: Vec<Window> = list.value32()?.collect();
+    windows.into_iter().find_map(|w| {
+        let class = conn.get_property(false, w, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 256).ok()?.reply().ok()?;
+        let mut parts = class.value.split(|&b| b == 0).map(|p| String::from_utf8_lossy(p).to_string());
+        let (instance, class) = (parts.next().unwrap_or_default(), parts.next().unwrap_or_default());
+        if !names.iter().any(|n| class.eq_ignore_ascii_case(n) || instance.eq_ignore_ascii_case(n)) {
+            return None;
+        }
+        conn.get_property(false, w, pid, AtomEnum::CARDINAL, 0, 1).ok()?.reply().ok()?.value32()?.next()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::class_matches;

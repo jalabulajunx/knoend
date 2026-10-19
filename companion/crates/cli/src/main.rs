@@ -13,6 +13,7 @@
 //! A browser that starts this binary as its native messaging host (spec/browser.md) gets the host.
 
 mod agent_hooks;
+mod app_facts;
 mod background;
 mod launcher;
 mod browser;
@@ -278,7 +279,9 @@ pub fn agent_config() -> Result<AgentConfig, String> {
 pub async fn configure(focus: &Focus, save: bool) -> Result<(PathBuf, Library), String> {
     let config = agent_config()?;
     let started = std::time::Instant::now();
-    let draft = openpager_agents::draft_library(&config, focus).await?;
+    let target = focus.clone();
+    let about = tokio::task::spawn_blocking(move || app_facts::about(&target)).await.unwrap_or_default();
+    let draft = openpager_agents::draft_library(&config, focus, &about).await?;
     let path = service::ai_libraries().join(format!("{}.toml", openpager_agents::slug(focus)));
     println!("  drafted by {} in {:.1} s ({} attempt{}), {} keys",
              config.describe(), started.elapsed().as_secs_f32(), draft.attempts,
