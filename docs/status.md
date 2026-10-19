@@ -45,8 +45,7 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 
 - GT911 touch, display start-up commands, active-high reset; the ESP32-S3-BOX-3 and Waveshare
   ESP32-S3-Touch-LCD-2 definitions (status "unverified").
-- macOS: site icons,
-  Claude Code hooks, LaunchAgent. Compiled in CI only.
+- macOS: site icons, "Go to Claude", LaunchAgent. Compiled in CI only.
 - The assistant's macOS buttons (open Accessibility, open Driver Extensions, install WCH's USB
   driver after Apple's notarization check), `cli/src/macos_help.rs`: the same steps were done by
   hand on 2026-10-17; the buttons themselves have not been pressed yet.
