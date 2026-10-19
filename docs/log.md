@@ -947,3 +947,12 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - Tested (Freenove FNK0104B, macOS 26.6): desktop click -> launcher with the apps' own icons
   (Spotlight/`plutil`/`sips` worked, no errors); taps opened Firefox, VS Code and Finder; a Finder
   window shows Finder's Configure key; switching apps follows as before.
+
+## 2026-10-18 - Tom (Claude Code) - Claude Code on the board works on macOS
+
+- Tested (Freenove FNK0104B, macOS 26.6, `openpager claude-hooks install`, new VS Code Claude Code
+  session with manual approval): permission requests appeared on the board; Deny and then Allow
+  from the board reached Claude. A question (AskUserQuestion, four options) showed its options on the
+  keys; the tapped option came back as Claude's answer.
+- Note: with auto-approval on, Claude Code asks nothing, so nothing reaches the board.
+- Not tested on macOS: "Go to Claude" (cloud sessions), the LaunchAgent.
