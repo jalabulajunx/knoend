@@ -120,14 +120,19 @@ pub fn grid_for(keys: usize) -> &'static str {
 }
 
 /// Sets the draft's grid from its key count, in order on one page: the model does not place keys.
-/// Keys past 16 run onto a second page.
+/// Keys past 16 run onto a second page. An icon not in the icon list is left out (icons are
+/// optional; the label shows instead), so one made-up icon name does not cost the whole draft.
 pub(crate) fn fit_grid(value: &mut toml::Table) {
     value.remove("page");
+    let icons = knoend_core::library::icon_names();
     let keys = match value.get_mut("key").and_then(toml::Value::as_array_mut) {
         Some(keys) => {
             for key in keys.iter_mut().filter_map(toml::Value::as_table_mut) {
                 key.remove("page");
                 key.remove("slot");
+                if key.get("icon").and_then(toml::Value::as_str).is_some_and(|i| !icons.contains(&i)) {
+                    key.remove("icon");
+                }
             }
             keys.len()
         }
@@ -196,6 +201,24 @@ mod tests {
 
     fn focus() -> Focus {
         Focus { os: Os::Linux, app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), title: "secret title".into(), web: None }
+    }
+
+    #[test]
+    fn unknown_icons_are_left_out() {
+        let mut value: toml::Table = toml::from_str(r#"
+[pack]
+id = "x"
+[[key]]
+label = "Stats"
+icon = "bar_chart"
+[[key]]
+label = "Find"
+icon = "search"
+"#).unwrap();
+        fit_grid(&mut value);
+        let keys = value["key"].as_array().unwrap();
+        assert!(keys[0].get("icon").is_none(), "made-up icon dropped");
+        assert_eq!(keys[1]["icon"].as_str(), Some("search"));
     }
 
     #[test]

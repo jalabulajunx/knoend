@@ -1,0 +1,163 @@
+# KDE Okular (documents). Drafted by the KnoEnd configure agent (antigravity/gemini-3.8-flash-low)
+# on Linux, then used and kept by Sundar. Tested on Linux only.
+
+[[key]]
+icon = "folder_open"
+label = "Open"
+speak = "Open document"
+
+[key.action]
+keys = "Primary+O"
+kind = "shortcut"
+
+[[key]]
+icon = "search"
+label = "Find"
+speak = "Find in document"
+
+[key.action]
+keys = "Primary+F"
+kind = "shortcut"
+
+[[key]]
+icon = "chevron_right"
+label = "Next"
+speak = "Next page"
+
+[key.action]
+keys = "PageDown"
+kind = "shortcut"
+
+[[key]]
+icon = "chevron_left"
+label = "Previous"
+speak = "Previous page"
+
+[key.action]
+keys = "PageUp"
+kind = "shortcut"
+
+[[key]]
+icon = "first_page"
+label = "First"
+speak = "First page"
+
+[key.action]
+keys = "Home"
+kind = "shortcut"
+
+[[key]]
+icon = "last_page"
+label = "Last"
+speak = "Last page"
+
+[key.action]
+keys = "End"
+kind = "shortcut"
+
+[[key]]
+icon = "zoom_in"
+label = "Zoom In"
+speak = "Zoom in"
+
+[key.action]
+keys = "Primary+Equal"
+kind = "shortcut"
+
+[[key]]
+icon = "zoom_out"
+label = "Zoom Out"
+speak = "Zoom out"
+
+[key.action]
+keys = "Primary+Minus"
+kind = "shortcut"
+
+[[key]]
+icon = "slideshow"
+label = "Presentation"
+speak = "Start presentation mode"
+
+[key.action]
+keys = "Primary+Shift+P"
+kind = "shortcut"
+
+[[key]]
+icon = "fullscreen"
+label = "Fullscreen"
+speak = "Toggle full screen"
+
+[key.action]
+keys = "Primary+Shift+F"
+kind = "shortcut"
+
+[[key]]
+icon = "arrow_back"
+label = "Back"
+speak = "Navigate back"
+
+[key.action]
+keys = "Alt+Left"
+kind = "shortcut"
+
+[[key]]
+icon = "arrow_forward"
+label = "Forward"
+speak = "Navigate forward"
+
+[key.action]
+keys = "Alt+Right"
+kind = "shortcut"
+
+[[key]]
+icon = "bookmark"
+label = "Bookmark"
+speak = "Add bookmark"
+
+[key.action]
+keys = "Primary+B"
+kind = "shortcut"
+
+[[key]]
+icon = "print"
+label = "Print"
+speak = "Print document"
+
+[key.action]
+keys = "Primary+P"
+kind = "shortcut"
+
+[[key]]
+icon = "refresh"
+label = "Reload"
+speak = "Reload document"
+
+[key.action]
+keys = "F5"
+kind = "shortcut"
+
+[[key]]
+icon = "close"
+label = "Close"
+speak = "Close document"
+
+[key.action]
+keys = "Primary+W"
+kind = "shortcut"
+
+[match]
+linux = ["okular"]
+
+[pack]
+description = "Default navigation, viewing, and presentation shortcuts for Okular."
+grid = "4x4"
+id = "builtin.okular"
+name = "Okular"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-19"
+note = "Arch Linux, i3 (X11); every key tried"

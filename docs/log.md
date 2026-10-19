@@ -1249,3 +1249,8 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   used `input[type='search']`, not in the page's list, twice. The retry now says what to do
   (remove those keys or copy a selector from the list), and on the last try such keys are dropped
   and the rest kept (`site::without_keys`, with a test).
+- cricinfo.com again (haiku): the site and the series-match pages drafted (the second after one
+  retry); the series page failed twice on a made-up icon ("bar_chart"). Drafts now leave out icons
+  not in the icon list (`fit_grid`, for apps and sites; the label shows instead), with a test.
+- Okular promoted to `recipes/apps/okular.toml` with Sundar's Linux `tested` entry. His generic
+  MKVToolNix draft moved to the trash, so Configure drafts it again.
