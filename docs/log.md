@@ -935,6 +935,28 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - Sundar's photo ([`images/2026-10-18-onx-pr21-mirror.jpg`](images/2026-10-18-onx-pr21-mirror.jpg)):
   picture the same as before (text upright, keys in order, status line at the bottom). Taps were not
   checked key by key; the ONX touch settings are unchanged by the PR. Merged at Sundar's request.
+## 2026-10-18 - Tom (Claude Code) - Launcher works on macOS
+
+- Changed (branch `tom/macos-launcher`): `focus/src/macos.rs` asks the Accessibility API for the
+  focused app and its focused window (the permission typing already needs). A click on the desktop
+  now counts as "nothing focused" and shows the launcher: the window list kept the last app's window
+  in front, so the board never changed. On the desktop Finder's focused "window" has the role
+  `AXScrollArea`; only `AXWindow` counts as a window. The Dock (focused for a moment on a Dock click)
+  is skipped (Tom confirmed: Dock clicks no longer add "dock" to the launcher). Without the
+  permission the window list is used as before.
+- Tested (Freenove FNK0104B, macOS 26.6): desktop click -> launcher with the apps' own icons
+  (Spotlight/`plutil`/`sips` worked, no errors); taps opened Firefox, VS Code and Finder; a Finder
+  window shows Finder's Configure key; switching apps follows as before.
+
+## 2026-10-18 - Tom (Claude Code) - Claude Code on the board works on macOS
+
+- Tested (Freenove FNK0104B, macOS 26.6, `openpager claude-hooks install`, new VS Code Claude Code
+  session with manual approval): permission requests appeared on the board; Deny and then Allow
+  from the board reached Claude. A question (AskUserQuestion, four options) showed its options on the
+  keys; the tapped option came back as Claude's answer.
+- Note: with auto-approval on, Claude Code asks nothing, so nothing reaches the board.
+- Not tested on macOS: "Go to Claude" (cloud sessions), the LaunchAgent.
+
 ## 2026-10-18 - Sundar (Claude Code) - Change Wi-Fi over USB (#17, first part)
 
 - Decided (Sundar): #17 starts with "Change Wi-Fi" over USB, which covers every case including a
