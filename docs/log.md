@@ -1024,3 +1024,20 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   sends the active tab as focused (the person is using our popup in this browser), then the request.
 - Tested: `node --check`, extension rebuilt for both browsers. Not tested: Chrome with the fix (needs
   the extension reloaded in Sundar's Chrome).
+- Sundar tried it: the fix works (every click reached the AI). His service log showed three more
+  problems on linkedin.com:
+  1. Bug: the site-wide draft (Search, Home, Messages, Alerts, Network, Jobs, Saved, Groups, Events)
+     was overwritten. On the front page the background drafter treated "/" as a new kind of page,
+     and `page_id(host, "/")` equals the site-wide id, so its draft replaced the site's keys.
+     Fixed: the front page is the site (`site_scope` drafts the site there, `draft_new_page` skips
+     "/"), and `site::constrain` refuses a "page" whose id would be the site's.
+  2. Repeated "Make keys" on /feed re-drafted /feed each time with different results (the site
+     already had keys, so the scope is the kind of page; models are not deterministic). The popup's
+     result now says what the keys cover: "linkedin.com pages like /feed (the rest of the site keeps
+     its keys)" or the whole site.
+  3. Poor picks: LinkedIn's games (Zip, Wend, Patches, Mini Sudoku) and per-post buttons (React,
+     Comment, Repost: they act on whichever post is first). Prompt rule added: leave out games, ads,
+     promotions, suggested items and the buttons of one item in a list or feed.
+  "Saved" showing other keys is by design (its own kind of page).
+- Tested: workspace tests (new: the front page cannot overwrite site keys). Not tested: re-making
+  LinkedIn's keys with the new rules (needs the service restarted on this branch).

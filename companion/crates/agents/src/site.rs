@@ -52,6 +52,9 @@ Action kinds:
 Rules:
 - Prefer controls with clear names that stay on the page (navigation, search, compose, play). Avoid
   controls whose names are content (an article or video title, a person's name): they change.
+- Leave out games, ads, promotions, "sponsored" or suggested items, and the buttons of one item in a
+  list or feed (Like, React, Comment, Repost, Share on a post): there are many such items and a key
+  would act on whichever comes first, not the one the person is looking at.
 - For a link with an href, use kind = "open" with that href rather than clicking it.
 - Avoid selectors built from positions (nth-of-type, long " > " chains) when the list has a named
   one (id, aria-label, data-testid) for the same thing: positions break when the page changes.
@@ -120,6 +123,8 @@ fn constrain(toml_text: &str, host: &str, scope: &Scope) -> Result<String, Strin
     let pack = value.entry("pack").or_insert_with(|| toml::Value::Table(Default::default()));
     let pack = pack.as_table_mut().ok_or("[pack] is not a table")?;
     let (id, pattern) = match scope {
+        // A "page" with no path is the site itself: never let it take the site-wide id by accident.
+        Scope::Page { kind, .. } if page_id(host, kind) == site_id(host) => return Err(format!("{kind} is the whole site, not a kind of page")),
         Scope::Site => (site_id(host), site_of(host)),
         Scope::Page { kind, .. } => (page_id(host, kind), format!("{}{}", site_of(host), kind)),
     };
@@ -223,6 +228,8 @@ action = { kind = "element", selector = "#transfer-all" }
         assert_eq!(library.pack.id, "ai.site-mail-example");
         assert_eq!(library.matches.web, vec!["mail.example".to_string()]);
         assert_eq!(unknown_selectors(&library, &items()), vec!["#transfer-all".to_string()]);
+        assert!(constrain(hostile, "www.linkedin.com", &Scope::Page { kind: "/".into(), site_keys: vec![] }).is_err(),
+                "the front page must not overwrite the site-wide keys");
         let page = constrain(hostile, "192.168.50.3", &Scope::Page { kind: "/app/#/album/*/show".into(), site_keys: vec![] }).unwrap();
         let library = Library::parse(&page).unwrap();
         assert_eq!(library.pack.id, "ai.site-192-168-50-3-app-album-show");
