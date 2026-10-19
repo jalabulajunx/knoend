@@ -2,6 +2,8 @@
 //!   - OpenAI-compatible chat completions: OpenAI, OpenRouter, Gemini (its OpenAI-compatible
 //!     endpoint), Ollama, and any other compatible server;
 //!   - Anthropic Messages API.
+//! and one that is not a web API: Claude Code on this computer (`cli_tool.rs`), for a person with a
+//! Claude plan but no API key.
 //!
 //! Configuration: `~/.config/knoend/agent.toml` (provider, model, and optionally base_url,
 //! `[options]` added to every request and `omit` for parameters never to send). API keys come from
@@ -28,6 +30,23 @@ pub enum Provider {
     Gemini,
     Anthropic,
     OpenaiCompatible,
+    /// The `claude` command on this computer, signed in with the person's own account.
+    ClaudeCode,
+}
+
+impl Provider {
+    /// The name agent.toml and the web app use ("openai-compatible", "claude-code").
+    pub fn name(self) -> &'static str {
+        match self {
+            Provider::Ollama => "ollama",
+            Provider::Openai => "openai",
+            Provider::Openrouter => "openrouter",
+            Provider::Gemini => "gemini",
+            Provider::Anthropic => "anthropic",
+            Provider::OpenaiCompatible => "openai-compatible",
+            Provider::ClaudeCode => "claude-code",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -77,6 +96,7 @@ impl AgentConfig {
             Provider::Gemini => "https://generativelanguage.googleapis.com/v1beta/openai",
             Provider::Anthropic => "https://api.anthropic.com",
             Provider::OpenaiCompatible => return Err("openai-compatible needs base_url in agent.toml".into()),
+            Provider::ClaudeCode => "",
         }.to_string())
     }
 
@@ -92,6 +112,8 @@ impl AgentConfig {
             Provider::Openrouter => "OPENROUTER_MODEL",
             Provider::Gemini => "GEMINI_MODEL",
             Provider::Anthropic => "ANTHROPIC_MODEL",
+            // No model: Claude Code uses the one the person chose there.
+            Provider::ClaudeCode => return Ok(String::new()),
         };
         if let Ok(model) = std::env::var(env) {
             if !model.is_empty() {
@@ -110,7 +132,7 @@ impl AgentConfig {
     pub fn api_key_name(&self) -> Option<String> {
         Some(match (&self.api_key_env, self.provider) {
             (Some(var), _) => var.clone(),
-            (None, Provider::Ollama | Provider::OpenaiCompatible) => return None,
+            (None, Provider::Ollama | Provider::OpenaiCompatible | Provider::ClaudeCode) => return None,
             (None, Provider::Openai) => "OPENAI_API_KEY".into(),
             (None, Provider::Openrouter) => "OPENROUTER_API_KEY".into(),
             (None, Provider::Gemini) => "GEMINI_API_KEY".into(),
@@ -138,14 +160,15 @@ impl AgentConfig {
 
     /// A short description for logs and the saved file: provider and model, never the key.
     pub fn describe(&self) -> String {
-        format!("{:?}/{}", self.provider, self.model().unwrap_or_else(|_| "?".into())).to_lowercase()
+        let model = self.model().unwrap_or_else(|_| "?".into());
+        format!("{:?}/{}", self.provider, if model.is_empty() { "default" } else { &model }).to_lowercase()
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Message {
-    role: &'static str,
-    content: String,
+    pub(crate) role: &'static str,
+    pub(crate) content: String,
 }
 
 impl Message {
@@ -165,7 +188,14 @@ static REJECTED: Mutex<Option<HashMap<String, Vec<String>>>> = Mutex::new(None);
 
 /// One completion: returns the model's text.
 pub async fn complete(config: &AgentConfig, system: &str, messages: &[Message]) -> Result<String, String> {
-    let timeout = config.timeout_secs.unwrap_or(if config.provider == Provider::Ollama { 900 } else { 180 });
+    let timeout = config.timeout_secs.unwrap_or(match config.provider {
+        Provider::Ollama => 900,
+        Provider::ClaudeCode => 300,
+        _ => 180,
+    });
+    if config.provider == Provider::ClaudeCode {
+        return crate::cli_tool::complete_claude(config.model.as_deref(), timeout, system, messages).await;
+    }
     let client = reqwest::Client::builder().timeout(Duration::from_secs(timeout)).build().map_err(|e| e.to_string())?;
     let base = config.base_url()?;
     let model = config.model()?;
@@ -312,6 +342,10 @@ fn explain(config: &AgentConfig, base: &str, status: reqwest::StatusCode, reply:
 /// Model names the provider offers, sorted. `key` overrides the saved/env key for this one request
 /// (used by the web app before the key is saved).
 pub async fn list_models(config: &AgentConfig, key: Option<&str>) -> Result<Vec<String>, String> {
+    if config.provider == Provider::ClaudeCode {
+        // Claude Code's own short names; empty means its default.
+        return Ok(["haiku", "opus", "sonnet"].map(String::from).to_vec());
+    }
     let client = reqwest::Client::builder().timeout(Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
     let base = config.base_url()?;
     let key = match key.filter(|k| !k.is_empty()) {

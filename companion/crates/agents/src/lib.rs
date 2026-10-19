@@ -7,6 +7,7 @@
 //! validator as every other library. One retry is allowed, with the validator's errors.
 
 pub mod assistant;
+pub mod cli_tool;
 pub mod provider;
 pub mod secrets;
 pub mod site;

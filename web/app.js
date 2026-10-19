@@ -539,11 +539,16 @@ function providerFields() {
   const provider = $("ai-provider").value;
   $("ai-base-wrap").hidden = provider !== "openai-compatible";
   $("ai-base-alt-wrap").hidden = provider === "openai-compatible";
-  $("ai-key-wrap").hidden = provider === "ollama";
+  $("ai-key-wrap").hidden = provider === "ollama" || provider === "claude-code";
+  $("ai-cli-note").hidden = provider !== "claude-code";
+  // No API address or request options for a command on this computer.
+  $("ai-advanced").hidden = provider === "claude-code";
 }
 /** The API address: the main field for a generic server, the advanced one otherwise. */
 function baseUrl() {
-  return ($("ai-provider").value === "openai-compatible" ? $("ai-base").value : $("ai-base-alt").value).trim() || null;
+  const provider = $("ai-provider").value;
+  if (provider === "claude-code") return null;
+  return (provider === "openai-compatible" ? $("ai-base").value : $("ai-base-alt").value).trim() || null;
 }
 $("ai-provider").addEventListener("change", () => {
   // Another provider: its own address and options.

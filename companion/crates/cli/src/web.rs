@@ -274,7 +274,7 @@ async fn ai_settings() -> ApiResult {
     match crate::agent_config() {
         Ok(config) => Ok(Json(json!({
             "configured": agent_toml().exists(),
-            "provider": format!("{:?}", config.provider).to_lowercase(),
+            "provider": config.provider.name(),
             "model": config.model().ok(),
             "base_url": config.base_url,
             "options": config.options,
@@ -303,7 +303,7 @@ struct AiRequest {
 /// Saves provider + model to agent.toml and the key to the local key store, then checks them with
 /// a tiny request.
 async fn save_ai_settings(Json(request): Json<AiRequest>) -> ApiResult {
-    let allowed = ["gemini", "openai", "openrouter", "anthropic", "ollama", "openai-compatible"];
+    let allowed = ["gemini", "openai", "openrouter", "anthropic", "ollama", "openai-compatible", "claude-code"];
     if !allowed.contains(&request.provider.as_str()) {
         return Err(fail(StatusCode::BAD_REQUEST, "unknown provider"));
     }
