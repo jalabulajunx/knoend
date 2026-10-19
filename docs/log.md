@@ -1041,3 +1041,15 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   "Saved" showing other keys is by design (its own kind of page).
 - Tested: workspace tests (new: the front page cannot overwrite site keys). Not tested: re-making
   LinkedIn's keys with the new rules (needs the service restarted on this branch).
+- Sundar, after restarting on this branch: going back to Chrome on LinkedIn showed Chrome's own keys
+  (log: "Focus: Google-chrome" with no "Site:" line). Same cause as the popup bug: the service took
+  a browser's page only while that browser said its window was focused, and Chrome on Linux (i3)
+  does not report regaining focus reliably. Changed (`browser.rs`): each connection's last tab is
+  kept whether or not the browser thinks it is focused; on every focus change the service asks
+  `Browser::focus_changed(app, instance)`, which picks the extension of the browser the window system
+  says is in front (firefox / chrome for every Chromium browser, from the extension's hello) and
+  makes it the one to act in. Unit test: Chrome's page is shown on switching to Chrome though Chrome
+  never said it was focused; Firefox's reports do not take over while Chrome is in front.
+- His "Make keys" on the front page remade the site-wide keys (as intended); the board kept LinkedIn
+  Feed's own older keys because LinkedIn's home is /feed and a page's keys win over the site's.
+  Making keys once on /feed replaces those.

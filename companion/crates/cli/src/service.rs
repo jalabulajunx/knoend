@@ -248,7 +248,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             shared.update(|s| { s.link = "no-pairing".into(); s.board = None; }).await;
             // Keep following focus while waiting, so the dashboard shows it.
             match tokio::time::timeout(Duration::from_secs(2), inbox.recv()).await {
-                Ok(Some(Event::Focus(Some(f)))) => focus = Some(f),
+                Ok(Some(Event::Focus(Some(f)))) => {
+                    tab = shared.browser.focus_changed(&f.app, &f.instance);
+                    focus = Some(f);
+                }
                 Ok(Some(Event::Tab(t))) => tab = t,
                 Ok(Some(Event::Players(p))) => players = p,
                 _ => {}
@@ -351,6 +354,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             }
             match event {
                 Event::Focus(Some(f)) => {
+                    tab = shared.browser.focus_changed(&f.app, &f.instance);
                     focus = Some(f);
                     let f = effective(&focus, &tab).expect("focus");
                     if calling.as_ref().is_some_and(|c| c.is(&f)) {
@@ -366,6 +370,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Event::Focus(None) => {
                     // Nothing in front: the launcher.
                     println!("Focus: nothing (launcher)");
+                    tab = shared.browser.focus_changed("", "");
                     focus = None;
                     usage.focused(None);
                     shared.update(|s| s.app = None).await;
@@ -610,7 +615,10 @@ async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     while let Ok(Some(event)) = tokio::time::timeout_at(deadline, inbox.recv()).await {
         match event {
-            Event::Focus(Some(f)) => *focus = Some(f),
+            Event::Focus(Some(f)) => {
+                *tab = shared.browser.focus_changed(&f.app, &f.instance);
+                *focus = Some(f);
+            }
             Event::Tab(t) => *tab = t,
             Event::Players(p) => { *players = p; continue; }
             _ => continue,
