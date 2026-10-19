@@ -228,6 +228,20 @@ async function pageAction(action) {
       return { ok: true };
     }
     const there = () => document.activeElement === el || el.contains(document.activeElement);
+    // A box the page keeps switched off (inert, or see-through) until its own visible button is
+    // pressed, as LinkedIn does with search on some pages: press the visible control that has the
+    // box's name ("Search"), then give the page a moment to open it.
+    const off = (e) => { for (let n = e; n; n = n.parentElement) { if (n.inert || n.hasAttribute("inert") || parseFloat(getComputedStyle(n).opacity) === 0) return true; } return false; };
+    if (off(el)) {
+      const wanted = (el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("title") || "").trim().toLowerCase();
+      const label = (e) => (e.getAttribute("aria-label") || e.getAttribute("title") || e.innerText || "").trim().toLowerCase();
+      const opener = wanted && [...document.querySelectorAll('button, [role="button"], a')]
+        .find((e) => e !== el && !el.contains(e) && e.getClientRects().length && !off(e) && label(e) === wanted);
+      if (opener) {
+        press(opener);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
     el.focus();
     if (!there()) {
       // Some sites open their search box only when it (or what holds it) is pressed.
@@ -323,6 +337,13 @@ function pageInventory() {
       for (let j = i + 1; j < classes.length; j++) tries.push(`${tag}.${CSS.escape(classes[i])}.${CSS.escape(classes[j])}`);
     }
     for (const s of tries) if (unique(s)) return s;
+    // A button with no label of its own whose label is on something inside it (LinkedIn's "Start a
+    // post": a div role=button holding a div aria-label="Start a post").
+    const role = el.getAttribute("role");
+    for (const inner of [...el.querySelectorAll("[aria-label]")].slice(0, 3)) {
+      const s = `${tag}${role ? `[role=${quote(role)}]` : ""}:has([aria-label=${quote(inner.getAttribute("aria-label"))}])`;
+      if (unique(s)) return s;
+    }
     // A short path of tags and positions.
     const parts = [];
     for (let node = el; node && node.nodeType === 1 && parts.length < 5; node = node.parentElement) {

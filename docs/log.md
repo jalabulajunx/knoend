@@ -1083,3 +1083,20 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - Tested: the real `pageAction` on a local test page: plain box, a hidden copy before the visible
   one, a box shown only after its container is pressed, a box hidden for good (`not-focusable`), a
   missing one (`not-found`); element presses unchanged. Not tested on LinkedIn's feed.
+- Checked on LinkedIn's feed in Sundar's Chrome (Claude in Chrome, with his OK; look-only queries,
+  then one press of LinkedIn's Search button and Esc; tab closed after): the feed's search input is
+  inside an `inert`, opacity-0 container (focus is refused), and LinkedIn shows a separate visible
+  `div[role=button][aria-label="Search"]`; pressing it removes `inert` and the input then takes
+  focus. LinkedIn's classes are generated (`i0lk82 ...`), and "Start a post" is a `div role=button`
+  with no label of its own around a `div aria-label="Start a post"`, so the inventory dropped it.
+- Changed (extension): the focus action, for a box that is inert or see-through, presses the visible
+  control with the box's name (aria-label / placeholder / title, e.g. "Search"), waits 400 ms, then
+  focuses. The inventory points at a button labelled by an element inside it with
+  `tag[role=...]:has([aria-label="..."])` when that is unique.
+- Changed (`recipes/apps/claude-desktop.toml`): the key labelled "Focus Input" sent Escape, which in
+  Claude stops the reply or refuses a request on screen. Sundar tapped it while a Claude Code tool
+  request was showing and it refused the request. Now labelled "Esc" (stop or close) with a second
+  tap.
+- Tested: the real `pageAction` and `pageInventory` on a local LinkedIn-like page (generated
+  classes, inert search, inner-labelled button): "Start a post" listed and pressed; Search pressed
+  open and focused. Not tested on LinkedIn with the rebuilt extension.
