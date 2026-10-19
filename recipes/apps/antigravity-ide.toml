@@ -1,0 +1,84 @@
+# Antigravity IDE (the VS Code-based editor, 1.x; window class antigravity-ide). Keys drafted by the
+# OpenPager configure agent (openai/gpt-6-sol), standard for VS Code-based editors. Not yet tested
+# in the IDE: the draft was made while the Antigravity desktop app was in front.
+[[key]]
+icon = "save"
+label = "Save"
+
+[key.action]
+keys = "Primary+S"
+kind = "shortcut"
+
+[[key]]
+icon = "folder_open"
+label = "Quick Open"
+
+[key.action]
+keys = "Primary+P"
+kind = "shortcut"
+
+[[key]]
+icon = "keyboard"
+label = "Commands"
+
+[key.action]
+keys = "Primary+Shift+P"
+kind = "shortcut"
+
+[[key]]
+icon = "search"
+label = "Find"
+
+[key.action]
+keys = "Primary+F"
+kind = "shortcut"
+
+[[key]]
+icon = "search"
+label = "Search Files"
+
+[key.action]
+keys = "Primary+Shift+F"
+kind = "shortcut"
+
+[[key]]
+icon = "terminal"
+label = "Terminal"
+
+[key.action]
+keys = "Primary+Backquote"
+kind = "shortcut"
+
+[[key]]
+icon = "view_list"
+label = "Sidebar"
+
+[key.action]
+keys = "Primary+B"
+kind = "shortcut"
+
+[[key]]
+icon = "undo"
+label = "Undo"
+
+[key.action]
+keys = "Primary+Z"
+kind = "shortcut"
+
+[[key]]
+icon = "redo"
+label = "Redo"
+
+[key.action]
+keys = "Primary+Shift+Z"
+kind = "shortcut"
+
+[match]
+linux = ["antigravity-ide", "Antigravity IDE"]
+
+[pack]
+description = "Common shortcuts for editing, finding files, and navigating the IDE."
+id = "builtin.antigravity-ide"
+name = "Antigravity IDE"
+source = "builtin"
+version = "0.1.0"

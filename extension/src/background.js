@@ -82,18 +82,25 @@ registerWatcher();
 api.permissions.onAdded.addListener(registerWatcher);
 api.permissions.onRemoved.addListener(registerWatcher);
 
+/**
+ * The active tab as a "tab" message. `focused`: whether this browser window is the one in front;
+ * forced true when the person is using our popup (Chrome reports its window as not focused while
+ * the popup is open, which would make the service forget the site).
+ */
+async function tabMessage(forceFocused) {
+  const window = await api.windows.getLastFocused().catch(() => null);
+  const tab = await activeTab().catch(() => null);
+  const url = tab && isWeb(tab.url) ? tab.url : null;
+  return { type: "tab", url, title: url ? (tab.title || "") : "", windowFocused: forceFocused || !!(window && window.focused),
+           granted: url ? await granted(url) : false, fullscreen: !!(tab && fullscreenTabs.has(tab.id)),
+           // The tab's icon, for the board's launcher (an address or a small data: URL).
+           favicon: url && tab.favIconUrl && /^(https?:|data:image\/)/.test(tab.favIconUrl) && tab.favIconUrl.length <= 100000 ? tab.favIconUrl : "" };
+}
+
 let reportTimer = null;
 function reportTab() {
   clearTimeout(reportTimer);
-  reportTimer = setTimeout(async () => {
-    const window = await api.windows.getLastFocused().catch(() => null);
-    const tab = await activeTab().catch(() => null);
-    const url = tab && isWeb(tab.url) ? tab.url : null;
-    send({ type: "tab", url, title: url ? (tab.title || "") : "", windowFocused: !!(window && window.focused),
-           granted: url ? await granted(url) : false, fullscreen: !!(tab && fullscreenTabs.has(tab.id)),
-           // The tab's icon, for the board's launcher (an address or a small data: URL).
-           favicon: url && tab.favIconUrl && /^(https?:|data:image\/)/.test(tab.favIconUrl) && tab.favIconUrl.length <= 100000 ? tab.favIconUrl : "" });
-  }, 150);
+  reportTimer = setTimeout(async () => send(await tabMessage(false)), 150);
 }
 
 api.tabs.onActivated.addListener(reportTab);
@@ -192,27 +199,59 @@ async function inventory() {
 // anything from this file.
 
 async function pageAction(action) {
-  const find = (selector) => { try { return document.querySelector(selector); } catch { return null; } };
+  // The first match that is on screen (pages often keep hidden copies of a control), else the first.
+  const find = (selector) => {
+    try {
+      const all = [...document.querySelectorAll(selector)];
+      return all.find((e) => e.getClientRects().length) || all[0] || null;
+    } catch { return null; }
+  };
+  // A whole press, not just "click": many web apps (Google Docs, Slides, Sheets) act on the mouse
+  // going down and up and ignore a bare click event.
+  const press = (target) => {
+    const r = target.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, composed: true, view: window, button: 0,
+                 clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    const pointer = { ...at, pointerId: 1, pointerType: "mouse", isPrimary: true };
+    target.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1 }));
+    target.dispatchEvent(new MouseEvent("mousedown", { ...at, buttons: 1 }));
+    target.dispatchEvent(new PointerEvent("pointerup", pointer));
+    target.dispatchEvent(new MouseEvent("mouseup", at));
+    target.dispatchEvent(new MouseEvent("click", at));
+  };
   if (action.kind === "element" || action.kind === "focus") {
     const el = find(action.selector);
     if (!el) return { ok: false, error: "not-found" };
     el.scrollIntoView({ block: "nearest" });
     if (action.kind === "element") {
-      // A whole press, not just "click": many web apps (Google Docs, Slides, Sheets) act on the
-      // mouse going down and up and ignore a bare click event.
-      const r = el.getBoundingClientRect();
-      const at = { bubbles: true, cancelable: true, composed: true, view: window, button: 0,
-                   clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
-      const pointer = { ...at, pointerId: 1, pointerType: "mouse", isPrimary: true };
-      el.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1 }));
-      el.dispatchEvent(new MouseEvent("mousedown", { ...at, buttons: 1 }));
-      el.dispatchEvent(new PointerEvent("pointerup", pointer));
-      el.dispatchEvent(new MouseEvent("mouseup", at));
-      el.dispatchEvent(new MouseEvent("click", at));
-    } else {
-      el.focus();
-      if (typeof el.select === "function") el.select();
+      press(el);
+      return { ok: true };
     }
+    const there = () => document.activeElement === el || el.contains(document.activeElement);
+    // A box the page keeps switched off (inert, or see-through) until its own visible button is
+    // pressed, as LinkedIn does with search on some pages: press the visible control that has the
+    // box's name ("Search"), then give the page a moment to open it.
+    const off = (e) => { for (let n = e; n; n = n.parentElement) { if (n.inert || n.hasAttribute("inert") || parseFloat(getComputedStyle(n).opacity) === 0) return true; } return false; };
+    if (off(el)) {
+      const wanted = (el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("title") || "").trim().toLowerCase();
+      const label = (e) => (e.getAttribute("aria-label") || e.getAttribute("title") || e.innerText || "").trim().toLowerCase();
+      const opener = wanted && [...document.querySelectorAll('button, [role="button"], a')]
+        .find((e) => e !== el && !el.contains(e) && e.getClientRects().length && !off(e) && label(e) === wanted);
+      if (opener) {
+        press(opener);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    el.focus();
+    if (!there()) {
+      // Some sites open their search box only when it (or what holds it) is pressed.
+      let target = el;
+      while (target && !target.getClientRects().length) target = target.parentElement;
+      if (target) press(target);
+      el.focus();
+    }
+    if (!there()) return { ok: false, error: "not-focusable" };
+    if (typeof el.select === "function") el.select();
     return { ok: true };
   }
   if (action.kind === "media") {
@@ -290,7 +329,21 @@ function pageInventory() {
     if (aria) tries.push(`${tag}[aria-label=${quote(aria)}]`);
     const name = el.getAttribute("name");
     if (name) tries.push(`${tag}[name=${quote(name)}]`);
+    // Readable class names ("share-box-feed-entry__trigger"), alone or in pairs; not generated ones
+    // (digits, or short random runs like "x1n2onr6"), which change with each release of a site.
+    const classes = [...el.classList].filter((c) => /^[A-Za-z][A-Za-z_-]{3,60}$/.test(c) && /[aeiou]/i.test(c)).slice(0, 6);
+    for (const c of classes) tries.push(`${tag}.${CSS.escape(c)}`);
+    for (let i = 0; i < classes.length; i++) {
+      for (let j = i + 1; j < classes.length; j++) tries.push(`${tag}.${CSS.escape(classes[i])}.${CSS.escape(classes[j])}`);
+    }
     for (const s of tries) if (unique(s)) return s;
+    // A button with no label of its own whose label is on something inside it (LinkedIn's "Start a
+    // post": a div role=button holding a div aria-label="Start a post").
+    const role = el.getAttribute("role");
+    for (const inner of [...el.querySelectorAll("[aria-label]")].slice(0, 3)) {
+      const s = `${tag}${role ? `[role=${quote(role)}]` : ""}:has([aria-label=${quote(inner.getAttribute("aria-label"))}])`;
+      if (unique(s)) return s;
+    }
     // A short path of tags and positions.
     const parts = [];
     for (let node = el; node && node.nodeType === 1 && parts.length < 5; node = node.parentElement) {
@@ -340,7 +393,8 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
     settleGrant(message.request, !!message.granted);
   } else if (message && message.type === "configure") {
     configureStatus = { ok: true, text: "Reading the page and asking the AI for keys (about 10 seconds)...", done: false };
-    send({ type: "configure" });
+    // The site first (as focused: the person is in this browser, using our popup), then the request.
+    tabMessage(true).then((tab) => { send(tab); send({ type: "configure" }); });
     reply(configureStatus);
   }
 });

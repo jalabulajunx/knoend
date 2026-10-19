@@ -32,9 +32,13 @@ speak = "Copy last response"
 keys = "Primary+Shift+C"
 kind = "shortcut"
 
+# Escape: closes a dialog, and in Claude also stops the reply or refuses a request on screen, so it
+# asks for a second tap. (An AI draft had called it "Focus Input".)
 [[key]]
-label = "Focus Input"
-speak = "Focus chat input"
+confirm = true
+label = "Esc"
+speak = "Escape: stop or close"
+icon = "close"
 
 [key.action]
 keys = "Escape"
