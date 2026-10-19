@@ -248,7 +248,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             shared.update(|s| { s.link = "no-pairing".into(); s.board = None; }).await;
             // Keep following focus while waiting, so the dashboard shows it.
             match tokio::time::timeout(Duration::from_secs(2), inbox.recv()).await {
-                Ok(Some(Event::Focus(Some(f)))) => focus = Some(f),
+                Ok(Some(Event::Focus(Some(f)))) => {
+                    tab = shared.browser.focus_changed(&f.app, &f.instance);
+                    focus = Some(f);
+                }
                 Ok(Some(Event::Tab(t))) => tab = t,
                 Ok(Some(Event::Players(p))) => players = p,
                 _ => {}
@@ -351,6 +354,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             }
             match event {
                 Event::Focus(Some(f)) => {
+                    tab = shared.browser.focus_changed(&f.app, &f.instance);
                     focus = Some(f);
                     let f = effective(&focus, &tab).expect("focus");
                     if calling.as_ref().is_some_and(|c| c.is(&f)) {
@@ -366,6 +370,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Event::Focus(None) => {
                     // Nothing in front: the launcher.
                     println!("Focus: nothing (launcher)");
+                    tab = shared.browser.focus_changed("", "");
                     focus = None;
                     usage.focused(None);
                     shared.update(|s| s.app = None).await;
@@ -550,6 +555,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     match result {
                         Ok((path, library)) => {
                             let keys = library.keys.len();
+                            let page = library.matches.web.iter().any(|p| p.contains('/'));
                             if let Some(web) = &target.web {
                                 drafted.add(&web.host, &web.page_kind());
                             }
@@ -558,9 +564,13 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             catalog.add(path, library);
                             let count = catalog.len();
                             shared.update(|s| s.libraries = count).await;
-                            if target.web.is_some() {
+                            if let Some(web) = &target.web {
+                                // Say what the keys cover: the whole site, or one kind of page (whose
+                                // keys a second "Make keys" there replaces; the site's own keys stay).
+                                let what = if page { format!("{} pages like {}", web.host, web.page_kind()) } else { web.host.clone() };
                                 shared.browser.notify(json!({"type": "configure-status", "ok": true,
-                                    "text": format!("Made {keys} keys for {}. Look at the board.", target.display_name())}));
+                                    "text": format!("Made {keys} keys for {what}{}. Look at the board.",
+                                                    if page { " (the rest of the site keeps its keys)" } else { "" })}));
                             }
                             let same_site = |f: &Focus| f.web.as_ref().map(|w| &w.host) == target.web.as_ref().map(|w| &w.host);
                             if effective(&focus, &tab).is_some_and(|f| f.app == target.app && f.instance == target.instance && same_site(&f)) {
@@ -605,7 +615,10 @@ async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     while let Ok(Some(event)) = tokio::time::timeout_at(deadline, inbox.recv()).await {
         match event {
-            Event::Focus(Some(f)) => *focus = Some(f),
+            Event::Focus(Some(f)) => {
+                *tab = shared.browser.focus_changed(&f.app, &f.instance);
+                *focus = Some(f);
+            }
             Event::Tab(t) => *tab = t,
             Event::Players(p) => { *players = p; continue; }
             _ => continue,
@@ -689,7 +702,8 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     }
     let player = openpager_media::for_focus(players, &focus.app, &focus.instance);
     let mut actions: HashMap<u8, KeyRef> = HashMap::new();
-    let (mut body, mut status) = match catalog.find(focus) {
+    let found = catalog.layout_for(focus);
+    let (mut body, mut status) = match found.as_ref() {
         Some(library) => match layout::build(library, focus.os) {
             Ok(mut body) => {
                 for (key, slot) in library.keys.iter().zip(library.slots()) {
@@ -781,8 +795,9 @@ fn board_text(text: &str, max: usize) -> String {
 fn site_scope(catalog: &Catalog, focus: &Focus) -> Scope {
     let Some(web) = &focus.web else { return Scope::Site };
     match catalog.site_wide(web) {
-        Some(site) => Scope::Page { kind: web.page_kind(), site_keys: site.keys.iter().map(|k| k.label.clone()).collect() },
-        None => Scope::Site,
+        // The site's front page ("/") is the site: its keys are the site-wide ones.
+        Some(site) if web.page_kind() != "/" => Scope::Page { kind: web.page_kind(), site_keys: site.keys.iter().map(|k| k.label.clone()).collect() },
+        _ => Scope::Site,
     }
 }
 
@@ -798,7 +813,8 @@ async fn draft_new_page(catalog: &Catalog, focus: &Focus, drafted: &DraftedPages
         return;
     }
     let kind = web.page_kind();
-    if drafted.has(&web.host, &kind) || !attempted.insert((web.host.clone(), kind.clone())) {
+    // The front page uses the site-wide keys; drafting it as a "page" would replace them.
+    if kind == "/" || drafted.has(&web.host, &kind) || !attempted.insert((web.host.clone(), kind.clone())) {
         return;
     }
     if shared.status.read().await.configuring.is_some() {

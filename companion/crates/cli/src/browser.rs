@@ -41,6 +41,9 @@ pub fn started_by_browser(args: &[String]) -> bool {
 
 // ---- the service side ----
 
+/// A connection's browser kind, its last reported page, and when (a counter).
+type Reported = (String, Option<WebPage>, u64);
+
 /// What the service knows about the connected extensions, and how it asks them to act.
 #[derive(Default)]
 pub struct Browser {
@@ -48,6 +51,13 @@ pub struct Browser {
     links: Mutex<HashMap<u64, mpsc::UnboundedSender<String>>>,
     /// The connection whose window was focused last: the one to act in.
     active: Mutex<Option<u64>>,
+    /// Each connection's browser ("chrome", "firefox") and the active tab it reported last, in or
+    /// out of focus, with when (a counter): the service picks the page of the browser the window
+    /// system says is in front, rather than trusting each browser's own focus reports (Chrome's
+    /// are not reliable on Linux, e.g. while its popup is open or after switching apps).
+    pages: Mutex<HashMap<u64, Reported>>,
+    /// The kind of browser in front ("chrome", "firefox"), as the service last told us.
+    front: Mutex<Option<String>>,
     pending: Mutex<HashMap<String, oneshot::Sender<Value>>>,
     next: AtomicU64,
 }
@@ -85,6 +95,42 @@ impl Browser {
     pub fn connected(&self) -> bool {
         !self.links.lock().unwrap().is_empty()
     }
+
+    /// The focused app changed: remembers which browser (if any) is in front, makes its extension
+    /// the one to act in, and returns its active page.
+    pub fn focus_changed(&self, app: &str, instance: &str) -> Option<WebPage> {
+        let kind = browser_kind(app, instance).map(str::to_string);
+        *self.front.lock().unwrap() = kind.clone();
+        let kind = kind?;
+        let pages = self.pages.lock().unwrap();
+        let (id, (_, page, _)) = pages.iter().filter(|(_, (k, _, _))| *k == kind).max_by_key(|(_, (_, _, seq))| *seq)?;
+        *self.active.lock().unwrap() = Some(*id);
+        page.clone()
+    }
+
+    /// Records a connection's tab; Some(page) when that browser is the one in front (the service
+    /// should show it), None when it is not.
+    fn tab_reported(&self, id: u64, page: Option<WebPage>) -> Option<Option<WebPage>> {
+        let seq = self.next.fetch_add(1, Ordering::Relaxed);
+        let mut pages = self.pages.lock().unwrap();
+        let entry = pages.entry(id).or_insert_with(|| (String::new(), None, 0));
+        entry.1 = page.clone();
+        entry.2 = seq;
+        let in_front = self.front.lock().unwrap().as_deref() == Some(entry.0.as_str());
+        if in_front {
+            *self.active.lock().unwrap() = Some(id);
+        }
+        in_front.then_some(page)
+    }
+}
+
+/// Which extension serves a focused browser window: "firefox" or "chrome" (every Chromium browser).
+pub fn browser_kind(app: &str, instance: &str) -> Option<&'static str> {
+    if !is_browser(app, instance) {
+        return None;
+    }
+    let names = format!("{} {}", app, instance).to_ascii_lowercase();
+    Some(if names.contains("firefox") || names.contains("navigator") { "firefox" } else { "chrome" })
 }
 
 /// What the extension tells the service.
@@ -141,17 +187,17 @@ async fn connection(id: u64, stream: tokio::net::UnixStream, browser: Arc<Browse
     while let Ok(Some(line)) = lines.next_line().await {
         let Ok(message) = serde_json::from_str::<Value>(&line) else { continue };
         match message["type"].as_str() {
-            Some("hello") => println!("Browser extension connected ({} {})",
-                                      message["browser"].as_str().unwrap_or("?"), message["version"].as_str().unwrap_or("?")),
+            Some("hello") => {
+                let kind = if message["browser"] == "firefox" { "firefox" } else { "chrome" };
+                browser.pages.lock().unwrap().entry(id).or_insert_with(|| (String::new(), None, 0)).0 = kind.to_string();
+                println!("Browser extension connected ({} {})", message["browser"].as_str().unwrap_or("?"), message["version"].as_str().unwrap_or("?"));
+            }
             Some("tab") => {
-                let focused = message["windowFocused"] == true;
-                if focused {
-                    *browser.active.lock().unwrap() = Some(id);
-                } else if *browser.active.lock().unwrap() != Some(id) {
-                    continue;
+                // The tab counts whether or not the browser thinks its window is focused: the
+                // window system decides which browser is in front.
+                if let Some(page) = browser.tab_reported(id, page_from(&message)) {
+                    let _ = tabs.send(BrowserEvent::Tab(page)).await;
                 }
-                let page = focused.then(|| page_from(&message)).flatten();
-                let _ = tabs.send(BrowserEvent::Tab(page)).await;
             }
             Some("configure") => {
                 *browser.active.lock().unwrap() = Some(id);
@@ -168,6 +214,7 @@ async fn connection(id: u64, stream: tokio::net::UnixStream, browser: Arc<Browse
         }
     }
     browser.links.lock().unwrap().remove(&id);
+    browser.pages.lock().unwrap().remove(&id);
     let was_active = {
         let mut active = browser.active.lock().unwrap();
         let was = *active == Some(id);
@@ -366,6 +413,27 @@ pub fn is_browser(app: &str, instance: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_browser_in_front_decides_the_page() {
+        let browser = Browser::default();
+        let page = |host: &str| WebPage { host: host.into(), url: format!("https://{host}/"), title: String::new(), granted: true, fullscreen: false, favicon: String::new() };
+        browser.pages.lock().unwrap().insert(1, ("chrome".into(), None, 0));
+        browser.pages.lock().unwrap().insert(2, ("firefox".into(), None, 0));
+        // Reports while neither is in front are kept, not shown.
+        assert_eq!(browser.tab_reported(1, Some(page("www.linkedin.com"))), None);
+        assert_eq!(browser.tab_reported(2, Some(page("www.youtube.com"))), None);
+        // Switching to Chrome gives Chrome's page even though Chrome never said it was focused.
+        assert_eq!(browser.focus_changed("Google-chrome", "google-chrome").map(|p| p.host), Some("www.linkedin.com".into()));
+        assert_eq!(*browser.active.lock().unwrap(), Some(1));
+        // Firefox's later reports do not take over while Chrome is in front; Chrome's do show.
+        assert_eq!(browser.tab_reported(2, Some(page("github.com"))), None);
+        assert_eq!(browser.tab_reported(1, Some(page("www.linkedin.com"))).flatten().map(|p| p.host), Some("www.linkedin.com".into()));
+        assert_eq!(browser.focus_changed("firefox", "Navigator").map(|p| p.host), Some("github.com".into()));
+        assert_eq!(browser.focus_changed("thunar", "thunar"), None);
+        assert_eq!(browser_kind("Google-chrome", "google-chrome"), Some("chrome"));
+        assert_eq!(browser_kind("firefox", "Navigator"), Some("firefox"));
+    }
 
     #[test]
     fn frames_round_trip() {

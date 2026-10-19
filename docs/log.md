@@ -1012,6 +1012,99 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   Left out the draft's two position-based keys (Search chats, Switch product); name "Protege" (the
   board's font is ASCII only, so "Protégé" showed as "Prot g"). Published with Sundar's OK.
 
+## 2026-10-18 - Sundar (Claude Code) - Chrome: "Make keys for this site" said "Focus the browser window"
+
+- Sundar, first time with the Chrome extension (linkedin.com, board buttons on): the popup's "Make
+  keys for this site with AI" answered "Focus the browser window with the site first."
+- Cause: while the extension's popup is open, Chrome reports its window as not focused
+  (`windows.getLastFocused().focused` false); the extension then sent `tab` with `windowFocused:
+  false`, the service cleared the page, and the `configure` request that followed found no site.
+  Firefox does not do this, so it had not shown up there.
+- Changed (`extension/src/background.js`): `tabMessage(forceFocused)`; on "configure" the extension
+  sends the active tab as focused (the person is using our popup in this browser), then the request.
+- Tested: `node --check`, extension rebuilt for both browsers. Not tested: Chrome with the fix (needs
+  the extension reloaded in Sundar's Chrome).
+- Sundar tried it: the fix works (every click reached the AI). His service log showed three more
+  problems on linkedin.com:
+  1. Bug: the site-wide draft (Search, Home, Messages, Alerts, Network, Jobs, Saved, Groups, Events)
+     was overwritten. On the front page the background drafter treated "/" as a new kind of page,
+     and `page_id(host, "/")` equals the site-wide id, so its draft replaced the site's keys.
+     Fixed: the front page is the site (`site_scope` drafts the site there, `draft_new_page` skips
+     "/"), and `site::constrain` refuses a "page" whose id would be the site's.
+  2. Repeated "Make keys" on /feed re-drafted /feed each time with different results (the site
+     already had keys, so the scope is the kind of page; models are not deterministic). The popup's
+     result now says what the keys cover: "linkedin.com pages like /feed (the rest of the site keeps
+     its keys)" or the whole site.
+  3. Poor picks: LinkedIn's games (Zip, Wend, Patches, Mini Sudoku) and per-post buttons (React,
+     Comment, Repost: they act on whichever post is first). Prompt rule added: leave out games, ads,
+     promotions, suggested items and the buttons of one item in a list or feed.
+  "Saved" showing other keys is by design (its own kind of page).
+- Tested: workspace tests (new: the front page cannot overwrite site keys). Not tested: re-making
+  LinkedIn's keys with the new rules (needs the service restarted on this branch).
+- Sundar, after restarting on this branch: going back to Chrome on LinkedIn showed Chrome's own keys
+  (log: "Focus: Google-chrome" with no "Site:" line). Same cause as the popup bug: the service took
+  a browser's page only while that browser said its window was focused, and Chrome on Linux (i3)
+  does not report regaining focus reliably. Changed (`browser.rs`): each connection's last tab is
+  kept whether or not the browser thinks it is focused; on every focus change the service asks
+  `Browser::focus_changed(app, instance)`, which picks the extension of the browser the window system
+  says is in front (firefox / chrome for every Chromium browser, from the extension's hello) and
+  makes it the one to act in. Unit test: Chrome's page is shown on switching to Chrome though Chrome
+  never said it was focused; Firefox's reports do not take over while Chrome is in front.
+- His "Make keys" on the front page remade the site-wide keys (as intended); the board kept LinkedIn
+  Feed's own older keys because LinkedIn's home is /feed and a page's keys win over the site's.
+  Making keys once on /feed replaces those.
+- Sundar: with the focus fix the board followed Chrome, but LinkedIn's feed showed only Sort Feed,
+  Analytics, Newsletters, Events: the page draft (now without games and post buttons) replaced the
+  site's keys (Home, Search, My Network, Jobs, Messages, Notifications, Me, Saved, Groups). He wanted
+  the site's keys plus a "new post" key.
+- Changed: `Catalog::layout_for` (used by the service's `show`): on a kind of page whose keys are an
+  AI draft, the site's keys stay in their places and the page's first `PAGE_EXTRAS` (3) keys the site
+  does not already have take the last slots. Built-in and user page libraries, and full-screen ones
+  (the Slides remote), are complete layouts and stay as they are. The page draft prompt now says the
+  site keys stay, asks for the 3 most useful additions, and prefers what the person starts on that
+  page (a new post, compose, upload, a filter). Unit test with LinkedIn-like site and feed drafts.
+- Sundar: the combined layout worked (Home, Search, My Network, Jobs, Messages, Notifications + feed
+  keys), but the drafted "New posts" key was LinkedIn's "load new posts" button (it refreshes the
+  feed, then disappears: second tap `not-found`), not "Start a post".
+- Cause: the extension's page inventory drops a control it cannot point at uniquely (id, test id,
+  aria-label, name, else a short tag path); LinkedIn's "Start a post" has none, so the AI never saw
+  it. Changed (`pageInventory` in `extension/src/background.js`): also tries the control's readable
+  class names, alone or in pairs (letters, `-`, `_`, a vowel; not generated ones with digits).
+- Tested: the real `pageInventory` on a local test page in the browser pane: "Start a post"
+  (classes `artdeco-button share-box-feed-entry__trigger`) -> `button.share-box-feed-entry__trigger`;
+  a button with only generated classes (`x1n2onr6`) is still left out; repeated buttons sharing a
+  class keep their path selectors. Not tested on LinkedIn itself (needs the extension reloaded).
+- Sundar: LinkedIn's Search key (focus `[data-testid="typeahead-input"]`) put the cursor in the box
+  on /jobs but not on /feed, though the service logged "done" each time: the focus action called
+  `focus()` and reported success without checking. Changed (`pageAction`): a selector that matches
+  several elements uses the first one on screen; when focus does not take, the box (or its nearest
+  visible parent) gets a whole mouse press and focus again (search boxes that open when pressed);
+  success only when the cursor is really there, else `not-focusable`.
+- Tested: the real `pageAction` on a local test page: plain box, a hidden copy before the visible
+  one, a box shown only after its container is pressed, a box hidden for good (`not-focusable`), a
+  missing one (`not-found`); element presses unchanged. Not tested on LinkedIn's feed.
+- Checked on LinkedIn's feed in Sundar's Chrome (Claude in Chrome, with his OK; look-only queries,
+  then one press of LinkedIn's Search button and Esc; tab closed after): the feed's search input is
+  inside an `inert`, opacity-0 container (focus is refused), and LinkedIn shows a separate visible
+  `div[role=button][aria-label="Search"]`; pressing it removes `inert` and the input then takes
+  focus. LinkedIn's classes are generated (`i0lk82 ...`), and "Start a post" is a `div role=button`
+  with no label of its own around a `div aria-label="Start a post"`, so the inventory dropped it.
+- Changed (extension): the focus action, for a box that is inert or see-through, presses the visible
+  control with the box's name (aria-label / placeholder / title, e.g. "Search"), waits 400 ms, then
+  focuses. The inventory points at a button labelled by an element inside it with
+  `tag[role=...]:has([aria-label="..."])` when that is unique.
+- Changed (`recipes/apps/claude-desktop.toml`): the key labelled "Focus Input" sent Escape, which in
+  Claude stops the reply or refuses a request on screen. Sundar tapped it while a Claude Code tool
+  request was showing and it refused the request. Now labelled "Esc" (stop or close) with a second
+  tap.
+- Tested: the real `pageAction` and `pageInventory` on a local LinkedIn-like page (generated
+  classes, inert search, inner-labelled button): "Start a post" listed and pressed; Search pressed
+  open and focused. Not tested on LinkedIn with the rebuilt extension.
+- Sundar (after reloading the extension and restarting the service): works. On the feed, Search put
+  the cursor in LinkedIn's search box ("done"), the redrafted feed keys were New post, Sort feed,
+  Analytics after the site's six, and New post opened LinkedIn's composer (/sharing/compose); the
+  Claude Esc key shows as "Esc".
+
 ## 2026-10-18 - Sundar (Claude Code) - Spectacle recipe
 
 - Sundar's AI draft for KDE Spectacle works (New Capture, Copy, Save, Save As, Print, Quit with a
