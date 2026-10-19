@@ -1179,3 +1179,13 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - Tested: builds; `node` check of the link rule (LinkedIn search link loses `?keywords=...`, a
   Navidrome `#/album/42/show?token=` route loses its query, other sites' links still left out).
 - Open (Tom's #18 point 2, no action): `openpager.image` has one fixed format; revisit with grids.
+
+## 2026-10-19 - Sundar (Claude Code) - Tom's grids and pages (#30) checked on the ONX
+
+- Flashed `main` at 3a329ee to the ONX (board definition unchanged; hashes verified; boot clean,
+  identity reports grid max 4x4 and `openpager.page`).
+- Sundar: ordinary 3x3 apps unchanged (Terminal, Claude, Firefox). A test library (Tom's
+  `library-pages.toml` matched to xed, as a user library) showed 2x2, then 4x4, then 2x2 pages,
+  turning as described. Test library removed afterwards (to the Trash).
+- For Tom: a long single word now breaks mid-word on two lines ("Fullscree / n" on Xfce Terminal's
+  Fullscreen key, no icon); shrink the text or break only between words.
