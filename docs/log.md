@@ -1241,3 +1241,6 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   no confirm": the app and site prompts now list the exact words it checks
   (`library::RISKY_WORDS`, with a test for each prompt). Antigravity (default model) took 14 s.
   A Haiku draft can still name a key the schema does not know ("Return"); the retry fixes it.
+- Sundar drafted Okular with Antigravity (`gemini-3.8-flash-low`): 9.1 s, first attempt, 16 keys;
+  all keys tried on the board work in Okular (including First/Last as Home/End and Back/Forward as
+  Alt+Left/Right).
