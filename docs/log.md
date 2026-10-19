@@ -1194,3 +1194,6 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - Flashed the KnoEnd firmware (c6ae1af) to the ONX (hashes verified): `READY knoend ...`,
   identity "KnoEnd", Wi-Fi joined with the stored settings (NVS kept), announces
   `_knoend._tcp` and `_openpager._tcp` as `knoend-dbcdb8.local`.
+- With both sides on KnoEnd (Sundar's machine and the ONX): the board connects over Wi-Fi, keys
+  follow apps and sites, and a Claude Code question reached the board; Sundar's Decline came back as
+  "Denied on the KnoEnd board." (hooks re-registered to `knoend`).
