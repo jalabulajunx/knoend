@@ -1100,3 +1100,7 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - Tested: the real `pageAction` and `pageInventory` on a local LinkedIn-like page (generated
   classes, inert search, inner-labelled button): "Start a post" listed and pressed; Search pressed
   open and focused. Not tested on LinkedIn with the rebuilt extension.
+- Sundar (after reloading the extension and restarting the service): works. On the feed, Search put
+  the cursor in LinkedIn's search box ("done"), the redrafted feed keys were New post, Sort feed,
+  Analytics after the site's six, and New post opened LinkedIn's composer (/sharing/compose); the
+  Claude Esc key shows as "Esc".
