@@ -204,6 +204,26 @@ mod tests {
     }
 
     #[test]
+    fn a_drafted_page_on_a_site_with_its_own_grid_stays_on_one_page() {
+        let mut catalog = Catalog::default();
+        let labels: Vec<String> = (1..=14).map(|i| format!("Site {i}")).collect();
+        let mut site = site_library("site-example-com", "ai", "example.com", &labels.iter().map(String::as_str).collect::<Vec<_>>());
+        site.pack.grid = Some("4x4".into());
+        // The page draft's own grid was chosen for its three keys alone.
+        let mut page = site_library("site-example-com-docs", "ai", "example.com/docs", &["Search docs", "Next", "Previous"]);
+        page.pack.grid = Some("2x2".into());
+        catalog.add("site.toml".into(), site);
+        catalog.add("docs.toml".into(), page);
+        let mut f = focus("firefox", "firefox");
+        f.web = Some(crate::focus::WebPage { host: "example.com".into(), url: "https://example.com/docs/".into(), title: String::new(),
+                                             granted: true, fullscreen: false, favicon: String::new() });
+        let shown = catalog.layout_for(&f).unwrap();
+        assert_eq!(shown.grid(1), crate::protocol::Grid::LARGEST, "the site's grid");
+        assert_eq!(shown.keys.len(), 16, "13 site keys and the page's 3");
+        assert!(shown.placed().iter().all(|(page, _)| *page == 1), "all on one page");
+    }
+
+    #[test]
     fn a_recipes_tree_loads_from_its_subfolders() {
         let recipes = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../recipes");
         let (catalog, rejected) = Catalog::load(&Catalog::folders(&recipes));
