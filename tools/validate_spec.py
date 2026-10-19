@@ -56,6 +56,45 @@ def slots(keys, field):
     return used
 
 
+MAX_PAGES = 8
+
+
+def grid_size(text):
+    cols, rows = text.split("x")
+    return int(cols) * int(rows)
+
+
+def placements(library):
+    """(page, slot) of each library key, or None for a key that does not fit (spec/protocol.md
+    section 5): explicit slots first; a key with only `page` takes that page's next free slot; a key
+    with neither takes the next free slot, running onto the next page when one is full."""
+    default = library["pack"].get("grid", "3x3")
+    grids = {p["number"]: p["grid"] for p in library.get("page", [])}
+    size = lambda page: grid_size(grids.get(page, default))
+    keys = library["key"]
+    used = {(k.get("page", 1), k["slot"]) for k in keys if "slot" in k}
+    out, cursor = [], 1
+    for key in keys:
+        if "slot" in key:
+            page, slot = key.get("page", 1), key["slot"]
+            out.append((page, slot) if slot <= size(page) else None)
+            continue
+        page = key.get("page", cursor)
+        while True:
+            slot = next((s for s in range(1, size(page) + 1) if (page, s) not in used), None)
+            if slot is not None or "page" in key or page >= MAX_PAGES:
+                break
+            page += 1
+        if "page" not in key:
+            cursor = page
+        if slot is None:
+            out.append(None)
+        else:
+            used.add((page, slot))
+            out.append((page, slot))
+    return out
+
+
 def risky_without_confirm(keys, describe):
     return [f"key '{k['label']}' looks risky but has no confirm"
             for k in keys if RISKY.search(describe(k)) and not k.get("confirm")]
@@ -72,6 +111,9 @@ def check_packet(text):
             used = slots(keys, "key")
             if len(used) != len(set(used)):
                 errors.append("a key slot is used twice")
+            grid = packet["body"].get("grid", {"cols": 3, "rows": 3})
+            if max(used, default=0) > grid["cols"] * grid["rows"]:
+                errors.append("a key slot runs past the layout's grid")
             errors += risky_without_confirm(keys, lambda k: k["label"])
     return errors
 
@@ -80,9 +122,14 @@ def check_library(path):
     data = tomllib.loads(path.read_text())
     errors = [e.message for e in LIBRARY.iter_errors(data)]
     if not errors:
-        used = slots(data["key"], "slot")
-        if len(used) != len(set(used)) or max(used) > 9:
-            errors.append("key slots collide or run past 9")
+        numbers = [p["number"] for p in data.get("page", [])]
+        if len(numbers) != len(set(numbers)):
+            errors.append("a page number has two [[page]] entries")
+        placed = placements(data)
+        if None in placed or len(placed) != len(set(placed)):
+            errors.append("key slots collide or run past the grid")
+        if "agent" in data["match"] and any(p and p[0] != 1 for p in placed):
+            errors.append("an agent screen has one page: every key on page 1")
         errors += risky_without_confirm(
             data["key"], lambda k: " ".join([k["label"], k.get("speak", ""), json.dumps(k["action"])]))
     return errors

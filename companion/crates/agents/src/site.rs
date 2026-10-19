@@ -14,10 +14,14 @@ use serde_json::Value;
 use crate::provider::{self, AgentConfig, Message};
 use crate::{extract_toml, Draft};
 
-const SYSTEM_PROMPT: &str = r#"You design website layouts for OpenPager, a 3x3 touchscreen keypad that
-sits next to the computer. You are given one website and the list of controls on the page the person
-is looking at. Choose up to 9 keys that make this site faster to use and return them as a TOML layout
+const SYSTEM_PROMPT: &str = r#"You design website layouts for OpenPager, a touchscreen keypad that sits
+next to the computer. You are given one website and the list of controls on the page the person is
+looking at. Choose up to 16 keys that make this site faster to use and return them as a TOML layout
 library.
+How many keys decides how big they are (one page): 1 key fills the screen, 2 are two wide keys,
+3-4 are four big keys (2x2), 5-9 a 3x3 grid, 10-16 a 4x4 grid of small keys. On 4x4 a key with an
+icon shows only the icon, so give every key there a fitting icon or a one-word label. Choose as many
+keys as the site really needs; do not pad.
 
 Return ONLY the TOML document, no prose and no code fences. Use exactly this shape:
 
@@ -65,7 +69,7 @@ Rules:
   has a documented shortcut for an action on the stated operating system, use kind = "shortcut".
 - Anything that starts a presentation, goes full screen, or opens a file picker MUST be a shortcut:
   browsers refuse those from a click made by a program.
-- Never use a selector that is not in the list. Fewer correct keys are better than nine guesses.
+- Never use a selector that is not in the list. Fewer correct keys are better than guesses.
 - Any key that deletes, sends, submits, posts, pays or buys must have confirm = true.
 - Put the most used actions first.
 - Give each key the icon that best shows its action, from the icon list only; leave icon out if
@@ -117,7 +121,7 @@ pub enum Scope {
     Page { kind: String, site_keys: Vec<String> },
 }
 
-/// Sets what the model may not choose: id, source, version, and where the library applies.
+/// Sets what the model may not choose: id, source, version, where the library applies, and the grid.
 fn constrain(toml_text: &str, host: &str, scope: &Scope) -> Result<String, String> {
     let mut value: toml::Table = toml::from_str(toml_text).map_err(|e| format!("not valid TOML: {e}"))?;
     let pack = value.entry("pack").or_insert_with(|| toml::Value::Table(Default::default()));
@@ -137,6 +141,7 @@ fn constrain(toml_text: &str, host: &str, scope: &Scope) -> Result<String, Strin
     let mut matches = toml::Table::new();
     matches.insert("web".into(), toml::Value::Array(vec![pattern.into()]));
     value.insert("match".into(), toml::Value::Table(matches));
+    crate::fit_grid(&mut value);
     toml::to_string(&value).map_err(|e| e.to_string())
 }
 

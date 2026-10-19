@@ -281,13 +281,29 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "openpager.page"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/page"
+          }
+        }
+      }
     }
   ],
   "$defs": {
     "slot": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 9
+      "maximum": 16
     },
     "label": {
       "type": "string",
@@ -355,23 +371,8 @@
               "minimum": 1
             },
             "grid": {
-              "type": "object",
-              "required": [
-                "cols",
-                "rows"
-              ],
-              "properties": {
-                "cols": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 3
-                },
-                "rows": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 3
-                }
-              }
+              "description": "The largest grid the board draws legibly.",
+              "$ref": "#/$defs/grid"
             },
             "statusBar": {
               "type": "boolean"
@@ -465,9 +466,21 @@
         "reviewed": {
           "type": "boolean"
         },
+        "grid": {
+          "description": "Columns and rows of this layout; 3x3 when absent. Slots run 1 to cols x rows.",
+          "$ref": "#/$defs/grid"
+        },
+        "page": {
+          "description": "Which page this is (1 when absent).",
+          "$ref": "#/$defs/pageNumber"
+        },
+        "pages": {
+          "description": "How many pages the layout has (1 when absent); the board shows page dots when more than 1.",
+          "$ref": "#/$defs/pageNumber"
+        },
         "keys": {
           "type": "array",
-          "maxItems": 9,
+          "maxItems": 16,
           "items": {
             "type": "object",
             "required": [
@@ -543,7 +556,7 @@
           }
         },
         "detail": {
-          "description": "Text shown in place of the middle row of keys, e.g. what a permission request is for.",
+          "description": "Text shown in place of the middle rows of keys (all but the top and bottom), e.g. what a permission request is for. Needs 3 rows or more.",
           "type": "string",
           "maxLength": 240
         }
@@ -593,6 +606,10 @@
         },
         "layout": {
           "type": "string"
+        },
+        "page": {
+          "description": "The page the key was on (1 when the layout has one page).",
+          "$ref": "#/$defs/pageNumber"
         },
         "seq": {
           "type": "integer",
@@ -906,6 +923,50 @@
         },
         "error": {
           "type": "string"
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "required": [
+        "cols",
+        "rows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        }
+      }
+    },
+    "pageNumber": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    },
+    "page": {
+      "type": "object",
+      "required": [
+        "layout",
+        "to"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "layout": {
+          "type": "string"
+        },
+        "to": {
+          "enum": [
+            "next",
+            "prev"
+          ]
         }
       }
     }

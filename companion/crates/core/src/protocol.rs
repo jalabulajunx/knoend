@@ -35,15 +35,74 @@ pub struct LayoutKey {
     pub send: Send,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Columns and rows of keys (1-4 each). Slots run 1 to cols x rows, left to right, top to bottom.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Grid {
+    pub cols: u8,
+    pub rows: u8,
+}
+
+impl Grid {
+    /// What a layout without a grid gets.
+    pub const DEFAULT: Grid = Grid { cols: 3, rows: 3 };
+    /// The largest grid the protocol allows.
+    pub const LARGEST: Grid = Grid { cols: 4, rows: 4 };
+
+    /// "2x3" (cols x rows), each 1-4.
+    pub fn parse(text: &str) -> Option<Grid> {
+        let (cols, rows) = text.split_once('x')?;
+        let grid = Grid { cols: cols.parse().ok()?, rows: rows.parse().ok()? };
+        ((1..=4).contains(&grid.cols) && (1..=4).contains(&grid.rows)).then_some(grid)
+    }
+
+    pub fn size(self) -> u8 {
+        self.cols * self.rows
+    }
+
+    pub fn fits(self, max: Grid) -> bool {
+        self.cols <= max.cols && self.rows <= max.rows
+    }
+
+    /// This grid cut down to fit `max`.
+    pub fn within(self, max: Grid) -> Grid {
+        Grid { cols: self.cols.min(max.cols), rows: self.rows.min(max.rows) }
+    }
+
+    /// The slots of the bottom row, left to right.
+    pub fn bottom_row(self) -> Vec<u8> {
+        let first = (self.rows - 1) * self.cols + 1;
+        (first..first + self.cols).collect()
+    }
+
+    /// The key in the middle (upper left of the middle when there is none).
+    pub fn center(self) -> u8 {
+        (self.rows - 1) / 2 * self.cols + (self.cols - 1) / 2 + 1
+    }
+}
+
+impl Default for Grid {
+    fn default() -> Grid {
+        Grid::DEFAULT
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LayoutBody {
-    /// Text the board shows in place of the middle row (e.g. what a permission request is for).
+    /// Text the board shows in place of the middle rows (e.g. what a permission request is for).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     pub layout: String,
     pub name: String,
     pub source: String,
     pub reviewed: bool,
+    /// The layout's grid; 3x3 when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid: Option<Grid>,
+    /// Page `page` of `pages`, when there is more than one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pages: Option<u8>,
     pub keys: Vec<LayoutKey>,
 }
 

@@ -68,14 +68,17 @@ function renderStatus(s) {
   }
   $("now-app").textContent = s.app || "-";
   const layout = s.link === "connected" ? s.layout : null;
-  $("now-layout").textContent = layout ? layout.name : "-";
+  $("now-layout").textContent = layout ? layout.name + (layout.pages > 1 ? ` (page ${layout.page} of ${layout.pages})` : "") : "-";
   const badge = $("now-badge");
   badge.hidden = !layout || layout.reviewed;
   badge.textContent = "AI draft, unreviewed";
 
   const keys = $("keys-preview");
   keys.replaceChildren();
-  for (let slot = 1; slot <= 9; slot++) {
+  const grid = (layout && layout.grid) || { cols: 3, rows: 3 };
+  keys.style.gridTemplateColumns = `repeat(${grid.cols}, 1fr)`;
+  keys.style.gridTemplateRows = `repeat(${grid.rows}, 1fr)`;
+  for (let slot = 1; slot <= grid.cols * grid.rows; slot++) {
     const div = document.createElement("div");
     const key = layout && layout.keys.find((k) => k.key === slot);
     div.textContent = key ? key.label : "";

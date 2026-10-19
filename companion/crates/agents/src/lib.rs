@@ -23,9 +23,13 @@ pub struct Draft {
     pub attempts: u32,
 }
 
-const SYSTEM_PROMPT: &str = r#"You design layouts for OpenPager, a 3x3 touchscreen shortcut keypad.
-Given a desktop application, choose up to 9 of its most useful DEFAULT keyboard shortcuts on the
-stated operating system and return them as a TOML layout library.
+const SYSTEM_PROMPT: &str = r#"You design layouts for OpenPager, a touchscreen shortcut keypad. Given a
+desktop application, choose up to 16 of its most useful DEFAULT keyboard shortcuts on the stated
+operating system and return them as a TOML layout library.
+How many keys decides how big they are (one page): 1 key fills the screen, 2 are two wide keys,
+3-4 are four big keys (2x2), 5-9 a 3x3 grid, 10-16 a 4x4 grid of small keys. On 4x4 a key with an
+icon shows only the icon, so give every key there a fitting icon or a one-word label. Choose as many
+keys as the app really needs; do not pad.
 
 Return ONLY the TOML document, no prose and no code fences. Use exactly this shape:
 
@@ -52,7 +56,7 @@ Rules:
   Minus, Equal, BracketLeft, BracketRight, Backslash, Semicolon, Quote, Comma, Period, Slash.
 - Primary means Ctrl on Linux and Windows and Cmd on macOS; use it for the common Ctrl/Cmd pair.
 - Only shortcuts the application really has by default. If you are not sure a shortcut exists,
-  leave that key out: fewer correct keys are better than nine guesses.
+  leave that key out: fewer correct keys are better than guesses.
 - Several products can share a name (an IDE and an agent desktop app called the same, say). When
   "About the app" is given, draft for the product, version and description it names, not for a
   better-known product with the same name.
@@ -100,8 +104,39 @@ pub(crate) fn extract_toml(reply: &str) -> String {
     }
 }
 
+/// The grid for a draft of `keys` keys (the prompts describe the same rule): big keys for a few
+/// actions, 3x3 as before, small keys for many.
+pub fn grid_for(keys: usize) -> &'static str {
+    match keys {
+        0 | 1 => "1x1",
+        2 => "1x2",
+        3 | 4 => "2x2",
+        5..=9 => "3x3",
+        _ => "4x4",
+    }
+}
+
+/// Sets the draft's grid from its key count, in order on one page: the model does not place keys.
+/// Keys past 16 run onto a second page.
+pub(crate) fn fit_grid(value: &mut toml::Table) {
+    value.remove("page");
+    let keys = match value.get_mut("key").and_then(toml::Value::as_array_mut) {
+        Some(keys) => {
+            for key in keys.iter_mut().filter_map(toml::Value::as_table_mut) {
+                key.remove("page");
+                key.remove("slot");
+            }
+            keys.len()
+        }
+        None => 0,
+    };
+    if let Some(pack) = value.get_mut("pack").and_then(toml::Value::as_table_mut) {
+        pack.insert("grid".into(), grid_for(keys).into());
+    }
+}
+
 /// Overwrites the fields that decide where and how the library applies, so a draft can never
-/// claim another app, a website, or a non-AI source.
+/// claim another app, a website, or a non-AI source; sets the grid from the number of keys.
 fn constrain(toml_text: &str, focus: &Focus) -> Result<String, String> {
     let mut value: toml::Table = toml::from_str(toml_text).map_err(|e| format!("not valid TOML: {e}"))?;
     let pack = value.entry("pack").or_insert_with(|| toml::Value::Table(Default::default()));
@@ -126,6 +161,7 @@ fn constrain(toml_text: &str, focus: &Focus) -> Result<String, String> {
     let mut matches = toml::Table::new();
     matches.insert(os_key.into(), toml::Value::Array(patterns));
     value.insert("match".into(), toml::Value::Table(matches));
+    fit_grid(&mut value);
     toml::to_string(&value).map_err(|e| e.to_string())
 }
 
@@ -201,6 +237,19 @@ action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
         assert!(library.matches.web.is_empty(), "web match removed");
         assert_eq!(library.matches.linux, vec!["xfce4-terminal".to_string()], "class equals instance ignoring case");
         assert!(matches!(library.pack.source, openpager_core::library::Source::Ai));
+        assert_eq!(library.pack.grid.as_deref(), Some("1x1"), "one key: one big key");
+    }
+
+    #[test]
+    fn the_grid_follows_the_number_of_keys() {
+        let draft = |n: usize| {
+            let keys: String = (0..n).map(|i| format!("[[key]]\nlabel = \"K{i}\"\npage = 3\nslot = 2\naction = {{ kind = \"shortcut\", keys = \"F{}\" }}\n", i + 1)).collect();
+            Library::parse(&constrain(&format!("[pack]\nname = \"T\"\n[[page]]\nnumber = 2\ngrid = \"1x1\"\n{keys}"), &focus()).unwrap()).unwrap()
+        };
+        assert_eq!([2, 4, 5, 9, 10, 16].map(|n| draft(n).pack.grid.unwrap()), ["1x2", "2x2", "3x3", "3x3", "4x4", "4x4"]);
+        let many = draft(18);
+        assert!(many.pages.is_empty(), "the model's own pages and slots are dropped");
+        assert_eq!(many.placed()[16..], [(2, 1), (2, 2)], "past 16 they run onto page 2");
     }
 
     #[test]

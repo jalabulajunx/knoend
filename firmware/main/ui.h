@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define UI_KEYS        9
+#define UI_KEYS        16 // the largest grid, 4x4
 #define UI_LABEL_BYTES 97 // 24 characters of UTF-8, plus NUL
 #define UI_ICON_BYTES  66 // a Material Icons name (spec/icons.txt) or a sent image ("app:firefox"), plus NUL
 #define UI_DETAIL_BYTES 241 // 240 characters of text, plus NUL
@@ -29,15 +29,21 @@ typedef struct {
     char id[65];
     char name[129];
     bool reviewed;
-    // Text shown in place of the middle row (slots 4-6), e.g. what a permission request is for.
+    uint8_t cols, rows;  // this layout's grid, within ui_max_grid
+    uint8_t page, pages; // page `page` of `pages` (1 of 1 for most layouts); the companion turns pages
+    // Text shown in place of the middle rows (all but the top and bottom), e.g. what a permission
+    // request is for. Ignored with fewer than 3 rows.
     char detail[UI_DETAIL_BYTES];
-    ui_key_t keys[UI_KEYS]; // index 0 = slot 1
+    ui_key_t keys[UI_KEYS]; // index 0 = slot 1, left to right, top to bottom
 } ui_layout_t;
 
 typedef enum { UI_STATUS_INFO, UI_STATUS_ATTENTION, UI_STATUS_ALERT } ui_status_level_t;
 
 // Draws the grid with the default layout. Call once after board_init().
 void ui_start(void);
+
+// The largest grid this screen draws legibly (each 1-4), from its size.
+void ui_max_grid(int *cols, int *rows);
 
 // Replaces the keys. Safe to call from any task.
 void ui_apply_layout(const ui_layout_t *layout);

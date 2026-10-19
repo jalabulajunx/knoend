@@ -1,0 +1,20 @@
+# An agent screen is one layout: Deny on page 2 would never be shown with the request.
+[pack]
+id = "user.agent-two-pages"
+name = "Agent two pages"
+version = "0.1.0"
+source = "user"
+
+[match]
+agent = ["claude-code/permission"]
+
+[[key]]
+slot = 1
+label = "Allow"
+action = { kind = "agent", reply = "allow" }
+
+[[key]]
+page = 2
+slot = 1
+label = "Deny"
+action = { kind = "agent", reply = "deny" }

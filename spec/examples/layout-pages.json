@@ -1,0 +1,8 @@
+{ "id": 8, "type": "openpager.layout", "body": {
+    "layout": "builtin.example-pages", "name": "Pages example", "source": "builtin", "reviewed": true,
+    "grid": { "cols": 2, "rows": 2 }, "page": 1, "pages": 3,
+    "keys": [
+      { "key": 1, "label": "Play", "icon": "play_arrow", "send": { "hid": { "modifiers": 0, "usage": 44 } } },
+      { "key": 2, "label": "Full screen", "icon": "fullscreen", "send": { "hid": { "modifiers": 0, "usage": 9 } } },
+      { "key": 3, "label": "Back 10 s", "send": { "hid": { "modifiers": 0, "usage": 13 } } },
+      { "key": 4, "label": "Ahead 10 s", "send": { "hid": { "modifiers": 0, "usage": 14 } } } ] } }

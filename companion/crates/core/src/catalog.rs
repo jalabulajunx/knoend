@@ -108,13 +108,18 @@ impl Catalog {
         let Some(site) = site else { return Some(found.clone()) };
         let same = |a: &LibraryKey, b: &LibraryKey| a.label.eq_ignore_ascii_case(&b.label) || a.action == b.action;
         let extras: Vec<LibraryKey> = found.keys.iter().filter(|k| !site.keys.iter().any(|s| same(s, k))).take(PAGE_EXTRAS).cloned().collect();
-        let mut keys: Vec<LibraryKey> = site.keys.iter().take(9 - extras.len()).cloned().collect();
+        // One page in the site's grid (the page draft's own grid was chosen for its keys alone).
+        let grid = site.grid(1);
+        let mut keys: Vec<LibraryKey> = site.keys.iter().take(usize::from(grid.size()).saturating_sub(extras.len())).cloned().collect();
         keys.extend(extras);
         for key in &mut keys {
             key.slot = None;
+            key.page = None;
         }
         let mut combined = found.clone();
         combined.keys = keys;
+        combined.pack.grid = Some(format!("{}x{}", grid.cols, grid.rows));
+        combined.pages.clear();
         Some(combined)
     }
 
@@ -167,8 +172,8 @@ mod tests {
     fn finds_by_class_or_instance_and_reports_unsupported() {
         let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../spec/examples");
         let (catalog, rejected) = Catalog::load(&[examples.clone(), examples.join("invalid")]);
-        assert_eq!(catalog.len(), 2, "the two valid example libraries");
-        assert_eq!(rejected.len(), 4, "the four invalid example libraries");
+        assert_eq!(catalog.len(), 3, "the three valid example libraries");
+        assert_eq!(rejected.len(), 7, "the seven invalid example libraries");
         assert_eq!(catalog.find(&focus("Code", "code")).map(|l| l.pack.id.as_str()), Some("builtin.vscode"));
         assert_eq!(catalog.find(&focus("code-oss", "")).map(|l| l.pack.id.as_str()), Some("builtin.vscode"));
         assert!(catalog.find(&focus("com.anthropic.Claude", "com.anthropic.claude")).is_none());
@@ -196,6 +201,26 @@ mod tests {
         // A built-in page layout is complete as it is.
         catalog.add("feed2.toml".into(), site_library("site-linkedin-com-feed2", "builtin", "linkedin.com/feed", &["Only"]));
         assert_eq!(catalog.layout_for(&f).unwrap().keys.len(), 1);
+    }
+
+    #[test]
+    fn a_drafted_page_on_a_site_with_its_own_grid_stays_on_one_page() {
+        let mut catalog = Catalog::default();
+        let labels: Vec<String> = (1..=14).map(|i| format!("Site {i}")).collect();
+        let mut site = site_library("site-example-com", "ai", "example.com", &labels.iter().map(String::as_str).collect::<Vec<_>>());
+        site.pack.grid = Some("4x4".into());
+        // The page draft's own grid was chosen for its three keys alone.
+        let mut page = site_library("site-example-com-docs", "ai", "example.com/docs", &["Search docs", "Next", "Previous"]);
+        page.pack.grid = Some("2x2".into());
+        catalog.add("site.toml".into(), site);
+        catalog.add("docs.toml".into(), page);
+        let mut f = focus("firefox", "firefox");
+        f.web = Some(crate::focus::WebPage { host: "example.com".into(), url: "https://example.com/docs/".into(), title: String::new(),
+                                             granted: true, fullscreen: false, favicon: String::new() });
+        let shown = catalog.layout_for(&f).unwrap();
+        assert_eq!(shown.grid(1), crate::protocol::Grid::LARGEST, "the site's grid");
+        assert_eq!(shown.keys.len(), 16, "13 site keys and the page's 3");
+        assert!(shown.placed().iter().all(|(page, _)| *page == 1), "all on one page");
     }
 
     #[test]

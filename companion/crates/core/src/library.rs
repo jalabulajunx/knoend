@@ -2,11 +2,17 @@
 //!
 //! Validation uses the same JSON Schema as `tools/validate_spec.py`
 //! (`spec/schemas/library.schema.json`, compiled in), plus the checks a schema cannot express:
-//! key slots must not collide, and risky-looking keys must ask for a second tap.
+//! key slots must not collide or run past their page's grid, and risky-looking keys must ask for a
+//! second tap.
 
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
+
+use crate::protocol::Grid;
+
+/// Pages a library may have (`page` 1-8).
+pub const MAX_PAGES: u8 = 8;
 
 const SCHEMA: &str = include_str!("../../../../spec/schemas/library.schema.json");
 
@@ -36,6 +42,9 @@ pub struct Pack {
     pub authors: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<String>,
+    /// Columns x rows of every page ("2x2"); 3x3 when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid: Option<String>,
     /// Who saw it work, on which OS and when; an OS not listed is untested there.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tested: Vec<Tested>,
@@ -124,8 +133,17 @@ impl Action {
     }
 }
 
+/// A page with a grid of its own (`[[page]]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageSettings {
+    pub number: u8,
+    pub grid: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibraryKey {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<u8>,
     pub label: String,
@@ -151,6 +169,8 @@ pub struct Library {
     pub pack: Pack,
     #[serde(rename = "match")]
     pub matches: Match,
+    #[serde(rename = "page", default, skip_serializing_if = "Vec::is_empty")]
+    pub pages: Vec<PageSettings>,
     #[serde(rename = "key")]
     pub keys: Vec<LibraryKey>,
 }
@@ -190,23 +210,48 @@ impl Library {
         }
     }
 
-    /// The slot (1-9) each key lands in: explicit `slot`, otherwise the next free one.
-    pub fn slots(&self) -> Vec<u8> {
-        let mut used: Vec<u8> = Vec::new();
-        let mut next_free = 1u8;
+    /// The grid of page `page` (1-based): its `[[page]]` entry, else `pack.grid`, else 3x3.
+    pub fn grid(&self, page: u8) -> Grid {
+        self.pages.iter().find(|p| p.number == page).map(|p| p.grid.as_str()).or(self.pack.grid.as_deref())
+            .and_then(Grid::parse).unwrap_or(Grid::DEFAULT)
+    }
+
+    /// The (page, slot) each key lands in, or None where it does not fit (spec/protocol.md section
+    /// 5, the same rule as `tools/validate_spec.py`): explicit slots first; a key with only `page`
+    /// takes that page's next free slot; a key with neither takes the next free slot, running onto
+    /// the next page when one is full.
+    pub fn placements(&self) -> Vec<Option<(u8, u8)>> {
+        let mut used: Vec<(u8, u8)> = self.keys.iter().filter_map(|k| k.slot.map(|s| (k.page.unwrap_or(1), s))).collect();
+        let mut cursor = 1u8;
+        let mut out = Vec::new();
         for key in &self.keys {
-            let slot = match key.slot {
-                Some(slot) => slot,
-                None => {
-                    while used.contains(&next_free) {
-                        next_free += 1;
-                    }
-                    next_free
+            if let Some(slot) = key.slot {
+                let page = key.page.unwrap_or(1);
+                out.push((slot <= self.grid(page).size()).then_some((page, slot)));
+                continue;
+            }
+            let mut page = key.page.unwrap_or(cursor);
+            let slot = loop {
+                let free = (1..=self.grid(page).size()).find(|s| !used.contains(&(page, *s)));
+                if free.is_some() || key.page.is_some() || page >= MAX_PAGES {
+                    break free;
                 }
+                page += 1;
             };
-            used.push(slot);
+            if key.page.is_none() {
+                cursor = page;
+            }
+            if let Some(slot) = slot {
+                used.push((page, slot));
+            }
+            out.push(slot.map(|s| (page, s)));
         }
-        used
+        out
+    }
+
+    /// Where each key lands, for a library that passed `parse` (every key fits).
+    pub fn placed(&self) -> Vec<(u8, u8)> {
+        self.placements().into_iter().map(|p| p.unwrap_or((MAX_PAGES + 1, 0))).collect()
     }
 
     fn semantic_problems(&self) -> Vec<String> {
@@ -219,12 +264,21 @@ impl Library {
                 }
             }
         }
-        let slots = self.slots();
-        let mut sorted = slots.clone();
+        let mut numbers: Vec<u8> = self.pages.iter().map(|p| p.number).collect();
+        numbers.sort_unstable();
+        if numbers.windows(2).any(|w| w[0] == w[1]) {
+            problems.push("a page number has two [[page]] entries".to_string());
+        }
+        let placed = self.placements();
+        // Agent screens are shown as one layout (the request and its answers).
+        if !self.matches.agent.is_empty() && placed.iter().flatten().any(|(page, _)| *page != 1) {
+            problems.push("an agent screen has one page: every key on page 1".to_string());
+        }
+        let mut sorted = placed.clone();
         sorted.sort_unstable();
         sorted.dedup();
-        if sorted.len() != slots.len() || slots.iter().any(|&s| s > 9) {
-            problems.push("key slots collide or run past 9".to_string());
+        if sorted.len() != placed.len() || placed.contains(&None) {
+            problems.push("key slots collide or run past the grid".to_string());
         }
         for key in &self.keys {
             let text = format!("{} {} {}", key.label, key.speak.as_deref().unwrap_or(""),
@@ -255,7 +309,7 @@ mod tests {
 
     #[test]
     fn spec_example_libraries_parse() {
-        for name in ["library-vscode.toml", "library-amazon.toml"] {
+        for name in ["library-vscode.toml", "library-amazon.toml", "library-pages.toml"] {
             let text = fs::read_to_string(examples().join(name)).unwrap();
             Library::parse(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
         }
@@ -268,12 +322,50 @@ mod tests {
             ("library-offsite-url.toml", "https://evil.example/"),
             ("library-risky-without-confirm.toml", "looks risky"),
             ("library-agent-key-in-app-layout.toml", "at /key/0/action/kind"),
+            ("library-slot-past-grid.toml", "run past the grid"),
+            ("library-duplicate-page.toml", "two [[page]] entries"),
+            ("library-agent-two-pages.toml", "agent screen has one page"),
         ];
         for (name, expected) in cases {
             let text = fs::read_to_string(examples().join("invalid").join(name)).unwrap();
             let error = Library::parse(&text).expect_err(name).to_string();
             assert!(error.contains(expected), "{name}: {error}");
         }
+    }
+
+    #[test]
+    fn keys_fill_pages_in_order() {
+        let text = fs::read_to_string(examples().join("library-pages.toml")).unwrap();
+        let library = Library::parse(&text).unwrap();
+        assert_eq!(library.grid(1), Grid { cols: 2, rows: 2 });
+        assert_eq!(library.grid(2), Grid::LARGEST);
+        // Four fill the 2x2 page 1, the fifth starts page 2; explicit page 2 slot 16; page 3 slot 1.
+        assert_eq!(library.placed(), vec![(1, 1), (1, 2), (1, 3), (1, 4), (2, 1), (2, 16), (3, 1)]);
+    }
+
+    #[test]
+    fn explicit_slots_are_kept_free_for_their_keys() {
+        let library = Library::parse(r#"
+            [pack]
+            id = "user.t"
+            name = "T"
+            version = "0.1.0"
+            source = "user"
+            grid = "1x2"
+            [match]
+            linux = ["t"]
+            [[key]]
+            label = "A"
+            action = { kind = "shortcut", keys = "A" }
+            [[key]]
+            slot = 1
+            label = "B"
+            action = { kind = "shortcut", keys = "B" }
+            [[key]]
+            label = "C"
+            action = { kind = "shortcut", keys = "C" }
+        "#).unwrap();
+        assert_eq!(library.placed(), vec![(1, 2), (1, 1), (2, 1)]);
     }
 
     #[test]
