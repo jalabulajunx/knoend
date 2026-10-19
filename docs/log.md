@@ -1187,3 +1187,10 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   the board, the settings move and hooks on Sundar's machine, macOS.
 - Before merging: rename the GitHub repository (the firmware download address now points at
   `jalabulajunx/knoend`).
+- Sundar ran the new service (`knoend`) on his machine while the board still had the pre-rename
+  firmware: settings moved to `~/.config/knoend`, hooks and browser hosts re-registered
+  (`knoend claude-hooks install`, `knoend browser install`), extension reloaded; working with the
+  old board through the fallback. GitHub repository renamed to `jalabulajunx/knoend`.
+- Flashed the KnoEnd firmware (c6ae1af) to the ONX (hashes verified): `READY knoend ...`,
+  identity "KnoEnd", Wi-Fi joined with the stored settings (NVS kept), announces
+  `_knoend._tcp` and `_openpager._tcp` as `knoend-dbcdb8.local`.
