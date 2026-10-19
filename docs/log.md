@@ -1244,3 +1244,8 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - Sundar drafted Okular with Antigravity (`gemini-3.8-flash-low`): 9.1 s, first attempt, 16 keys;
   all keys tried on the board work in Okular (including First/Last as Home/End and Back/Forward as
   Alt+Left/Right).
+- Sites: Instagram drafted through Antigravity in Firefox (three kinds of page, 6 to 7 s each,
+  first attempt) and worked. cricinfo.com through Claude Code (haiku) in Chrome failed: the model
+  used `input[type='search']`, not in the page's list, twice. The retry now says what to do
+  (remove those keys or copy a selector from the list), and on the last try such keys are dropped
+  and the rest kept (`site::without_keys`, with a test).

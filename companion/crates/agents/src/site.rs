@@ -157,7 +157,24 @@ fn unknown_selectors(library: &Library, items: &[Value]) -> Vec<String> {
     }).filter(|s| !known.contains(s)).map(str::to_string).collect()
 }
 
-/// Drafts and validates a site library; one retry with the validator's errors.
+/// The draft without the keys that use these selectors, its grid fitted again; an error if no key
+/// is left.
+fn without_keys(toml_text: &str, selectors: &[String]) -> Result<String, String> {
+    let mut value: toml::Table = toml::from_str(toml_text).map_err(|e| e.to_string())?;
+    if let Some(toml::Value::Array(keys)) = value.get_mut("key") {
+        keys.retain(|k| !k.get("action").and_then(|a| a.get("selector")).and_then(|s| s.as_str())
+            .is_some_and(|s| selectors.iter().any(|u| u == s)));
+        if keys.is_empty() {
+            return Err("no key was left with a selector from the list".into());
+        }
+    }
+    crate::fit_grid(&mut value);
+    toml::to_string(&value).map_err(|e| e.to_string())
+}
+
+/// Drafts and validates a site library; one retry with the validator's errors. On the last try,
+/// keys whose selectors the page did not list are dropped and the rest kept: fewer correct keys
+/// are better than none.
 pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, os: &str, scope: &Scope, items: &[Value]) -> Result<Draft, String> {
     if items.is_empty() {
         return Err("the page listed no controls to build keys from".into());
@@ -182,7 +199,16 @@ pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, o
             .and_then(|t| Library::parse(&t).map(|l| (l, t)).map_err(|e| e.to_string()))
             .and_then(|(library, toml)| {
                 let unknown = unknown_selectors(&library, items);
-                if unknown.is_empty() { Ok((library, toml)) } else { Err(format!("selectors not in the list: {}", unknown.join(", "))) }
+                if unknown.is_empty() {
+                    return Ok((library, toml));
+                }
+                if attempt == 2 {
+                    let kept = without_keys(&toml, &unknown)?;
+                    return Library::parse(&kept).map(|l| (l, kept)).map_err(|e| e.to_string());
+                }
+                Err(format!("selectors not in the list: {}. Remove the keys that use them, or use a selector \
+                             copied exactly from the list of controls (a search key only if a search box is listed)",
+                            unknown.join(", ")))
             });
         match checked {
             Ok((library, toml)) => return Ok(Draft { library, toml, attempts: attempt }),
@@ -205,6 +231,32 @@ mod tests {
         vec![json!({"role": "button", "name": "Compose", "selector": "[data-testid=\"compose\"]", "shortcut": "c"}),
              json!({"role": "searchbox", "name": "Search", "selector": "input[name=\"q\"]"}),
              json!({"role": "link", "name": "Inbox", "selector": "#inbox", "href": "/inbox?tab=1"})]
+    }
+
+    #[test]
+    fn invented_selectors_are_dropped_and_the_rest_kept() {
+        let toml = r#"
+[pack]
+id = "ai.site-example-com"
+name = "Example"
+version = "0.1.0"
+source = "ai"
+
+[match]
+web = ["example.com"]
+
+[[key]]
+label = "Compose"
+action = { kind = "element", selector = "[data-testid=\"compose\"]" }
+
+[[key]]
+label = "Search"
+action = { kind = "focus", selector = "input[type='search']" }
+"#;
+        let kept = without_keys(toml, &["input[type='search']".into()]).unwrap();
+        let library = Library::parse(&kept).unwrap();
+        assert_eq!(library.keys.iter().map(|k| k.label.as_str()).collect::<Vec<_>>(), ["Compose"]);
+        assert!(without_keys(toml, &["input[type='search']".into(), "[data-testid=\"compose\"]".into()]).is_err());
     }
 
     #[test]
