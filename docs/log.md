@@ -1011,3 +1011,9 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   Sundar, Firefox): 7 keys (New chat, Ask, Skills, Library, Add options, Review tables, Workrooms).
   Left out the draft's two position-based keys (Search chats, Switch product); name "Protege" (the
   board's font is ASCII only, so "Protégé" showed as "Prot g"). Published with Sundar's OK.
+
+## 2026-10-18 - Sundar (Claude Code) - Spectacle recipe
+
+- Sundar's AI draft for KDE Spectacle works (New Capture, Copy, Save, Save As, Print, Quit with a
+  confirm tap): promoted to `recipes/apps/spectacle.toml` with his Linux `tested` entry. PR left
+  open to merge later, at his request.
