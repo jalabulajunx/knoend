@@ -1,0 +1,25 @@
+{
+  "id": "fnk0104b",
+  "name": "Freenove FNK0104B",
+  "chip": "esp32s3",
+  "serial": "usb-serial-jtag",
+  "native_usb": true,
+  "speaker": false,
+  "i2c": { "sda": 16, "scl": 15, "pullup": true },
+  "display": {
+    "driver": "ili9341",
+    "sclk": 12, "mosi": 11, "dc": 46, "cs": 10,
+    "width": 240, "height": 320, "pclk_hz": 40000000,
+    "bgr": true, "invert": true,
+    "mirror_x": false, "mirror_y": true, "swap_xy": false,
+    "rotation": 90,
+    "backlight": { "gpio": 45 }
+  },
+  "touch": { "driver": "ft6336", "address": 56, "reset": 18, "max_x": 240, "max_y": 320, "mirror_x": true, "mirror_y": true },
+  "sources": [
+    "https://github.com/Freenove/Freenove_ESP32_S3_Display/blob/main/Schematic/2.8inch_ESP32-S3_Display_Schematic.pdf, read 2026-10-17 for pin numbers only",
+    "Schematic: LCD CS 10, MOSI 11, SCK 12, MISO 13, RS 46, backlight 45 (active high via BSS138); LCD reset tied to CHIP_PU",
+    "Schematic: I2C SCL 15, SDA 16 (shared with ES8311 codec at 0x18); FT6336 at 0x38, INT 17, RST 18; native USB on 19/20",
+    "Colour order, inversion, orientation and touch mirroring confirmed on the board 2026-10-18 (Tom, macOS)"
+  ]
+}

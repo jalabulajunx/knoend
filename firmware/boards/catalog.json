@@ -22,8 +22,7 @@
       "bridges": [
         "espressif-native"
       ],
-      "status": "coming",
-      "note": "Needs its board definition (firmware/boards/definitions/fnk0104b.json)."
+      "status": "supported"
     },
     "waveshare_s3_touch_lcd_2": {
       "name": "Waveshare ESP32-S3-Touch-LCD-2 (2\")",
