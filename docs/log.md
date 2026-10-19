@@ -909,3 +909,15 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   picks the highest SDK (`xcrun --kill-cache` did not change it). Tom removed the stray SDK; plain
   `cargo test` links since.
 - Open: Mac versions of the app recipes (bundle ids, shortcut check, Tom's `tested` entries).
+
+## 2026-10-18 - Sundar (Claude Code) - PR #21 (Tom: FNK0104B, definitions' mirror settings) checked on the ONX
+
+- Flashed Tom's branch `tom/fnk0104b` (f1fe331) to the ONX2432G028 with
+  `idf.py flash` (#20, merged meanwhile, changes no firmware), then wrote its new `onx2432g028.json` (`mirror_y` false) to the `board` partition
+  at 0x310000 as Tom's PR asks; all writes hash-verified. The previous definition was read back first
+  (minified, `mirror_y` true) so it could be restored.
+- Boot log: `board: definition onx2432g028: st7789 display, cst826 touch`, `READY openpager
+  v0.1.1-32-gf1fe331`, Wi-Fi joined, the running service reconnected; no errors.
+- Sundar's photo ([`images/2026-10-18-onx-pr21-mirror.jpg`](images/2026-10-18-onx-pr21-mirror.jpg)):
+  picture the same as before (text upright, keys in order, status line at the bottom). Taps were not
+  checked key by key; the ONX touch settings are unchanged by the PR. Merged at Sundar's request.
