@@ -52,6 +52,9 @@ Action kinds:
 Rules:
 - Prefer controls with clear names that stay on the page (navigation, search, compose, play). Avoid
   controls whose names are content (an article or video title, a person's name): they change.
+- Leave out games, ads, promotions, "sponsored" or suggested items, and the buttons of one item in a
+  list or feed (Like, React, Comment, Repost, Share on a post): there are many such items and a key
+  would act on whichever comes first, not the one the person is looking at.
 - For a link with an href, use kind = "open" with that href rather than clicking it.
 - Avoid selectors built from positions (nth-of-type, long " > " chains) when the list has a named
   one (id, aria-label, data-testid) for the same thing: positions break when the page changes.
@@ -120,6 +123,8 @@ fn constrain(toml_text: &str, host: &str, scope: &Scope) -> Result<String, Strin
     let pack = value.entry("pack").or_insert_with(|| toml::Value::Table(Default::default()));
     let pack = pack.as_table_mut().ok_or("[pack] is not a table")?;
     let (id, pattern) = match scope {
+        // A "page" with no path is the site itself: never let it take the site-wide id by accident.
+        Scope::Page { kind, .. } if page_id(host, kind) == site_id(host) => return Err(format!("{kind} is the whole site, not a kind of page")),
         Scope::Site => (site_id(host), site_of(host)),
         Scope::Page { kind, .. } => (page_id(host, kind), format!("{}{}", site_of(host), kind)),
     };
@@ -153,9 +158,11 @@ pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, o
     let purpose = match scope {
         Scope::Site => "These keys are for the whole site: choose what is useful on most of its pages (navigation, search, the main actions).".to_string(),
         Scope::Page { kind, site_keys } => format!(
-            "These keys are only for this kind of page ({kind}); the site already has these keys for every page: {}. \
-             Choose what this page adds; repeat a site key only if it is essential here.",
-            if site_keys.is_empty() { "none".into() } else { site_keys.join(", ") }),
+            "These keys are only for this kind of page ({kind}). The board keeps the site's own keys on every page ({}) \
+             and adds at most {} keys for this page after them: choose the {} most useful things this page adds, most useful first, \
+             and none the site keys already do. Prefer what the person starts on this page (a new post, compose, upload, a filter).",
+            if site_keys.is_empty() { "none".into() } else { site_keys.join(", ") },
+            openpager_core::catalog::PAGE_EXTRAS, openpager_core::catalog::PAGE_EXTRAS),
     };
     let prompt = format!("Website: {}\nPage: {}\nOperating system: {os}\n{purpose}\nIcon list: {}\nControls on this page:\n{}\n",
                          site_of(host), route, openpager_core::library::icon_names().join(" "), describe(items));
@@ -223,6 +230,8 @@ action = { kind = "element", selector = "#transfer-all" }
         assert_eq!(library.pack.id, "ai.site-mail-example");
         assert_eq!(library.matches.web, vec!["mail.example".to_string()]);
         assert_eq!(unknown_selectors(&library, &items()), vec!["#transfer-all".to_string()]);
+        assert!(constrain(hostile, "www.linkedin.com", &Scope::Page { kind: "/".into(), site_keys: vec![] }).is_err(),
+                "the front page must not overwrite the site-wide keys");
         let page = constrain(hostile, "192.168.50.3", &Scope::Page { kind: "/app/#/album/*/show".into(), site_keys: vec![] }).unwrap();
         let library = Library::parse(&page).unwrap();
         assert_eq!(library.pack.id, "ai.site-192-168-50-3-app-album-show");

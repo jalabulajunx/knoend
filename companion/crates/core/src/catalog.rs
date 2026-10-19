@@ -7,7 +7,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::focus::{Focus, Os};
-use crate::library::{Library, Source};
+use crate::library::{Library, LibraryKey, Source};
+
+/// How many keys of its own a kind of page adds to its site's keys.
+pub const PAGE_EXTRAS: usize = 3;
 
 #[derive(Default)]
 pub struct Catalog {
@@ -92,6 +95,29 @@ impl Catalog {
             .min_by_key(|l| rank(&l.pack.source))
     }
 
+    /// What the board shows for `focus`: the best library, except that on a kind of page with AI-drafted
+    /// keys of its own the site's keys stay. The site's keys come first, in the same places on every
+    /// page of the site, and the page's keys take the last slots (at most `PAGE_EXTRAS`, skipping any
+    /// the site already has). Built-in and user page libraries are complete layouts and are kept as
+    /// they are, and so is anything for full screen (a slide remote).
+    pub fn layout_for(&self, focus: &Focus) -> Option<Library> {
+        let found = self.find(focus)?;
+        let page_draft = found.pack.source == Source::Ai
+            && found.matches.web.iter().any(|p| p.contains('/') && !p.contains("@fullscreen"));
+        let site = focus.web.as_ref().filter(|_| page_draft).and_then(|web| self.site_wide(web)).filter(|s| s.pack.id != found.pack.id);
+        let Some(site) = site else { return Some(found.clone()) };
+        let same = |a: &LibraryKey, b: &LibraryKey| a.label.eq_ignore_ascii_case(&b.label) || a.action == b.action;
+        let extras: Vec<LibraryKey> = found.keys.iter().filter(|k| !site.keys.iter().any(|s| same(s, k))).take(PAGE_EXTRAS).cloned().collect();
+        let mut keys: Vec<LibraryKey> = site.keys.iter().take(9 - extras.len()).cloned().collect();
+        keys.extend(extras);
+        for key in &mut keys {
+            key.slot = None;
+        }
+        let mut combined = found.clone();
+        combined.keys = keys;
+        Some(combined)
+    }
+
     /// The library that covers a whole site (a `match.web` pattern without a route), if any.
     pub fn site_wide(&self, web: &crate::focus::WebPage) -> Option<&Library> {
         self.libraries.iter().map(|(_, l)| l)
@@ -146,6 +172,30 @@ mod tests {
         assert_eq!(catalog.find(&focus("Code", "code")).map(|l| l.pack.id.as_str()), Some("builtin.vscode"));
         assert_eq!(catalog.find(&focus("code-oss", "")).map(|l| l.pack.id.as_str()), Some("builtin.vscode"));
         assert!(catalog.find(&focus("com.anthropic.Claude", "com.anthropic.claude")).is_none());
+    }
+
+    fn site_library(id: &str, source: &str, web: &str, labels: &[&str]) -> Library {
+        let keys: String = labels.iter().map(|l| format!("[[key]]\nlabel = \"{l}\"\naction = {{ kind = \"open\", url = \"/{}\" }}\n", l.to_lowercase().replace(' ', "-"))).collect();
+        Library::parse(&format!("[pack]\nid = \"{source}.{id}\"\nname = \"{id}\"\nversion = \"0.1.0\"\nsource = \"{source}\"\n[match]\nweb = [\"{web}\"]\n{keys}")).unwrap()
+    }
+
+    #[test]
+    fn a_drafted_page_keeps_the_site_keys_and_adds_its_own() {
+        let mut catalog = Catalog::default();
+        let site = ["Home", "Search", "Network", "Jobs", "Messages", "Alerts", "Me", "Saved", "Groups"];
+        catalog.add("site.toml".into(), site_library("site-linkedin-com", "ai", "linkedin.com", &site));
+        catalog.add("feed.toml".into(), site_library("site-linkedin-com-feed", "ai", "linkedin.com/feed", &["New Post", "Saved", "Sort Feed", "Analytics", "Events"]));
+        let mut f = focus("google-chrome", "google-chrome");
+        f.web = Some(crate::focus::WebPage { host: "www.linkedin.com".into(), url: "https://www.linkedin.com/feed/".into(), title: String::new(),
+                                             granted: true, fullscreen: false, favicon: String::new() });
+        let shown = catalog.layout_for(&f).unwrap();
+        let labels: Vec<&str> = shown.keys.iter().map(|k| k.label.as_str()).collect();
+        assert_eq!(labels, ["Home", "Search", "Network", "Jobs", "Messages", "Alerts", "New Post", "Sort Feed", "Analytics"],
+                   "site keys in their places, then the page's first three it does not already have");
+        assert_eq!(shown.pack.id, "ai.site-linkedin-com-feed");
+        // A built-in page layout is complete as it is.
+        catalog.add("feed2.toml".into(), site_library("site-linkedin-com-feed2", "builtin", "linkedin.com/feed", &["Only"]));
+        assert_eq!(catalog.layout_for(&f).unwrap().keys.len(), 1);
     }
 
     #[test]
