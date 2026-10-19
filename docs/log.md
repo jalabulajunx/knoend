@@ -981,3 +981,33 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   steps 2-3 stayed hidden was found and fixed: `step()` rewrites class names). Not tested: an actual
   change of network (needs the person's Wi-Fi password).
 - Sundar changed the board's Wi-Fi with it on the ONX (2026-10-18): worked.
+
+## 2026-10-18 - Sundar (Claude Code) - Antigravity recipes; drafts told which product an app is
+
+- Sundar: xed's AI keys work (promoted to `recipes/apps/xed.toml`, tested Linux, Sundar). Antigravity
+  got the wrong keys: there are two products, the Antigravity IDE (VS Code-based, 1.107, window class
+  `antigravity-ide`) and the Antigravity agent desktop app (2.23.1, "Agentic Desktop Application",
+  class `antigravity`, like Claude or Codex). The draft matched the right window but the model, told
+  only the name, wrote the IDE's shortcuts (Quick Open, Command Palette, Terminal).
+- Changed:
+  - `recipes/apps/antigravity.toml` (agent app): New Chat Ctrl+N, Chats Ctrl+K, Type Ctrl+L, Prev/Next
+    Chat Alt+Up/Down, Find File Ctrl+P, New Window Ctrl+Shift+N, Close Esc. Sources: the "Navigation
+    shortcuts" of antigravity.google/docs/getting-started (desktop app section) and the app's own
+    menu code (New Window). Untested (no `tested` entry yet). As a built-in recipe it outranks the
+    local AI draft for the same window.
+  - `recipes/apps/antigravity-ide.toml`: the draft's IDE keys, matched to `antigravity-ide`. Untested.
+  - Drafting: `app_facts::about` (Linux) finds the window's process (`_NET_WM_PID`,
+    `openpager_focus::window_pid`) and tells the drafting agent the program file name and, for
+    Electron apps, the package's name, version and description (`resources/app.asar` read directly,
+    or `resources/app/product.json` for VS Code-style apps). No paths are sent. Prompt rule: products
+    can share a name; draft for the one "About the app" names.
+- Tested: unit tests (prompt carries the facts and the rule; VS Code-style and asar packages are
+  described, with a hand-built asar); a one-off check on this machine read "Antigravity 2.23.1:
+  Antigravity - Agentic Desktop Application" and "Claude 2.7032.0: Desktop application for Claude.ai"
+  from the running windows. Not yet: the Antigravity keys on the board (Sundar's board still showed
+  the draft: the running service predates this branch).
+- Sundar: the Antigravity recipe's keys work on the board (2026-10-18); tested entry added.
+- Added `recipes/sites/protege.lexis.com.toml` from Sundar's working AI draft (tested Linux,
+  Sundar, Firefox): 7 keys (New chat, Ask, Skills, Library, Add options, Review tables, Workrooms).
+  Left out the draft's two position-based keys (Search chats, Switch product); name "Protege" (the
+  board's font is ASCII only, so "Protégé" showed as "Prot g"). Published with Sundar's OK.

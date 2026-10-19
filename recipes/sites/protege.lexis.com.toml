@@ -1,0 +1,75 @@
+# LexisNexis Protege (protege.lexis.com). Drafted by the OpenPager configure agent (openai/gpt-6-sol)
+# from the page's controls, then used and kept by Sundar. Two drafted keys (Search chats, Switch
+# product) were left out: they found their buttons by position on the page, which breaks easily.
+
+[[key]]
+icon = "add"
+label = "New chat"
+
+[key.action]
+kind = "open"
+url = "/"
+
+[[key]]
+icon = "edit"
+label = "Ask"
+
+[key.action]
+kind = "focus"
+selector = 'textarea[aria-label="A basic chat composer"]'
+
+[[key]]
+icon = "build"
+label = "Skills"
+
+[key.action]
+kind = "open"
+url = "/legal-skills"
+
+[[key]]
+icon = "folder_open"
+label = "Library"
+
+[key.action]
+kind = "element"
+selector = 'button[aria-label="Library"]'
+
+[[key]]
+icon = "add"
+label = "Add options"
+
+[key.action]
+kind = "element"
+selector = 'button[aria-label="Add options"]'
+
+[[key]]
+icon = "grid_view"
+label = "Review tables"
+
+[key.action]
+kind = "open"
+url = "/review-tables"
+
+[[key]]
+icon = "group"
+label = "Workrooms"
+
+[key.action]
+kind = "open"
+url = "/workrooms"
+
+[match]
+web = ["protege.lexis.com"]
+
+[pack]
+description = "Quick access to chats, the composer, legal tools, and the library."
+id = "builtin.site-protege-lexis-com"
+name = "Protege"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Firefox"

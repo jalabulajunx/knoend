@@ -53,19 +53,23 @@ Rules:
 - Primary means Ctrl on Linux and Windows and Cmd on macOS; use it for the common Ctrl/Cmd pair.
 - Only shortcuts the application really has by default. If you are not sure a shortcut exists,
   leave that key out: fewer correct keys are better than nine guesses.
+- Several products can share a name (an IDE and an agent desktop app called the same, say). When
+  "About the app" is given, draft for the product, version and description it names, not for a
+  better-known product with the same name.
 - Any key that deletes, sends, submits, closes without saving or buys something must have
   confirm = true.
 - Put the most used actions first.
 - Give each key the icon that best shows its action, from the icon list only; leave icon out if
   none fits."#;
 
-fn user_prompt(focus: &Focus) -> String {
+fn user_prompt(focus: &Focus, about: &[String]) -> String {
     let os = match focus.os {
         Os::Linux => "Linux",
         Os::Macos => "macOS",
         Os::Windows => "Windows",
     };
-    format!("Application: {}\nWindow class: {}\nWindow instance: {}\nOperating system: {os}\nIcon list: {}\n",
+    let about = if about.is_empty() { String::new() } else { format!("About the app (from its own files): {}\n", about.join("; ")) };
+    format!("Application: {}\nWindow class: {}\nWindow instance: {}\n{about}Operating system: {os}\nIcon list: {}\n",
             focus.display_name(), focus.app, focus.instance, openpager_core::library::icon_names().join(" "))
 }
 
@@ -126,8 +130,10 @@ fn constrain(toml_text: &str, focus: &Focus) -> Result<String, String> {
 }
 
 /// Asks the model for a library and validates it; one retry with the validator's errors.
-pub async fn draft_library(config: &AgentConfig, focus: &Focus) -> Result<Draft, String> {
-    let mut messages = vec![provider::Message::user(user_prompt(focus))];
+/// `about`: what the app's own files say about it (`Package: Antigravity 2.23.1: ...`), so that two
+/// products with one name are not confused; may be empty.
+pub async fn draft_library(config: &AgentConfig, focus: &Focus, about: &[String]) -> Result<Draft, String> {
+    let mut messages = vec![provider::Message::user(user_prompt(focus, about))];
     let mut last_error = String::new();
     for attempt in 1..=2 {
         let reply = provider::complete(config, SYSTEM_PROMPT, &messages).await?;
@@ -155,7 +161,16 @@ mod tests {
 
     #[test]
     fn prompt_never_contains_the_window_title() {
-        assert!(!user_prompt(&focus()).contains("secret"));
+        assert!(!user_prompt(&focus(), &[]).contains("secret"));
+    }
+
+    #[test]
+    fn prompt_says_which_product_it_is() {
+        let about = ["Package: Antigravity 2.23.1: Antigravity - Agentic Desktop Application".to_string()];
+        let prompt = user_prompt(&focus(), &about);
+        assert!(prompt.contains("About the app (from its own files): Package: Antigravity 2.23.1"));
+        assert!(!user_prompt(&focus(), &[]).contains("About the app"));
+        assert!(SYSTEM_PROMPT.contains("Several products can share a name"));
     }
 
     #[test]

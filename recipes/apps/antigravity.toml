@@ -1,0 +1,66 @@
+# Antigravity, the agentic desktop app (2.x; "Antigravity - Agentic Desktop Application"). Not the
+# Antigravity IDE, which has its own recipe (antigravity-ide.toml) and window class. Shortcuts from
+# antigravity.google/docs/getting-started ("Navigation shortcuts", the desktop app section) and the
+# app's own menu (New Window). An AI draft had given this app the IDE's shortcuts.
+[pack]
+id = "builtin.antigravity"
+name = "Antigravity"
+version = "0.1.0"
+source = "builtin"
+description = "Conversations, file search and the input box in the Antigravity desktop app."
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Antigravity 2.23.1"
+
+[match]
+linux = ["antigravity"]
+
+[[key]]
+label = "New Chat"
+speak = "New conversation"
+icon = "add"
+action = { kind = "shortcut", keys = "Primary+N" }
+
+[[key]]
+label = "Chats"
+speak = "Conversation picker"
+icon = "chat"
+action = { kind = "shortcut", keys = "Primary+K" }
+
+[[key]]
+label = "Type"
+speak = "Focus the input"
+icon = "keyboard"
+action = { kind = "shortcut", keys = "Primary+L" }
+
+[[key]]
+label = "Prev Chat"
+speak = "Previous conversation"
+icon = "arrow_upward"
+action = { kind = "shortcut", keys = "Alt+Up" }
+
+[[key]]
+label = "Next Chat"
+speak = "Next conversation"
+icon = "arrow_downward"
+action = { kind = "shortcut", keys = "Alt+Down" }
+
+[[key]]
+label = "Find File"
+speak = "File search"
+icon = "search"
+action = { kind = "shortcut", keys = "Primary+P" }
+
+[[key]]
+label = "New Window"
+icon = "open_in_new"
+action = { kind = "shortcut", keys = "Primary+Shift+N" }
+
+[[key]]
+label = "Close"
+speak = "Close the overlay"
+icon = "close"
+action = { kind = "shortcut", keys = "Escape" }

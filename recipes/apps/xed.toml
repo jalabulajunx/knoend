@@ -1,0 +1,89 @@
+# Drafted by the OpenPager configure agent (openai/gpt-6-sol) on Linux, then used and kept by
+# Sundar. Tested on Linux only.
+[[key]]
+icon = "save"
+label = "Save"
+
+[key.action]
+keys = "Primary+S"
+kind = "shortcut"
+
+[[key]]
+icon = "undo"
+label = "Undo"
+
+[key.action]
+keys = "Primary+Z"
+kind = "shortcut"
+
+[[key]]
+icon = "content_copy"
+label = "Copy"
+
+[key.action]
+keys = "Primary+C"
+kind = "shortcut"
+
+[[key]]
+icon = "content_paste"
+label = "Paste"
+
+[key.action]
+keys = "Primary+V"
+kind = "shortcut"
+
+[[key]]
+icon = "search"
+label = "Find"
+
+[key.action]
+keys = "Primary+F"
+kind = "shortcut"
+
+[[key]]
+icon = "folder_open"
+label = "Open"
+
+[key.action]
+keys = "Primary+O"
+kind = "shortcut"
+
+[[key]]
+icon = "insert_drive_file"
+label = "New"
+
+[key.action]
+keys = "Primary+N"
+kind = "shortcut"
+
+[[key]]
+icon = "redo"
+label = "Redo"
+
+[key.action]
+keys = "Primary+Shift+Z"
+kind = "shortcut"
+
+[[key]]
+icon = "edit"
+label = "Replace"
+
+[key.action]
+keys = "Primary+H"
+kind = "shortcut"
+
+[match]
+linux = ["xed"]
+
+[pack]
+description = "Common file, editing, and search shortcuts for Xed."
+id = "builtin.xed"
+name = "Xed"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11)"
