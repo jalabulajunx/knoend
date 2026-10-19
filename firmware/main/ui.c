@@ -21,6 +21,8 @@
 #define STATUS_HEIGHT  40
 #define PAGER_WIDTH    64 // the page indicator at the right end of the status bar
 #define ICON_GAP       4  // between a key's icon and its label
+#define ICON_MARGIN    3  // empty border inside a 32 px Material icon; a two-line label may use it
+#define LINE_SQUEEZE   2  // how much closer a two-line label's lines are
 #define CONFIRM_MS     3000
 #define HID_USAGE_1    0x1E // USB HID usage IDs for '1'..'9' are consecutive
 
@@ -279,26 +281,34 @@ static void draw_keys_locked(void)
             lv_obj_center(key_icons[i]);
             lv_label_set_text(key_labels[i], "");
         } else if (icon != NULL) {
-            // Icon above, a one-line label under it, the pair centred on the key; a larger label on
-            // big keys. Icons stay 32 px: LVGL 8 draws 4-bit alpha images line by line and cannot
-            // zoom them (it reads a one-line buffer as the whole image, past its end).
+            // Icon above, the label under it, the pair centred on the key; a larger label on big
+            // keys. Icons stay 32 px: LVGL 8 draws 4-bit alpha images line by line and cannot zoom
+            // them (it reads a one-line buffer as the whole image, past its end).
             const int icon_px = 32;
             const lv_font_t *font = big ? &lv_font_montserrat_20 : &lv_font_montserrat_14;
             const int line_px = lv_font_get_line_height(font);
-            const int block = icon_px + ICON_GAP + line_px;
+            // A label too long for one line gets two where they fit: lines a little closer, the
+            // text up into the icon's empty margin (3x3: 59 of 61 px). Otherwise one line and "...".
+            lv_point_t text;
+            lv_txt_get_size(&text, key->label, font, 0, 0, key_w - 8, LV_TEXT_FLAG_NONE);
+            const bool two = text.y > line_px && icon_px - ICON_MARGIN + 2 * line_px - LINE_SQUEEZE <= h - 2;
+            const int label_h = two ? 2 * line_px - LINE_SQUEEZE : line_px;
+            const int block = icon_px + (two ? -ICON_MARGIN : ICON_GAP) + label_h;
             lv_img_set_src(key_icons[i], icon);
             lv_obj_clear_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_align(key_icons[i], LV_ALIGN_CENTER, 0, icon_px / 2 - block / 2);
             lv_obj_set_style_text_font(key_labels[i], font, 0);
+            lv_obj_set_style_text_line_space(key_labels[i], two ? -LINE_SQUEEZE : 0, 0);
             lv_label_set_long_mode(key_labels[i], LV_LABEL_LONG_DOT);
-            lv_obj_set_height(key_labels[i], line_px);
-            lv_obj_align(key_labels[i], LV_ALIGN_CENTER, 0, block / 2 - line_px / 2);
+            lv_obj_set_height(key_labels[i], label_h);
+            lv_obj_align(key_labels[i], LV_ALIGN_CENTER, 0, block / 2 - label_h / 2);
         } else {
             lv_obj_add_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_text_font(key_labels[i],
                                        detail || small            ? &lv_font_montserrat_14
                                        : big || strlen(key->label) <= 2 ? &lv_font_montserrat_28
                                                                         : &lv_font_montserrat_20, 0);
+            lv_obj_set_style_text_line_space(key_labels[i], 0, 0);
             lv_label_set_long_mode(key_labels[i], LV_LABEL_LONG_WRAP);
             lv_obj_set_height(key_labels[i], LV_SIZE_CONTENT);
             lv_obj_center(key_labels[i]);
