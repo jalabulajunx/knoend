@@ -1221,3 +1221,16 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   through `complete` (correct reply), the not-signed-in error for Claude Code (says to `/login`),
   and a GNOME Calculator draft through each (valid, first attempt, about 17 s each).
   Not yet: through the web app and service, a site draft, macOS.
+- Later the same day: the tools are looked up at run time, not at fixed places
+  (`cli_tool::tools_on_this_computer`, `GET /api/ai/tools`, and the setup snapshot's
+  `ai_tools_on_this_computer`). Where: this process's PATH, then the PATH each installed shell gives
+  the person (`<shell> -lic env` for `$SHELL`, zsh, bash, fish; 3 s each at most; a service started
+  by systemd or launchd has a short PATH, and on Sundar's machine only fish's PATH has
+  `~/.local/bin`), then the usual per-user folders for the OS (`~/.local/bin`, Homebrew on macOS,
+  `%APPDATA%\npm` and PATHEXT names on Windows). Signed in: `claude auth status`, `agy models`
+  (agy has no status command; it took 2 to 16 s), `codex login status`. Codex is found and shown
+  but not used yet. The web app's AI settings show what was found and offer only installed tools,
+  with a "Look again" button.
+- Tested on Arch Linux: workspace tests; `knoend serve` from this branch found Claude Code 2.1.283
+  and agy 1.4.2, both signed in, Codex not installed (2.4 s); the board connected over Wi-Fi.
+  Not tested: macOS and Windows lookups, Codex.

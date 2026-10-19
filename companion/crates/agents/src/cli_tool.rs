@@ -24,23 +24,179 @@ use crate::provider::Message;
 
 const CLAUDE: &str = "claude";
 const AGY: &str = "agy";
+const CODEX: &str = "codex";
 
-/// Where a command is: the PATH, then the places installers use (a background service may start
-/// with a short PATH).
-fn find(command: &str) -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+/// An AI tool KnoEnd can look for on this computer.
+pub struct Tool {
+    /// The provider name in agent.toml and the web app.
+    pub provider: &'static str,
+    pub name: &'static str,
+    pub command: &'static str,
+    /// Whether KnoEnd can use it yet (Codex is only reported: not run here so far).
+    pub supported: bool,
+    pub sign_in: &'static str,
+}
+
+pub const TOOLS: &[Tool] = &[
+    Tool { provider: "claude-code", name: "Claude Code", command: CLAUDE, supported: true,
+           sign_in: "run `claude` in a terminal and type /login" },
+    Tool { provider: "antigravity", name: "Antigravity CLI", command: AGY, supported: true,
+           sign_in: "run `agy` in a terminal and sign in with your Google account" },
+    Tool { provider: "codex", name: "Codex CLI", command: CODEX, supported: false,
+           sign_in: "run `codex login` in a terminal" },
+];
+
+/// The PATH a shell gives the person, read at run time: `<shell> -lic env`. A service started by
+/// systemd, launchd or a desktop launcher has a much shorter PATH than the person's terminal, and
+/// installers (`agy install`, npm, Homebrew, pnpm) add their folders in shell start-up files.
+#[cfg(unix)]
+fn shell_paths() -> Vec<PathBuf> {
+    let mut shells: Vec<PathBuf> = std::env::var_os("SHELL").map(PathBuf::from).into_iter().collect();
+    // The terminal may run another shell than the account's (bash account, fish terminal).
+    for name in ["zsh", "bash", "fish"] {
+        for dir in ["/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"] {
+            let path = Path::new(dir).join(name);
+            if path.is_file() && !shells.iter().any(|s| s.file_name() == path.file_name()) {
+                shells.push(path);
+                break;
+            }
+        }
+    }
+    let mut dirs = Vec::new();
+    for shell in shells {
+        let Ok(mut child) = std::process::Command::new(&shell).args(["-l", "-i", "-c", "env"])
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else { continue };
+        // A shell whose start-up waits on something is given 3 s, then left out.
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while child.try_wait().ok().flatten().is_none() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if child.try_wait().ok().flatten().is_none() {
+            let _ = child.kill();
+            let _ = child.wait();
+            continue;
+        }
+        let mut out = String::new();
+        let _ = std::io::Read::read_to_string(child.stdout.as_mut().expect("piped"), &mut out);
+        if let Some(path) = out.lines().find_map(|l| l.strip_prefix("PATH=")) {
+            dirs.extend(std::env::split_paths(path));
+        }
+    }
+    dirs
+}
+
+#[cfg(not(unix))]
+fn shell_paths() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+/// Per-user folders installers use on this OS, for when no shell names them.
+fn usual_dirs() -> Vec<PathBuf> {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).unwrap_or_default();
+    let mut dirs = vec![home.join(".local/bin"), home.join(".claude/local"), home.join(".npm-global/bin")];
+    if cfg!(target_os = "macos") {
+        dirs.extend([PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin")]);
+    } else if cfg!(windows) {
+        for var in ["APPDATA", "LOCALAPPDATA"] {
+            if let Some(base) = std::env::var_os(var).map(PathBuf::from) {
+                dirs.extend([base.join("npm"), base.join("Programs")]);
+            }
+        }
+    } else {
+        dirs.extend([PathBuf::from("/usr/local/bin"), PathBuf::from("/usr/bin")]);
+    }
+    dirs
+}
+
+/// Every folder to look in, without repeats: this process's PATH, the shells' PATHs, then the
+/// usual per-user folders.
+fn search_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
-    dirs.extend([home.join(".local/bin"), home.join(".claude/local"), home.join(".npm-global/bin"),
-                 PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin"), PathBuf::from("/usr/bin")]);
-    dirs.into_iter().map(|d| d.join(command)).find(|p| p.is_file())
+    dirs.extend(shell_paths());
+    dirs.extend(usual_dirs());
+    let mut seen = std::collections::HashSet::new();
+    dirs.retain(|d| !d.as_os_str().is_empty() && seen.insert(d.clone()));
+    dirs
 }
 
-pub fn claude_path() -> Option<PathBuf> {
-    find(CLAUDE)
+/// The file names a command can have here: `claude`, or on Windows also `claude.exe`, `.cmd`...
+fn file_names(command: &str) -> Vec<String> {
+    if cfg!(windows) {
+        let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".EXE;.CMD;.BAT".into());
+        exts.split(';').filter(|e| !e.is_empty()).map(|e| format!("{command}{}", e.to_lowercase())).collect()
+    } else {
+        vec![command.to_string()]
+    }
 }
 
-pub fn agy_path() -> Option<PathBuf> {
-    find(AGY)
+/// Looks for a command now (nothing is assumed in advance).
+fn find_in(command: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    let names = file_names(command);
+    dirs.iter().flat_map(|d| names.iter().map(move |n| d.join(n))).find(|p| p.is_file())
+}
+
+/// Where a command is, looked up afresh and remembered once found, so each request does not ask
+/// the shells again. A tool installed or moved later is found by the next miss.
+fn find(command: &str) -> Option<PathBuf> {
+    static FOUND: std::sync::Mutex<Option<std::collections::HashMap<String, PathBuf>>> = std::sync::Mutex::new(None);
+    if let Some(path) = FOUND.lock().ok()?.get_or_insert_with(Default::default).get(command).filter(|p| p.is_file()).cloned() {
+        return Some(path);
+    }
+    let path = find_in(command, &search_dirs())?;
+    FOUND.lock().ok()?.get_or_insert_with(Default::default).insert(command.to_string(), path.clone());
+    Some(path)
+}
+
+/// `find` off the async threads (it may start the person's shells).
+async fn find_async(command: &'static str) -> Option<PathBuf> {
+    tokio::task::spawn_blocking(move || find(command)).await.ok().flatten()
+}
+
+/// One short command's output (10 s at most): stdout and whether it succeeded.
+async fn quick(path: &Path, args: &[&str]) -> Option<(String, bool)> {
+    let dir = work_dir("check").ok()?;
+    let out = tokio::time::timeout(Duration::from_secs(10),
+                                   tokio::process::Command::new(path).args(args).current_dir(&dir).env_remove("CLAUDECODE")
+                                       .stdin(Stdio::null()).kill_on_drop(true).output()).await;
+    let _ = std::fs::remove_dir_all(&dir);
+    let out = out.ok()?.ok()?;
+    Some((String::from_utf8_lossy(&out.stdout).trim().to_string(), out.status.success()))
+}
+
+/// What is on this computer right now, for onboarding and the setup snapshot: for each tool,
+/// whether it is installed, where, its version, and whether it is signed in. Looked up on every
+/// call, in this OS's places. Facts only: no account names.
+pub async fn tools_on_this_computer() -> Value {
+    let dirs = tokio::task::spawn_blocking(search_dirs).await.unwrap_or_default();
+    let mut found = Vec::new();
+    for tool in TOOLS {
+        let Some(path) = find_in(tool.command, &dirs) else {
+            found.push(serde_json::json!({"provider": tool.provider, "name": tool.name, "installed": false, "supported": tool.supported}));
+            continue;
+        };
+        let version = quick(&path, &["--version"]).await.map(|(v, _)| v.lines().next().unwrap_or_default().to_string());
+        let mut check_error = None;
+        let signed_in = match tool.command {
+            CLAUDE => quick(&path, &["auth", "status"]).await
+                .and_then(|(o, _)| serde_json::from_str::<Value>(&o).ok()).and_then(|v| v["loggedIn"].as_bool()),
+            // agy has no sign-in status command: listing its models needs the account.
+            AGY => match agy_models_at(&path).await {
+                Ok(models) => Some(!models.is_empty()),
+                Err(e) => {
+                    check_error = Some(e);
+                    None
+                }
+            },
+            CODEX => quick(&path, &["login", "status"]).await.map(|(_, ok)| ok),
+            _ => None,
+        };
+        found.push(serde_json::json!({
+            "provider": tool.provider, "name": tool.name, "installed": true, "supported": tool.supported,
+            "path": path.display().to_string(), "version": version, "signed_in": signed_in,
+            "sign_in": tool.sign_in, "check_error": check_error,
+        }));
+    }
+    Value::Array(found)
 }
 
 /// A fresh, empty folder for one call.
@@ -49,28 +205,6 @@ fn work_dir(tool: &str) -> Result<PathBuf, String> {
                                                 std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()));
     std::fs::create_dir(&dir).map_err(|e| format!("could not make a working folder: {e}"))?;
     Ok(dir)
-}
-
-/// What the setup snapshot shows about Claude Code: installed, version, signed in. Facts only.
-pub async fn claude_status() -> Value {
-    let Some(path) = claude_path() else { return serde_json::json!({"installed": false}) };
-    let run = |args: &'static [&'static str]| {
-        let path = path.clone();
-        async move {
-            let out = tokio::time::timeout(Duration::from_secs(10),
-                                           tokio::process::Command::new(&path).args(args).env_remove("CLAUDECODE")
-                                               .stdin(Stdio::null()).output()).await.ok()?.ok()?;
-            Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
-        }
-    };
-    let version = run(&["--version"]).await;
-    let auth: Value = run(&["auth", "status"]).await.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-    serde_json::json!({
-        "installed": true,
-        "version": version,
-        "signed_in": auth["loggedIn"].as_bool(),
-        "sign_in_method": auth["authMethod"].as_str(),
-    })
 }
 
 /// The conversation as one prompt: the last message alone, or earlier turns labelled before it.
@@ -118,7 +252,7 @@ fn explain(detail: &str) -> String {
 
 /// One completion through Claude Code.
 pub async fn complete_claude(model: Option<&str>, timeout_secs: u64, system: &str, messages: &[Message]) -> Result<String, String> {
-    let path = claude_path().ok_or("Claude Code (the `claude` command) is not installed on this computer. What to do: \
+    let path = find_async(CLAUDE).await.ok_or("Claude Code (the `claude` command) is not installed on this computer. What to do: \
                                     install it from claude.com/claude-code and sign in, or choose another provider in AI settings")?;
     // A fresh, empty folder per call: nothing for the tool to read, and nothing left behind.
     let dir = work_dir("claude")?;
@@ -228,18 +362,9 @@ pub fn parse_agy_reply(reply: &Value) -> Result<String, String> {
     Ok(text.to_string())
 }
 
-/// What the setup snapshot shows about Antigravity's CLI: installed, and signed in when it can
-/// list its models. Facts only.
-pub async fn agy_status() -> Value {
-    let Some(path) = agy_path() else { return serde_json::json!({"installed": false}) };
-    let models = agy_models_at(&path).await;
-    serde_json::json!({"installed": true, "signed_in": models.as_ref().map(|m| !m.is_empty()).ok(),
-                       "error": models.err()})
-}
-
 /// The models agy offers (the first column of `agy models`).
 pub async fn agy_models() -> Result<Vec<String>, String> {
-    let path = agy_path().ok_or("Antigravity's CLI (`agy`) is not installed on this computer")?;
+    let path = find_async(AGY).await.ok_or("Antigravity's CLI (`agy`) is not installed on this computer")?;
     agy_models_at(&path).await
 }
 
@@ -263,7 +388,7 @@ async fn agy_models_at(path: &Path) -> Result<Vec<String>, String> {
 
 /// One completion through Antigravity's CLI.
 pub async fn complete_agy(model: Option<&str>, timeout_secs: u64, system: &str, messages: &[Message]) -> Result<String, String> {
-    let path = agy_path().ok_or("Antigravity's CLI (the `agy` command) is not installed on this computer. What to do: \
+    let path = find_async(AGY).await.ok_or("Antigravity's CLI (the `agy` command) is not installed on this computer. What to do: \
                                  install antigravity-cli and sign in, or choose another provider in AI settings")?;
     let prompt = agy_prompt(system, messages);
     if prompt.len() > AGY_MAX_PROMPT {
@@ -332,6 +457,18 @@ mod tests {
     }
 
     #[test]
+    fn commands_are_looked_up_in_the_given_folders() {
+        let dir = std::env::temp_dir().join(format!("knoend-find-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let name = file_names("knoend-test-tool").remove(0);
+        std::fs::write(dir.join(&name), "").unwrap();
+        assert_eq!(find_in("knoend-test-tool", &[PathBuf::from("/nonexistent"), dir.clone()]), Some(dir.join(&name)));
+        assert_eq!(find_in("knoend-no-such-tool", &[dir.clone()]), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(TOOLS.iter().any(|t| t.command == "codex" && !t.supported), "Codex is reported, not run");
+    }
+
+    #[test]
     fn earlier_turns_are_labelled() {
         assert_eq!(prompt_text(&[Message::user("hi".into())]), "hi");
         let text = prompt_text(&[Message::user("draft".into()), Message::assistant("bad".into()), Message::user("fix it".into())]);
@@ -354,8 +491,7 @@ mod live {
     #[tokio::test]
     #[ignore]
     async fn real_claude_code() {
-        let status = super::claude_status().await;
-        println!("status: {status}");
+        println!("tools: {:#}", super::tools_on_this_computer().await);
         let reply = super::complete_claude(None, 120, "You answer with JSON only.",
                                            &[crate::provider::Message::user("Reply with exactly {\"ok\":true}".into())]).await;
         println!("reply: {reply:?}");
@@ -364,7 +500,6 @@ mod live {
     #[tokio::test]
     #[ignore]
     async fn real_antigravity() {
-        println!("status: {}", super::agy_status().await);
         let reply = super::complete_agy(None, 120, "You answer with JSON only.",
                                         &[crate::provider::Message::user("Reply with exactly {\"ok\":true}".into())]).await;
         println!("reply: {reply:?}");

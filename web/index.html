@@ -71,8 +71,9 @@
                 <option value="anthropic">Anthropic Claude</option>
                 <option value="openai">OpenAI</option>
                 <option value="openrouter">OpenRouter</option>
-                <option value="claude-code">Claude Code on this computer (your Claude plan, no key)</option>
-                <option value="antigravity">Antigravity CLI on this computer (your Google account, no key)</option>
+                <option value="claude-code" hidden>Claude Code on this computer (your Claude plan, no key)</option>
+                <option value="antigravity" hidden>Antigravity CLI on this computer (your Google account, no key)</option>
+                <option value="codex" hidden disabled>Codex CLI on this computer (found; KnoEnd cannot use it yet)</option>
                 <option value="ollama">Ollama (local, no key)</option>
                 <option value="openai-compatible">Other OpenAI-compatible server</option>
               </select></label>
@@ -86,6 +87,7 @@
           </div>
           <label id="ai-key-wrap">API key <span class="muted">(stored only on this computer; never shown again)</span>
             <input id="ai-key" type="password" maxlength="300"></label>
+          <p id="ai-tools" class="muted small">Looking for AI tools on this computer...</p>
           <p id="ai-cli-note" class="muted" hidden></p>
           <label id="ai-base-wrap" hidden>Server URL <input id="ai-base" maxlength="200" placeholder="http://localhost:8000/v1"></label>
           <details id="ai-advanced">

@@ -59,6 +59,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/drafts", get(drafts))
         .route("/ai", get(ai_settings).post(save_ai_settings))
         .route("/ai/models", post(ai_models))
+        .route("/ai/tools", get(ai_tools))
         .route("/assist", post(assist))
         .route("/open", post(open_help))
         .route("/typing", get(typing))
@@ -285,6 +286,11 @@ async fn ai_settings() -> ApiResult {
         }))),
         Err(e) => Ok(Json(json!({"configured": false, "error": e}))),
     }
+}
+
+/// The AI tools on this computer (Claude Code, Antigravity, Codex), looked up now.
+async fn ai_tools() -> ApiResult {
+    Ok(Json(json!({"tools": knoend_agents::cli_tool::tools_on_this_computer().await})))
 }
 
 #[derive(Deserialize)]
