@@ -14,16 +14,17 @@ use openpager_media::NowPlaying;
 use std::collections::{HashMap, HashSet};
 use openpager_core::layout;
 use openpager_core::library::Library;
-use openpager_core::protocol::{LayoutBody, LayoutKey, Packet, Send};
+use openpager_core::protocol::{Grid, LayoutBody, LayoutKey, Packet, Send};
 use openpager_transport::pairing::{config_dir, Pairings};
 use openpager_transport::{discover, wifi};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, mpsc, RwLock};
 
-/// Layout id the board shows for an app with no library; key 5 is "Configure".
+/// Layout id the board shows for an app with no library; its middle key is "Configure".
 pub const UNSUPPORTED: &str = "system.unsupported";
-const CONFIGURE_SLOT: u8 = 5;
+/// Pages of apps and sites the launcher offers.
+const LAUNCHER_PAGES: usize = 3;
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct BoardStatus {
@@ -31,6 +32,53 @@ pub struct BoardStatus {
     pub profile: String,
     pub firmware: String,
     pub address: String,
+    /// The largest grid the board draws.
+    pub grid: Grid,
+}
+
+/// Which page of the layout on the board is shown: the companion turns pages (spec/protocol.md
+/// 3.4a) and drops taps from a page that is no longer shown.
+struct Paging {
+    /// The largest grid the board draws.
+    max: Grid,
+    /// The layout whose pages these are, the page shown (0-based), how many it has, and the grid of
+    /// the page shown.
+    layout: String,
+    page: usize,
+    pages: usize,
+    grid: Grid,
+}
+
+impl Paging {
+    fn new(max: Grid) -> Paging {
+        Paging { max, layout: String::new(), page: 0, pages: 1, grid: Grid::DEFAULT }
+    }
+
+    /// Shows `layout`, which has `pages` pages: another layout starts on its first page. Returns
+    /// the page to show.
+    fn enter(&mut self, layout: &str, pages: usize) -> usize {
+        if self.layout != layout {
+            self.layout = layout.to_string();
+            self.page = 0;
+        }
+        self.pages = pages.max(1);
+        self.page = self.page.min(self.pages - 1);
+        self.page
+    }
+
+    /// The next (or with `prev`, the previous) page, wrapping round. False when there is one page.
+    fn turn(&mut self, to: &str) -> bool {
+        if self.pages < 2 {
+            return false;
+        }
+        self.page = if to == "prev" { (self.page + self.pages - 1) % self.pages } else { (self.page + 1) % self.pages };
+        true
+    }
+
+    /// Whether a tap was on a page of this layout other than the one shown (it crossed a page turn).
+    fn stale(&self, packet: &Packet) -> bool {
+        packet.body["layout"] == self.layout.as_str() && packet.body["page"].as_u64().unwrap_or(1) != self.page as u64 + 1
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -155,6 +203,8 @@ enum Event {
     ConfigureSite,
     /// A line for the board's status bar from a background job.
     Status(String),
+    /// Turn the page of the layout on the board: "next" or "prev" (a swipe or tap on the board).
+    Page(String),
     /// A desktop notification from an app the board follows (Claude, Codex, ...).
     Notified(openpager_desktop::Notification),
     /// A coding agent's hook: a permission request or a notification.
@@ -272,11 +322,12 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
         let mut sent_images: HashSet<String> = HashSet::new();
+        let mut paging = Paging::new(board.grid);
         if focus.is_none() {
-            show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut shown, calling.as_ref(), &shared).await;
+            show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
         if let Some(f) = effective(&focus, &tab) {
-            show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await;
+            show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
         }
 
         // A board that restarts never closes its old connection, so silence is the only sign:
@@ -310,8 +361,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                         if approvals.is_empty() {
                             match effective(&focus, &tab) {
-                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await,
-                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
+                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             }
                         }
@@ -325,8 +376,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                             None => match effective(&focus, &tab) {
-                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await,
-                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
+                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             },
                         }
@@ -349,6 +400,16 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             if matches!(event, Event::Agent(_)) {
                 last_hook = Some(std::time::Instant::now());
             }
+            // A swipe on the board turns the page it was made on; a late one for another layout does nothing.
+            let event = match event {
+                Event::Board(p) if p.kind == "openpager.page" => {
+                    if p.body["layout"] != paging.layout.as_str() {
+                        continue;
+                    }
+                    Event::Page(p.body["to"].as_str().unwrap_or("next").to_string())
+                }
+                event => event,
+            };
             match event {
                 Event::Focus(Some(f)) => {
                     focus = Some(f);
@@ -360,7 +421,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     println!("Focus: {} ({})", f.display_name(), f.instance);
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
-                    show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await;
+                    show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
                     draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                 }
                 Event::Focus(None) => {
@@ -370,7 +431,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     usage.focused(None);
                     shared.update(|s| s.app = None).await;
                     if approvals.is_empty() {
-                        show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut shown, calling.as_ref(), &shared).await;
+                        show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
                     }
                 }
                 Event::Favicon(host, pixels) => {
@@ -381,8 +442,21 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                     favicons.insert(host, pixels);
                 }
+                Event::Board(packet) if packet.kind == "openpager.key" && paging.stale(&packet) => {
+                    println!("  tap on page {} of {}, which is no longer shown; ignored", packet.body["page"], paging.layout);
+                }
+                Event::Page(to) => {
+                    if approvals.is_empty() && paging.turn(&to) {
+                        println!("  page {}/{} of {}", paging.page + 1, paging.pages, paging.layout);
+                        match effective(&focus, &tab) {
+                            Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                                  &mut shown, calling.as_ref(), &shared).await,
+                        }
+                    }
+                }
                 Event::Board(packet) if packet.kind == "openpager.key" && packet.body["layout"] != APPROVE
-                                        && calling.as_ref().is_some_and(|c| packet.body["key"] == c.key.key) => {
+                                        && calling.as_ref().is_some_and(|_| packet.body["key"] == paging.grid.size()) => {
                     let c = calling.take().expect("calling");
                     let names = c.names.clone();
                     let result = tokio::task::spawn_blocking(move || {
@@ -394,8 +468,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         Err(e) => println!("  could not bring {} to the front: {e}", c.app),
                     }
                     match effective(&focus, &tab) {
-                        Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await,
-                        None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
+                        Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                        None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                               &mut shown, calling.as_ref(), &shared).await,
                     }
                 }
@@ -413,7 +487,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     players = p;
                     // Re-show only if this changes what the board shows (show() skips a repeat).
                     if let Some(f) = effective(&focus, &tab) {
-                        show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await;
+                        show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
                     }
                 }
                 Event::Tab(t) => {
@@ -434,7 +508,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         usage.focused(crate::launcher::usage_key(&f, &apps));
                         let name = f.display_name().to_string();
                         shared.update(|s| s.app = Some(name)).await;
-                        show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await;
+                        show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
                         draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                     }
                 }
@@ -465,8 +539,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                             None => match effective(&focus, &tab) {
-                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await,
-                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
+                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             },
                         }
@@ -500,8 +574,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                             None => match effective(&focus, &tab) {
-                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await,
-                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets,
+                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             },
                         }
@@ -565,7 +639,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             let same_site = |f: &Focus| f.web.as_ref().map(|w| &w.host) == target.web.as_ref().map(|w| &w.host);
                             if effective(&focus, &tab).is_some_and(|f| f.app == target.app && f.instance == target.instance && same_site(&f)) {
                                 shown = None;
-                                show(&mut sender, &catalog, &target, &players, &mut shown, &mut shown_actions, calling.as_ref(), &shared).await;
+                                show(&mut sender, &catalog, &target, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
                             }
                         }
                         Err(error) => {
@@ -659,6 +733,7 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
         profile: identity.body["board"]["profile"].as_str().unwrap_or("?").to_string(),
         firmware: identity.body["firmware"].as_str().unwrap_or("?").to_string(),
         address: board.address.to_string(),
+        grid: identity_grid(&identity.body),
     };
     tokio::spawn(async move {
         loop {
@@ -678,26 +753,42 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
     Ok((status, sender))
 }
 
+/// The largest grid a board says it draws (`board.grid` in its identity), 3x3 if it says nothing usable.
+fn identity_grid(identity: &Value) -> Grid {
+    let grid = &identity["board"]["grid"];
+    let part = |name: &str| grid[name].as_u64().and_then(|n| u8::try_from(n).ok()).filter(|n| (1..=4).contains(n));
+    match (part("cols"), part("rows")) {
+        (Some(cols), Some(rows)) => Grid { cols, rows },
+        _ => Grid::DEFAULT,
+    }
+}
+
 /// Pushes the layout for `focus`, or the "unsupported app" screen. When the focused app has a
 /// media player, its play/pause key and the status bar follow what it plays. Sends nothing when the
 /// board already shows exactly this.
 #[allow(clippy::too_many_arguments)]
 async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, players: &[NowPlaying],
-              shown: &mut Option<String>, shown_actions: &mut HashMap<u8, KeyRef>, calling: Option<&Calling>, shared: &Shared) {
+              shown: &mut Option<String>, shown_actions: &mut HashMap<u8, KeyRef>, paging: &mut Paging, calling: Option<&Calling>, shared: &Shared) {
     if shown.as_deref().is_some_and(|s| s.starts_with(APPROVE_SIGNATURE)) {
         return; // a permission request is on the board; it stays until answered
     }
     let player = openpager_media::for_focus(players, &focus.app, &focus.instance);
     let mut actions: HashMap<u8, KeyRef> = HashMap::new();
-    let (mut body, mut status) = match catalog.find(focus) {
-        Some(library) => match layout::build(library, focus.os) {
+    let found = catalog.find(focus).map(|library| {
+        let pages = layout::pages(library, paging.max);
+        let page = paging.enter(&library.pack.id, pages.len());
+        (library, layout::build(library, focus.os, &pages, page), pages.into_iter().nth(page).map(|p| p.keys).unwrap_or_default())
+    });
+    let (mut body, mut status) = match found {
+        Some((library, built, placed)) => match built {
             Ok(mut body) => {
-                for (key, slot) in library.keys.iter().zip(library.slots()) {
+                for &(i, slot) in &placed {
+                    let key = &library.keys[i];
                     actions.insert(slot, KeyRef { label: key.label.clone(), action: key.action.clone() });
                 }
                 if let Some(player) = player {
-                    for (key, slot) in library.keys.iter().zip(library.slots()) {
-                        if let Action::Media { command: MediaCommand::Toggle, .. } = key.action {
+                    for &(i, slot) in &placed {
+                        if let Action::Media { command: MediaCommand::Toggle, .. } = library.keys[i].action {
                             if let Some(k) = body.keys.iter_mut().find(|k| k.key == slot) {
                                 k.label = if player.playing() { "Pause".into() } else { "Play".into() };
                                 k.icon = Some(if player.playing() { "pause" } else { "play_arrow" }.into());
@@ -712,7 +803,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
                 return;
             }
         },
-        None => (unsupported_layout(focus), json!({"text": if focus.web.is_some() { format!("No keys for {} yet", board_text(focus.display_name(), 50)) }
+        None => (unsupported_layout(focus, paging), json!({"text": if focus.web.is_some() { format!("No keys for {} yet", board_text(focus.display_name(), 50)) }
                                          else { format!("Unsupported app: {}", board_text(focus.display_name(), 50)) }, "level": "attention"})),
     };
     if let (Some(player), true) = (player, status["text"] == "") {
@@ -721,18 +812,19 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
             status = json!({"text": format!("{}: {what}", if player.playing() { "Playing" } else { "Paused" }), "level": "info"});
         }
     }
+    let grid = body.grid.unwrap_or_default();
+    paging.grid = grid;
     // While the focused app plays something, the bottom row controls it (as KDE Connect's media
-    // controls do), unless the layout has media keys of its own.
-    if let Some(player) = player.filter(|p| p.playing() || (p.status == "Paused" && !p.title.is_empty())) {
+    // controls do), unless the layout has media keys of its own. Not on grids of one or two rows:
+    // the bottom row would be half the keys or more.
+    if let Some(player) = player.filter(|p| (p.playing() || (p.status == "Paused" && !p.title.is_empty())) && grid.rows >= 3) {
         if !actions.values().any(|k| matches!(k.action, Action::Media { .. })) {
-            let row = [(7u8, player.can_go_previous, "Prev", "Previous track", "skip_previous", MediaCommand::Previous),
-                       (8, true, if player.playing() { "Pause" } else { "Play" }, "Play or pause",
+            let row = [(player.can_go_previous, "Prev", "Previous track", "skip_previous", MediaCommand::Previous),
+                       (true, if player.playing() { "Pause" } else { "Play" }, "Play or pause",
                         if player.playing() { "pause" } else { "play_arrow" }, MediaCommand::Toggle),
-                       (9, player.can_go_next, "Next", "Next track", "skip_next", MediaCommand::Next)];
-            for (slot, offered, label, speak, icon, command) in row {
-                if !offered {
-                    continue;
-                }
+                       (player.can_go_next, "Next", "Next track", "skip_next", MediaCommand::Next)];
+            for ((offered, label, speak, icon, command), slot) in row.into_iter().zip(media_slots(grid)) {
+                let Some(slot) = slot.filter(|_| offered) else { continue };
                 body.keys.retain(|k| k.key != slot);
                 body.keys.push(LayoutKey { key: slot, label: label.into(), speak: Some(speak.into()), icon: Some(icon.into()), confirm: false, send: Send::Event(true) });
                 actions.insert(slot, KeyRef { label: label.into(), action: Action::Media { command, selector: None } });
@@ -741,13 +833,14 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
         }
     }
     if let Some(calling) = calling {
-        let key = calling.key();
+        let key = calling.key(grid);
         body.keys.retain(|k| k.key != key.key);
         actions.remove(&key.key);
         body.keys.push(key);
         body.keys.sort_by_key(|k| k.key);
     }
     body.name = board_text(&body.name, 128);
+    fit_packet(&mut body);
     *shown_actions = actions;
     let signature = format!("{}|{}", serde_json::to_string(&body).unwrap_or_default(), status);
     if shown.as_deref() == Some(signature.as_str()) {
@@ -756,13 +849,35 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     let id = body.layout.clone();
     println!("  -> {} ({}){} keys: {}", body.name, id, status["text"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" [{t}]")).unwrap_or_default(),
              body.keys.iter().map(|k| format!("{}={}", k.key, k.label)).collect::<Vec<_>>().join(", "));
-    let summary = json!({"id": id, "name": body.name, "source": body.source, "reviewed": body.reviewed,
+    let summary = json!({"id": id, "name": body.name, "source": body.source, "reviewed": body.reviewed, "grid": grid, "page": body.page, "pages": body.pages,
                          "keys": body.keys.iter().map(|k| json!({"key": k.key, "label": k.label})).collect::<Vec<_>>()});
     let body = serde_json::to_value(&body).expect("serialisable");
     if sender.send("openpager.layout", body).await.is_ok() {
         let _ = sender.send("openpager.status", status).await;
         *shown = Some(signature);
         shared.update(|s| s.layout = Some(summary)).await;
+    }
+}
+
+/// Where the media row goes on `grid`'s bottom row: Prev, Play/Pause, Next with three columns or
+/// more; Play/Pause and Next with two; Play/Pause alone with one.
+fn media_slots(grid: Grid) -> [Option<u8>; 3] {
+    let row = grid.bottom_row();
+    let (first, last) = (row[0], row[row.len() - 1]);
+    match row.len() {
+        1 => [None, Some(first), None],
+        2 => [None, Some(first), Some(last)],
+        n => [Some(first), Some(row[(n - 1) / 2]), Some(last)],
+    }
+}
+
+/// Packets are at most 4096 bytes (spec/protocol.md); sixteen keys with long spoken names can pass
+/// that. The board does not use `speak`, so it goes first.
+fn fit_packet(body: &mut LayoutBody) {
+    if serde_json::to_string(body).map_or(0, |s| s.len()) > 3800 {
+        for key in &mut body.keys {
+            key.speak = None;
+        }
     }
 }
 
@@ -818,10 +933,18 @@ const LAUNCHER: &str = "system.launcher";
 #[allow(clippy::too_many_arguments)]
 async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::Usage, apps: &[crate::launcher::AppInfo],
                        favicons: &HashMap<String, Vec<u8>>, sent_images: &mut HashSet<String>,
-                       targets: &mut HashMap<u8, crate::launcher::Target>, shown: &mut Option<String>, calling: Option<&Calling>, shared: &Shared) {
+                       targets: &mut HashMap<u8, crate::launcher::Target>, paging: &mut Paging, shown: &mut Option<String>,
+                       calling: Option<&Calling>, shared: &Shared) {
     targets.clear();
+    // 3x3 pages (icons and names fit), smaller on a board that cannot draw 3x3.
+    let grid = Grid::DEFAULT.within(paging.max);
+    let per_page = usize::from(grid.size());
+    let entries = usage.top(per_page * LAUNCHER_PAGES);
+    let pages = entries.len().div_ceil(per_page);
+    let page = paging.enter(LAUNCHER, pages);
+    paging.grid = grid;
     let mut keys = Vec::new();
-    for (i, entry) in usage.top(9).into_iter().enumerate() {
+    for (i, entry) in entries.into_iter().skip(page * per_page).take(per_page).enumerate() {
         let slot = i as u8 + 1;
         let name = entry.target.image_name();
         let mut icon = Some(match entry.target { crate::launcher::Target::Site { .. } => "public", _ => "apps" }.to_string());
@@ -838,13 +961,16 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
         targets.insert(slot, entry.target.clone());
     }
     if let Some(calling) = calling {
-        let key = calling.key();
+        let key = calling.key(grid);
         keys.retain(|k| k.key != key.key);
         targets.remove(&key.key);
         keys.push(key);
     }
     let status = if keys.is_empty() { "Nothing open. Apps and sites you use will appear here." } else { "" };
-    let body = LayoutBody { detail: None, layout: LAUNCHER.into(), name: "Launcher".into(), source: "default".into(), reviewed: true, keys };
+    let paged = pages > 1;
+    let mut body = LayoutBody { layout: LAUNCHER.into(), name: "Launcher".into(), source: "default".into(), reviewed: true, keys, grid: Some(grid),
+                                page: paged.then(|| page as u8 + 1), pages: paged.then(|| pages as u8), ..LayoutBody::default() };
+    fit_packet(&mut body);
     let signature = format!("launcher|{}", serde_json::to_string(&body).unwrap_or_default());
     if shown.as_deref() == Some(signature.as_str()) {
         return;
@@ -943,7 +1069,7 @@ const HOOK_GRACE: Duration = Duration::from_secs(3);
 const CALLING_FOR: Duration = Duration::from_secs(30 * 60);
 
 /// An app that wants the person and that the board cannot answer for (a Claude cloud session):
-/// slot 9 becomes "Go to <app>", which brings its window to the front.
+/// the last key becomes "Go to <app>", which brings its window to the front.
 struct Calling {
     app: String,
     /// Names its window may have (app name, desktop entry).
@@ -957,7 +1083,7 @@ impl Calling {
     fn new(n: &openpager_desktop::Notification, catalog: &Catalog) -> Calling {
         let names = [n.app.clone(), n.desktop_entry.clone()].into_iter().filter(|s| !s.is_empty()).collect();
         let screen = agent_screen(catalog, "elsewhere");
-        let key = screen.keys.iter().zip(screen.slots())
+        let key = screen.keys.iter().zip(screen.placed().into_iter().map(|(_, slot)| slot))
             .find(|(k, _)| matches!(k.action, Action::Agent { reply: AgentReply::GoTo }))
             .map(|(k, slot)| board_key(k, slot, None))
             .unwrap_or_else(|| LayoutKey { key: 9, label: "Go to Claude".into(), speak: None, icon: Some("open_in_new".into()), confirm: false, send: Send::Event(true) });
@@ -982,8 +1108,9 @@ impl Calling {
         Calling::named(focus, &n.app) || Calling::named(focus, &n.desktop_entry)
     }
 
-    fn key(&self) -> LayoutKey {
-        self.key.clone()
+    /// The "Go to" key on the last key of `grid`.
+    fn key(&self, grid: Grid) -> LayoutKey {
+        LayoutKey { key: grid.size(), ..self.key.clone() }
     }
 }
 
@@ -1018,7 +1145,7 @@ fn agent_keys<'a>(screen: &'a Library, approval: &Approval) -> Vec<AgentKey<'a>>
     let question = approval.questions.get(approval.step);
     let mut next_option = 0;
     let mut out = Vec::new();
-    for (key, slot) in screen.keys.iter().zip(screen.slots()) {
+    for (key, slot) in screen.keys.iter().zip(screen.placed().into_iter().map(|(_, slot)| slot)) {
         let Action::Agent { reply } = key.action else { continue };
         let option = match reply {
             AgentReply::Option => {
@@ -1116,7 +1243,8 @@ async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catal
             (screen.pack.name.clone(), clean(&approval.detail), approval.summary.clone(), if approval.destructive { "alert" } else { "attention" })
         }
     };
-    let body = LayoutBody { layout: APPROVE.into(), name: board_text(&title, 128), source: "builtin".into(), reviewed: true, keys, detail: Some(detail) };
+    let body = LayoutBody { layout: APPROVE.into(), name: board_text(&title, 128), source: "builtin".into(), reviewed: true, keys, detail: Some(detail),
+                            grid: Some(screen.grid(1)), ..LayoutBody::default() };
     let signature = format!("{APPROVE_SIGNATURE}{}", serde_json::to_string(&body).unwrap_or_default());
     if sender.send("openpager.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
         let _ = sender.send("openpager.status", json!({"text": board_text(&status, 80), "level": level})).await;
@@ -1206,16 +1334,20 @@ fn spawn_media_watcher(media: Arc<openpager_media::Players>, events: mpsc::Sende
     });
 }
 
-fn unsupported_layout(focus: &Focus) -> LayoutBody {
+/// One "Configure" key in the middle of a 3x3 grid (or of the board's grid, if smaller).
+fn unsupported_layout(focus: &Focus, paging: &mut Paging) -> LayoutBody {
     let mut name: String = format!("Unsupported: {}", focus.display_name());
     name.truncate(128);
+    paging.enter(UNSUPPORTED, 1);
+    let grid = Grid::DEFAULT.within(paging.max);
     LayoutBody {
-        detail: None,
         layout: UNSUPPORTED.into(),
         name,
         source: "default".into(),
         reviewed: true,
-        keys: vec![LayoutKey { key: CONFIGURE_SLOT, label: "Configure".into(), speak: Some("Configure this app".into()), icon: Some("auto_awesome".into()), confirm: false, send: Send::Event(true) }],
+        grid: Some(grid),
+        keys: vec![LayoutKey { key: grid.center(), label: "Configure".into(), speak: Some("Configure this app".into()), icon: Some("auto_awesome".into()), confirm: false, send: Send::Event(true) }],
+        ..LayoutBody::default()
     }
 }
 
@@ -1245,57 +1377,57 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                 return None;
             }
             // A key whose action happens on the web page: the browser extension carries it out.
-            if layout != UNSUPPORTED || key != u64::from(CONFIGURE_SLOT) {
-                if let Some(library_key) = u8::try_from(key).ok().and_then(|k| shown_actions.get(&k)) {
-                    // Media keys go to the focused app's media player first (like the keyboard's
-                    // media keys): the browser then allows starting playback.
-                    let player = focus.and_then(|f| openpager_media::for_focus(players, &f.app, &f.instance));
-                    if let (Action::Media { command, .. }, Some(player), Some(media)) = (&library_key.action, player, shared.media.clone()) {
-                        let mpris = match command {
-                            MediaCommand::Toggle => Some(openpager_media::Command::PlayPause),
-                            MediaCommand::Play => Some(openpager_media::Command::Play),
-                            MediaCommand::Pause => Some(openpager_media::Command::Pause),
-                            MediaCommand::Next if player.can_go_next => Some(openpager_media::Command::Next),
-                            MediaCommand::Previous if player.can_go_previous => Some(openpager_media::Command::Previous),
-                            MediaCommand::Forward if player.can_seek => Some(openpager_media::Command::Seek(10)),
-                            MediaCommand::Back if player.can_seek => Some(openpager_media::Command::Seek(-10)),
-                            _ => None,
-                        };
-                        if let Some(mpris) = mpris {
-                            let (bus, label, shared) = (player.bus.clone(), library_key.label.clone(), shared.clone());
-                            tokio::task::spawn_blocking(move || {
-                                let text = match media.command(&bus, mpris) {
-                                    Ok(()) => format!("  {label}: sent to the media player"),
-                                    Err(e) => format!("  {label}: the media player refused ({e})"),
-                                };
-                                shared.emit("media-action", json!({"text": text}));
-                            });
-                            return None;
-                        }
-                    }
-                    if library_key.action.is_web() {
-                        let (shared, label) = (shared.clone(), library_key.label.clone());
-                        let action = serde_json::to_value(&library_key.action).unwrap_or_default();
-                        let site = focus.and_then(|f| f.web.as_ref()).map(|w| openpager_agents::site::site_of(&w.host)).unwrap_or_default();
-                        tokio::spawn(async move {
-                            let act = || shared.browser.request(json!({"type": "act", "action": action.clone()}), Duration::from_secs(5));
-                            let mut answer = act().await;
-                            // Not allowed yet: ask in the browser, then do it.
-                            if answer.as_ref().is_ok_and(|r| r["error"] == "not-granted") && shared.ask_site_permission(&site).await.is_ok() {
-                                answer = act().await;
-                            }
-                            let text = match answer {
-                                Ok(r) if r["ok"] == true => format!("  {label}: done in the browser"),
-                                Ok(r) => format!("  {label}: the browser could not do it ({})", r["error"].as_str().unwrap_or("unknown")),
-                                Err(e) => format!("  {label}: {e}"),
+            let acting = u8::try_from(key).ok().and_then(|k| shown_actions.get(&k));
+            if let Some(library_key) = acting {
+                // Media keys go to the focused app's media player first (like the keyboard's
+                // media keys): the browser then allows starting playback.
+                let player = focus.and_then(|f| openpager_media::for_focus(players, &f.app, &f.instance));
+                if let (Action::Media { command, .. }, Some(player), Some(media)) = (&library_key.action, player, shared.media.clone()) {
+                    let mpris = match command {
+                        MediaCommand::Toggle => Some(openpager_media::Command::PlayPause),
+                        MediaCommand::Play => Some(openpager_media::Command::Play),
+                        MediaCommand::Pause => Some(openpager_media::Command::Pause),
+                        MediaCommand::Next if player.can_go_next => Some(openpager_media::Command::Next),
+                        MediaCommand::Previous if player.can_go_previous => Some(openpager_media::Command::Previous),
+                        MediaCommand::Forward if player.can_seek => Some(openpager_media::Command::Seek(10)),
+                        MediaCommand::Back if player.can_seek => Some(openpager_media::Command::Seek(-10)),
+                        _ => None,
+                    };
+                    if let Some(mpris) = mpris {
+                        let (bus, label, shared) = (player.bus.clone(), library_key.label.clone(), shared.clone());
+                        tokio::task::spawn_blocking(move || {
+                            let text = match media.command(&bus, mpris) {
+                                Ok(()) => format!("  {label}: sent to the media player"),
+                                Err(e) => format!("  {label}: the media player refused ({e})"),
                             };
-                            shared.emit("web-action", json!({"text": text}));
+                            shared.emit("media-action", json!({"text": text}));
                         });
                         return None;
                     }
                 }
+                if library_key.action.is_web() {
+                    let (shared, label) = (shared.clone(), library_key.label.clone());
+                    let action = serde_json::to_value(&library_key.action).unwrap_or_default();
+                    let site = focus.and_then(|f| f.web.as_ref()).map(|w| openpager_agents::site::site_of(&w.host)).unwrap_or_default();
+                    tokio::spawn(async move {
+                        let act = || shared.browser.request(json!({"type": "act", "action": action.clone()}), Duration::from_secs(5));
+                        let mut answer = act().await;
+                        // Not allowed yet: ask in the browser, then do it.
+                        if answer.as_ref().is_ok_and(|r| r["error"] == "not-granted") && shared.ask_site_permission(&site).await.is_ok() {
+                            answer = act().await;
+                        }
+                        let text = match answer {
+                            Ok(r) if r["ok"] == true => format!("  {label}: done in the browser"),
+                            Ok(r) => format!("  {label}: the browser could not do it ({})", r["error"].as_str().unwrap_or("unknown")),
+                            Err(e) => format!("  {label}: {e}"),
+                        };
+                        shared.emit("web-action", json!({"text": text}));
+                    });
+                    return None;
+                }
             }
-            if layout == UNSUPPORTED && key == u64::from(CONFIGURE_SLOT) {
+            // Configure is the unsupported screen's only key of its own (a media row may share it).
+            if layout == UNSUPPORTED && acting.is_none() {
                 let target = focus?.clone();
                 println!("  Configure requested for {}", target.display_name());
                 let text = format!("Configuring {}: drafting keys...", target.display_name());
@@ -1388,8 +1520,46 @@ mod tests {
         let terminal = Focus { app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), ..claude.clone() };
         assert!(calling.is(&claude) && Calling::matches(&claude, &n));
         assert!(!calling.is(&terminal));
-        let key = calling.key();
+        let key = calling.key(Grid::DEFAULT);
         assert_eq!((key.key, key.label.as_str(), key.icon.as_deref()), (9, "Go to Claude", Some("open_in_new")));
+        assert_eq!(calling.key(Grid { cols: 2, rows: 2 }).key, 4, "the last key of any grid");
+    }
+
+    #[test]
+    fn media_row_sits_on_the_bottom_row_of_any_grid() {
+        assert_eq!(media_slots(Grid::DEFAULT), [Some(7), Some(8), Some(9)]);
+        assert_eq!(media_slots(Grid::LARGEST), [Some(13), Some(14), Some(16)]);
+        assert_eq!(media_slots(Grid { cols: 2, rows: 1 }), [None, Some(1), Some(2)]);
+        assert_eq!(media_slots(Grid { cols: 1, rows: 2 }), [None, Some(2), None]);
+    }
+
+    #[test]
+    fn pages_turn_wrap_and_drop_taps_from_another_page() {
+        let mut paging = Paging::new(Grid::LARGEST);
+        assert_eq!(paging.enter("builtin.a", 3), 0);
+        assert!(paging.turn("prev"));
+        assert_eq!(paging.page, 2, "back from the first page wraps to the last");
+        assert_eq!(paging.enter("builtin.a", 3), 2, "the same layout keeps its page");
+        let tap = |page: u64| Packet { id: 1, re: None, kind: "openpager.key".into(), body: json!({"key": 1, "layout": "builtin.a", "page": page, "seq": 1}) };
+        assert!(paging.stale(&tap(1)) && !paging.stale(&tap(3)));
+        assert_eq!(paging.enter("builtin.a", 2), 1, "fewer pages than before: the last one");
+        assert_eq!(paging.enter("builtin.b", 1), 0, "another layout starts on its first page");
+        assert!(!paging.turn("next"), "one page does not turn");
+        assert!(!paging.stale(&Packet { body: json!({"key": 1, "layout": "builtin.b", "seq": 1}), ..tap(1) }), "no page means page 1");
+    }
+
+    #[test]
+    fn board_grid_comes_from_its_identity() {
+        assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 4, "rows": 2}}})), Grid { cols: 4, rows: 2 });
+        assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 9, "rows": 2}}})), Grid::DEFAULT);
+        assert_eq!(identity_grid(&json!({})), Grid::DEFAULT);
+    }
+
+    #[test]
+    fn configure_sits_in_the_middle_of_the_grid() {
+        let focus = Focus { os: openpager_core::focus::Os::Linux, app: "x".into(), instance: "x".into(), title: String::new(), web: None };
+        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid::LARGEST)).keys[0].key, 5);
+        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid { cols: 2, rows: 2 })).keys[0].key, 1);
     }
 
     #[test]

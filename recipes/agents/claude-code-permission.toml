@@ -7,6 +7,7 @@ id = "builtin.agent-claude-code-permission"
 name = "Claude needs you"
 version = "0.1.0"
 source = "builtin"
+grid = "3x3"                  # the explanation panel needs three rows
 description = "Answer Claude Code's permission requests from the board."
 
 [[pack.tested]]

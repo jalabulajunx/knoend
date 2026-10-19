@@ -14,6 +14,7 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | Identify and flash boards, manifest with SHA-256 per part | `companion/crates/flash`, `tools/release_firmware.py` | `openpager devices`, `openpager flash` |
 | Setup assistant grounded in the knowledge base | `companion/crates/agents/src/assistant.rs`, `docs/knowledge/setup.md` | "Ask the assistant" in the web app |
 | Key grid, status bar, confirm-tap for risky keys | `firmware/main/ui.c` | tap a key; console prints `KEY n ...` |
+| Grids 1x1 to 4x4 per layout, pages turned by swipe or the "2/3 >" tap (Freenove tested; ONX not yet) | `firmware/main/ui.c`, `core/src/layout.rs`, `cli/src/service.rs` | `spec/examples/library-pages.toml` |
 | Bluetooth LE keyboard ("Just Works") | `firmware/main/ble_keyboard.c` | pair "OpenPager"; keys type |
 | Keys typed by the service when no Bluetooth host is connected | `companion/crates/input` | turn Bluetooth off; keys still type |
 | Protocol v0 over USB serial and authenticated Wi-Fi WebSocket, mDNS | `firmware/main/`, `companion/crates/transport` | `openpager pair`, then `openpager run` |
@@ -55,7 +56,7 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | Piece | Where it goes |
 | --- | --- |
 | Freenove FNK0104B definition (and native USB keyboard) | `firmware/boards/definitions/` |
-| Board UI: dynamic tiles, 6 per page with paging, unsupported-app card | `firmware/main/ui.c` |
+| Board UI: unsupported-app card | `firmware/main/ui.c` |
 | Windows focus and typing | `companion/crates/focus`, `input` |
 | Terminal-aware keys (which CLI runs in the focused terminal) - Tom | `companion/crates/focus`, `cli/src/service.rs` |
 | Codex / other agent CLIs' hooks (Claude Code done) | `cli/src/agent_hooks.rs` |

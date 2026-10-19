@@ -1,0 +1,15 @@
+# Slot 5 does not exist in a 2x2 grid.
+[pack]
+id = "user.slot-past-grid"
+name = "Slot past grid"
+version = "0.1.0"
+source = "user"
+grid = "2x2"
+
+[match]
+linux = ["example"]
+
+[[key]]
+slot = 5
+label = "Save"
+action = { kind = "shortcut", keys = "Primary+S" }

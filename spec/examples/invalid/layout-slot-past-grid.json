@@ -1,0 +1,3 @@
+{ "id": 7, "type": "openpager.layout", "body": {
+    "layout": "user.example", "name": "Example", "grid": { "cols": 1, "rows": 2 },
+    "keys": [ { "key": 3, "label": "Save", "send": { "hid": { "modifiers": 1, "usage": 22 } } } ] } }

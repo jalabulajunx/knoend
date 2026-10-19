@@ -75,12 +75,14 @@ main { max-width: 1040px; margin: 0 auto; padding: 24px; }
 .now-app, .now-layout { margin: 0 0 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: #fff3d6; color: #7a4f00; }
 @media (prefers-color-scheme: dark) { .badge { background: #3d2f10; color: #f3c86b; } }
+/* The board's key area (320x200 on a 320x240 screen), divided into the layout's grid by app.js. */
 .keys {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 6px;
+  aspect-ratio: 320 / 200; box-sizing: border-box;
   background: #101418; padding: 8px; border-radius: 8px; margin-top: 12px; max-width: 360px;
 }
 .keys div {
-  aspect-ratio: 106 / 62; border-radius: 6px; background: var(--key); color: var(--key-text);
+  min-height: 0; overflow: hidden; border-radius: 6px; background: var(--key); color: var(--key-text);
   display: flex; align-items: center; justify-content: center; text-align: center;
   font-size: 12px; padding: 4px; line-height: 1.2;
 }

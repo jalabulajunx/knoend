@@ -956,3 +956,49 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   keys; the tapped option came back as Claude's answer.
 - Note: with auto-approval on, Claude Code asks nothing, so nothing reaches the board.
 - Not tested on macOS: "Go to Claude" (cloud sessions), the LaunchAgent.
+
+## 2026-10-18 - Tom (Claude Code) - Key grids 1x1 to 4x4 and pages of keys
+
+- **Needs the firmware from this change:** older firmware rejects layouts with more than 9 keys and
+  never sends `openpager.page`. Install it (`idf.py -B build/universal flash`) before testing
+  anything after this entry.
+- Decided (Tom; record: [`decisions/2026-10-18-grids-and-pages.md`](decisions/2026-10-18-grids-and-pages.md)):
+  a layout chooses its grid (`grid = "2x2"` in `[pack]`, `[[page]]` overrides per page; default
+  3x3), keys may say `page`; the board reports the largest grid it draws; the companion turns pages
+  (one `openpager.layout` per page with `grid`/`page`/`pages`), the board asks with
+  `openpager.page` on a horizontal swipe or a tap on "2/3 >" at the right end of the status bar.
+- Changed:
+  - Spec (needs Sundar's review): `protocol.md` 3.1, 3.2, 3.4, new 3.4a, 3.6a, section 5;
+    `packet.schema.json` (slot <= 16, `grid`, `page`, `pages`, `openpager.page`, `page` on taps);
+    `library.schema.json` (`pack.grid`, `[[page]]`, `key.page`, up to 64 keys); validator places
+    keys on pages (explicit slots first; keys without page/slot run onto the next page). New examples
+    `library-pages.toml`, `layout-pages.json`, `page.json`, two invalid ones (slot past the grid).
+  - Companion: `core::layout::pages` splits a page too big for the board; `service.rs` `Paging`
+    (page shown, turns, drops a tap from a page no longer shown), media row on the bottom row, "Go to
+    Claude" on the last key, Configure in the middle of the grid, launcher in up to 3 pages of 3x3,
+    `speak` dropped when a 16-key page nears 4096 bytes; the media row only on grids of 3+ rows.
+    Agent screens say `grid = "3x3"`. AI drafts: up to 16 keys, the companion sets the grid from the
+    count (1x1, 1x2, 2x2, 3x3, 4x4) and drops the model's own pages/slots. Dashboard preview follows
+    the grid and shows "page n of m".
+  - Firmware: any grid up to 4x4 from the layout, max grid from the screen size (64x44 px per key
+    minimum; 320x240 -> 4x4), small keys show icon or label only, big keys a larger label, icon and
+    label centred together, page indicator + swipe (`lv_indev_wait_release` so a swipe does not
+    also tap the key), layout parsed on the heap (16 keys ~3 KB, too much for the serial task).
+- Tested (Freenove FNK0104B, macOS 26.6): VS Code and Firefox (3x3) as before; a local Finder test
+  library (2x2, 4x4, 1x2 pages): swipes both ways and the "2/3 >" tap turned pages (~30 turns),
+  13 key taps typed the right shortcuts, no reset in the serial capture. Workspace tests and
+  `validate_spec.py` pass. Not tested: the ONX (CST826 touch swipes), media row and Go to Claude on
+  other grids on a board (unit tests only). AI draft with the new grid rule: Configure on macOS
+  Calculator gave 16 keys laid out like its keypad (7 8 9 / ... / 0 . = +) on a 4x4 grid; taps typed.
+  Dashboard preview keeps the board's shape on every grid (Tom checked 1x2, 2x2, 4x4).
+- Found: LVGL 8 cannot zoom 4-bit alpha images (our Material icons): it draws them line by line and
+  reads a one-line buffer as the whole image. Zoomed icons were not drawn, and one board reset on a
+  big-key tap was seen before icons were kept at 32 px (no backtrace captured; none since).
+- Found: opening the Freenove's USB-Serial-JTAG port resets it (`rst:0x15 USB_UART_CHIP_RESET`)
+  even with DTR and RTS held low.
+- Tried and removed: page buttons in the dashboard. Clicking them focuses the browser, so the board
+  showed the browser's keys and the buttons turned those.
+- Open (Tom, next task): an edit mode in the web app: pick any app the board knows, see its pages,
+  move and change keys, set the grid (https://github.com/jalabulajunx/openpager/issues/29).
+- Open: Sundar to flash this firmware on the ONX and try a swipe and the page tap (any app with
+  pages, e.g. a copy of `spec/examples/library-pages.toml` with his own `match`).

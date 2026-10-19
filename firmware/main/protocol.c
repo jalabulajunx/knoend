@@ -31,7 +31,7 @@ static const char *const incoming_types[] = {
     "openpager.wifi.scan", "openpager.ping", "openpager.image",
 };
 static const char *const outgoing_types[] = {
-    "openpager.identity", "openpager.key", "openpager.layout.ack", "openpager.pair.ack",
+    "openpager.identity", "openpager.key", "openpager.page", "openpager.layout.ack", "openpager.pair.ack",
     "openpager.wifi.ack", "openpager.wifi.networks", "openpager.ping", "openpager.error", "openpager.image.ack",
 };
 static const char *const transports[] = { "ble-hid", "serial", "wifi" };
@@ -113,9 +113,12 @@ static void send_identity(int64_t re, transport_t to)
     cJSON_AddStringToObject(b, "profile", board->id);
     cJSON_AddNumberToObject(b, "width", board->width);
     cJSON_AddNumberToObject(b, "height", board->height);
+    // The largest grid this screen draws legibly; layouts choose their own up to this.
+    int max_cols, max_rows;
+    ui_max_grid(&max_cols, &max_rows);
     cJSON *grid = cJSON_AddObjectToObject(b, "grid");
-    cJSON_AddNumberToObject(grid, "cols", 3);
-    cJSON_AddNumberToObject(grid, "rows", 3);
+    cJSON_AddNumberToObject(grid, "cols", max_cols);
+    cJSON_AddNumberToObject(grid, "rows", max_rows);
     cJSON_AddBoolToObject(b, "statusBar", true);
 
     cJSON *features = cJSON_AddObjectToObject(body, "features");
@@ -132,25 +135,35 @@ static void send_identity(int64_t re, transport_t to)
     send_packet("openpager.identity", body, re, to);
 }
 
-void protocol_send_key(int slot, const char *layout_id, uint32_t seq)
+void protocol_send_key(int slot, const char *layout_id, int page, uint32_t seq)
 {
     cJSON *body = cJSON_CreateObject();
     cJSON_AddNumberToObject(body, "key", slot);
     cJSON_AddStringToObject(body, "layout", layout_id);
+    cJSON_AddNumberToObject(body, "page", page);
     cJSON_AddNumberToObject(body, "seq", seq);
     send_packet("openpager.key", body, -1, TRANSPORT_ALL);
 }
 
-void protocol_send_keystroke(int slot, const char *layout_id, uint32_t seq, uint8_t modifiers, uint8_t usage)
+void protocol_send_keystroke(int slot, const char *layout_id, int page, uint32_t seq, uint8_t modifiers, uint8_t usage)
 {
     cJSON *body = cJSON_CreateObject();
     cJSON_AddNumberToObject(body, "key", slot);
     cJSON_AddStringToObject(body, "layout", layout_id);
+    cJSON_AddNumberToObject(body, "page", page);
     cJSON_AddNumberToObject(body, "seq", seq);
     cJSON *hid = cJSON_AddObjectToObject(body, "hid");
     cJSON_AddNumberToObject(hid, "modifiers", modifiers);
     cJSON_AddNumberToObject(hid, "usage", usage);
     send_packet("openpager.key", body, -1, TRANSPORT_ALL);
+}
+
+void protocol_send_page(const char *layout_id, bool next)
+{
+    cJSON *body = cJSON_CreateObject();
+    cJSON_AddStringToObject(body, "layout", layout_id);
+    cJSON_AddStringToObject(body, "to", next ? "next" : "prev");
+    send_packet("openpager.page", body, -1, TRANSPORT_ALL);
 }
 
 // ---- helpers ----
@@ -190,24 +203,41 @@ static size_t utf8_chars(const char *text)
 
 static void handle_layout(const cJSON *body, int64_t re, transport_t from)
 {
-    ui_layout_t layout = { .reviewed = true };
+    // On the heap: sixteen keys are about 3 KB, too much for the serial task's stack.
+    ui_layout_t *layout = calloc(1, sizeof(*layout));
+    if (layout == NULL) {
+        send_error(re, "no-memory", "no memory for the layout", from);
+        return;
+    }
     char error[80] = "";
 
-    const char *id = get_string(body, "layout", sizeof(layout.id) - 1);
-    const char *name = get_string(body, "name", sizeof(layout.name) - 1);
+    const char *id = get_string(body, "layout", sizeof(layout->id) - 1);
+    const char *name = get_string(body, "name", sizeof(layout->name) - 1);
     const cJSON *keys = cJSON_GetObjectItemCaseSensitive(body, "keys");
     const cJSON *reviewed = cJSON_GetObjectItemCaseSensitive(body, "reviewed");
+    const cJSON *grid = cJSON_GetObjectItemCaseSensitive(body, "grid");
+    int max_cols, max_rows, cols = 3, rows = 3, page = 1, pages = 1;
+    ui_max_grid(&max_cols, &max_rows);
 
     if (id == NULL || name == NULL || !cJSON_IsArray(keys)) {
         snprintf(error, sizeof(error), "layout, name and keys are required");
-    } else if (cJSON_GetArraySize(keys) > UI_KEYS) {
+    } else if (grid != NULL && !(get_int(grid, "cols", 1, max_cols, &cols) && get_int(grid, "rows", 1, max_rows, &rows))) {
+        snprintf(error, sizeof(error), "grid must be within %dx%d", max_cols, max_rows);
+    } else if ((cJSON_HasObjectItem(body, "pages") && !get_int(body, "pages", 1, 64, &pages)) ||
+               (cJSON_HasObjectItem(body, "page") && !get_int(body, "page", 1, pages, &page))) {
+        snprintf(error, sizeof(error), "page must be 1-pages, pages 1-64");
+    } else if (cJSON_GetArraySize(keys) > cols * rows) {
         snprintf(error, sizeof(error), "too many keys");
     } else {
-        strcpy(layout.id, id);
-        strcpy(layout.name, name);
-        layout.reviewed = !cJSON_IsFalse(reviewed);
+        strcpy(layout->id, id);
+        strcpy(layout->name, name);
+        layout->reviewed = !cJSON_IsFalse(reviewed);
+        layout->cols = (uint8_t)cols;
+        layout->rows = (uint8_t)rows;
+        layout->page = (uint8_t)page;
+        layout->pages = (uint8_t)pages;
         const char *detail = get_string(body, "detail", UI_DETAIL_BYTES - 1);
-        snprintf(layout.detail, sizeof(layout.detail), "%s", detail != NULL ? detail : "");
+        snprintf(layout->detail, sizeof(layout->detail), "%s", detail != NULL ? detail : "");
     }
 
     const cJSON *key;
@@ -222,11 +252,11 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
         const cJSON *event = cJSON_GetObjectItemCaseSensitive(send, "event");
         int modifiers, usage;
 
-        if (!get_int(key, "key", 1, UI_KEYS, &slot)) {
-            snprintf(error, sizeof(error), "key slot must be 1-9");
+        if (!get_int(key, "key", 1, cols * rows, &slot)) {
+            snprintf(error, sizeof(error), "key slot must be 1-%d", cols * rows);
             break;
         }
-        ui_key_t *target = &layout.keys[slot - 1];
+        ui_key_t *target = &layout->keys[slot - 1];
         if (target->send != UI_SEND_NONE) {
             snprintf(error, sizeof(error), "slot %d used twice", slot);
         } else if (label == NULL || utf8_chars(label) > 24) {
@@ -259,8 +289,9 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
     if (error[0] != '\0') {
         cJSON_AddStringToObject(ack, "error", error);
     } else {
-        ui_apply_layout(&layout); // all-or-nothing: only a fully valid layout replaces the keys
+        ui_apply_layout(layout); // all-or-nothing: only a fully valid layout replaces the keys
     }
+    free(layout);
     send_packet("openpager.layout.ack", ack, re, from);
 }
 

@@ -6,6 +6,7 @@ id = "builtin.agent-claude-code-elsewhere"
 name = "Claude elsewhere"
 version = "0.1.0"
 source = "builtin"
+grid = "3x3"                  # the explanation panel needs three rows
 description = "A key to bring Claude forward when the board cannot answer it."
 
 [[pack.tested]]

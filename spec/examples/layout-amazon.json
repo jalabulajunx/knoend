@@ -1,5 +1,6 @@
 { "id": 8, "type": "openpager.layout", "body": {
     "layout": "community.amazon", "name": "Amazon", "source": "community", "reviewed": true,
+    "grid": { "cols": 3, "rows": 3 },
     "keys": [
       { "key": 1, "label": "Search", "send": { "event": true } },
       { "key": 2, "label": "Orders", "speak": "Your orders", "send": { "event": true } },

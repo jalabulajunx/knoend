@@ -14,10 +14,13 @@
 #include "lvgl.h"
 #include "protocol.h"
 
-#define GRID_COLS      3
-#define GRID_ROWS      3
 #define GRID_GAP       4
+#define GRID_MAX       4  // cols and rows
+#define MIN_KEY_W      64 // smallest key a finger hits reliably, in pixels
+#define MIN_KEY_H      44
 #define STATUS_HEIGHT  40
+#define PAGER_WIDTH    64 // the page indicator at the right end of the status bar
+#define ICON_GAP       4  // between a key's icon and its label
 #define CONFIRM_MS     3000
 #define HID_USAGE_1    0x1E // USB HID usage IDs for '1'..'9' are consecutive
 
@@ -37,8 +40,10 @@ static lv_obj_t *key_buttons[UI_KEYS];
 static lv_obj_t *key_labels[UI_KEYS];
 static lv_obj_t *key_icons[UI_KEYS];
 static lv_obj_t *status_bar;
-static lv_obj_t *detail_box;   // over the middle row when the layout has a detail
+static lv_obj_t *detail_box;   // over the middle rows when the layout has a detail
 static lv_obj_t *detail_label;
+static lv_obj_t *pager;        // "2/3 >" at the right end of the status bar; a tap turns the page
+static lv_obj_t *pager_label;
 
 // Pictures sent by the companion (app and site icons), least recently used replaced first. The
 // pixels live in PSRAM.
@@ -62,8 +67,8 @@ static const lv_img_dsc_t *sent_image(const char *name)
     }
     return NULL;
 }
-// Grid geometry, set in ui_start: rows shrink to `compact_h` while a detail is shown.
-static int key_w, key_h, compact_h, detail_h;
+// The area keys are drawn in, set in ui_start; each layout divides it into its own grid.
+static int grid_w, grid_h;
 static lv_obj_t *status_label;
 
 static uint32_t tap_count;
@@ -82,7 +87,9 @@ static void default_layout(ui_layout_t *out)
     strcpy(out->id, "default.digits");
     strcpy(out->name, "Digits");
     out->reviewed = true;
-    for (int i = 0; i < UI_KEYS; i++) {
+    out->cols = out->rows = 3;
+    out->page = out->pages = 1;
+    for (int i = 0; i < 9; i++) {
         out->keys[i].send = UI_SEND_HID;
         snprintf(out->keys[i].label, UI_LABEL_BYTES, "%d", i + 1);
         out->keys[i].usage = HID_USAGE_1 + i;
@@ -140,15 +147,52 @@ static void act(int index)
     } else if (key->send == UI_SEND_HID) {
         // No Bluetooth host: hand the keystroke to the companion (over Wi-Fi or USB), which types
         // it on the computer. The ONX's USB-C cannot act as a keyboard itself.
-        protocol_send_keystroke(index + 1, layout.id, tap_count, key->modifiers, key->usage);
+        protocol_send_keystroke(index + 1, layout.id, layout.page, tap_count, key->modifiers, key->usage);
         result = "hid-via-companion";
     } else if (key->send == UI_SEND_EVENT) {
-        protocol_send_key(index + 1, layout.id, tap_count);
+        protocol_send_key(index + 1, layout.id, layout.page, tap_count);
         result = "event-sent";
     }
     printf("KEY %d seq=%" PRIu32 " t=%" PRIu64 " %s\n", index + 1, tap_count,
            (uint64_t)(esp_timer_get_time() / 1000), result);
     fflush(stdout);
+}
+
+// Asks the companion for the next or previous page; it answers with that page's layout.
+static void turn_page(bool next)
+{
+    if (layout.pages < 2) {
+        return;
+    }
+    if (confirm_slot >= 0) {
+        lv_obj_set_style_bg_color(key_buttons[confirm_slot], lv_color_hex(COLOR_KEY), 0);
+        confirm_slot = -1;
+    }
+    protocol_send_page(layout.id, next);
+    printf("PAGE %s from %d/%d t=%" PRIu64 "\n", next ? "next" : "prev", layout.page, layout.pages,
+           (uint64_t)(esp_timer_get_time() / 1000));
+    fflush(stdout);
+}
+
+// A swipe anywhere on the screen (LVGL works it out from the touch points, whatever the chip):
+// left for the next page, right for the previous one.
+static void gesture_event(lv_event_t *event)
+{
+    lv_indev_t *indev = lv_indev_get_act();
+    if (indev == NULL || layout.pages < 2) {
+        return;
+    }
+    const lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+    if (dir != LV_DIR_LEFT && dir != LV_DIR_RIGHT) {
+        return;
+    }
+    lv_indev_wait_release(indev); // LVGL would also send CLICKED to the key the swipe started on
+    turn_page(dir == LV_DIR_LEFT);
+}
+
+static void pager_event(lv_event_t *event)
+{
+    turn_page(true);
 }
 
 // LVGL callback, so the LVGL lock is already held. One tap per press: CLICKED fires once on
@@ -185,54 +229,78 @@ static void key_event(lv_event_t *event)
 
 static void draw_keys_locked(void)
 {
-    const bool detail = layout.detail[0] != '\0';
-    // With a detail, the top and bottom rows get shorter (label only) and the text takes the
-    // middle, scrollable by swiping.
-    const int row_h = detail ? compact_h : key_h;
-    const int row_y[GRID_ROWS] = {GRID_GAP, GRID_GAP + row_h + GRID_GAP,
-                                  detail ? GRID_GAP + row_h + GRID_GAP + detail_h + GRID_GAP : GRID_GAP + 2 * (row_h + GRID_GAP)};
+    const int cols = layout.cols, rows = layout.rows;
+    const bool detail = layout.detail[0] != '\0' && rows >= 3;
+    const int key_w = (grid_w - GRID_GAP * (cols + 1)) / cols;
+    const int key_h = (grid_h - GRID_GAP * (rows + 1)) / rows;
+    // With a detail, the top and bottom rows get shorter (label only, two thirds of a 3x3 row) and
+    // the text takes the rows between them, scrollable by swiping.
+    const int compact_h = (grid_h - GRID_GAP * 4) / 3 * 2 / 3;
+    const int detail_h = grid_h - 2 * compact_h - GRID_GAP * 4;
     if (detail) {
         lv_label_set_text(detail_label, layout.detail);
-        lv_obj_set_pos(detail_box, GRID_GAP, row_y[1]);
-        lv_obj_set_height(detail_box, detail_h);
+        lv_obj_set_pos(detail_box, GRID_GAP, GRID_GAP + compact_h + GRID_GAP);
+        lv_obj_set_size(detail_box, grid_w - 2 * GRID_GAP, detail_h);
         lv_obj_scroll_to_y(detail_box, 0, LV_ANIM_OFF);
         lv_obj_clear_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
     }
     for (int i = 0; i < UI_KEYS; i++) {
-        const int row = i / GRID_COLS;
-        lv_obj_set_pos(key_buttons[i], GRID_GAP + (i % GRID_COLS) * (key_w + GRID_GAP), row_y[row]);
-        lv_obj_set_height(key_buttons[i], row_h);
-        // The middle row gives way to the detail text.
-        if (detail && row == 1) {
+        const int row = i / cols;
+        // Keys past the grid, and the middle rows under a detail, are hidden.
+        if (i >= cols * rows || (detail && row > 0 && row < rows - 1)) {
             lv_obj_add_flag(key_buttons[i], LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_clear_flag(key_buttons[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
         }
+        lv_obj_clear_flag(key_buttons[i], LV_OBJ_FLAG_HIDDEN);
+        const int h = detail ? compact_h : key_h;
+        const int y = !detail ? GRID_GAP + row * (key_h + GRID_GAP)
+                      : row == 0 ? GRID_GAP
+                                 : GRID_GAP + compact_h + GRID_GAP + detail_h + GRID_GAP;
+        lv_obj_set_pos(key_buttons[i], GRID_GAP + (i % cols) * (key_w + GRID_GAP), y);
+        lv_obj_set_size(key_buttons[i], key_w, h);
+        lv_obj_set_width(key_labels[i], key_w - 8);
+
         const ui_key_t *key = &layout.keys[i];
         const bool blank = key->send == UI_SEND_NONE;
+        const bool big = key_w >= 140 && h >= 90;  // 1x1, 1x2, 2x2
+        const bool small = key_w < 90 || h < 50;   // 4 columns or 4 rows
         lv_obj_set_style_bg_color(key_buttons[i], lv_color_hex(blank ? COLOR_KEY_BLANK : COLOR_KEY), 0);
         lv_label_set_text(key_labels[i], blank ? "" : key->label);
         // A sent picture ("app:...", in colour) or a Material icon (white).
         const bool sent = strchr(key->icon, ':') != NULL;
         const lv_img_dsc_t *icon = blank || detail ? NULL : sent ? sent_image(key->icon) : icons_find(key->icon);
         lv_obj_set_style_img_recolor_opa(key_icons[i], sent ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
-        if (icon != NULL) {
-            // Icon above, a small label under it.
+        if (icon != NULL && h < 56) {
+            // No room for both: the icon alone.
             lv_img_set_src(key_icons[i], icon);
             lv_obj_clear_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_align(key_icons[i], LV_ALIGN_CENTER, 0, -10);
-            lv_obj_set_style_text_font(key_labels[i], &lv_font_montserrat_14, 0);
+            lv_obj_center(key_icons[i]);
+            lv_label_set_text(key_labels[i], "");
+        } else if (icon != NULL) {
+            // Icon above, a one-line label under it, the pair centred on the key; a larger label on
+            // big keys. Icons stay 32 px: LVGL 8 draws 4-bit alpha images line by line and cannot
+            // zoom them (it reads a one-line buffer as the whole image, past its end).
+            const int icon_px = 32;
+            const lv_font_t *font = big ? &lv_font_montserrat_20 : &lv_font_montserrat_14;
+            const int line_px = lv_font_get_line_height(font);
+            const int block = icon_px + ICON_GAP + line_px;
+            lv_img_set_src(key_icons[i], icon);
+            lv_obj_clear_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_align(key_icons[i], LV_ALIGN_CENTER, 0, icon_px / 2 - block / 2);
+            lv_obj_set_style_text_font(key_labels[i], font, 0);
             lv_label_set_long_mode(key_labels[i], LV_LABEL_LONG_DOT);
-            lv_obj_align(key_labels[i], LV_ALIGN_CENTER, 0, 18);
+            lv_obj_set_height(key_labels[i], line_px);
+            lv_obj_align(key_labels[i], LV_ALIGN_CENTER, 0, block / 2 - line_px / 2);
         } else {
             lv_obj_add_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_text_font(key_labels[i],
-                                       detail ? &lv_font_montserrat_14
-                                       : strlen(key->label) <= 2 ? &lv_font_montserrat_28
-                                                                 : &lv_font_montserrat_20, 0);
+                                       detail || small            ? &lv_font_montserrat_14
+                                       : big || strlen(key->label) <= 2 ? &lv_font_montserrat_28
+                                                                        : &lv_font_montserrat_20, 0);
             lv_label_set_long_mode(key_labels[i], LV_LABEL_LONG_WRAP);
+            lv_obj_set_height(key_labels[i], LV_SIZE_CONTENT);
             lv_obj_center(key_labels[i]);
         }
         if (blank) {
@@ -241,6 +309,27 @@ static void draw_keys_locked(void)
             lv_obj_clear_state(key_buttons[i], LV_STATE_DISABLED);
         }
     }
+    // The page indicator takes the right end of the status bar while there are pages.
+    if (layout.pages > 1) {
+        lv_label_set_text_fmt(pager_label, "%d/%d " LV_SYMBOL_RIGHT, layout.page, layout.pages);
+        lv_obj_clear_flag(pager, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_width(status_label, grid_w - 2 * GRID_GAP - PAGER_WIDTH);
+    } else {
+        lv_obj_add_flag(pager, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_width(status_label, grid_w - 2 * GRID_GAP);
+    }
+}
+
+void ui_max_grid(int *cols, int *rows)
+{
+    const board_info_t *board = board_info();
+    *cols = board->width / MIN_KEY_W;
+    *rows = (board->height - STATUS_HEIGHT) / MIN_KEY_H;
+    if (board->width == 0) {
+        *cols = *rows = 3; // no display (no board definition): what the default layout uses
+    }
+    *cols = *cols < 1 ? 1 : *cols > GRID_MAX ? GRID_MAX : *cols;
+    *rows = *rows < 1 ? 1 : *rows > GRID_MAX ? GRID_MAX : *rows;
 }
 
 void ui_start(void)
@@ -255,25 +344,20 @@ void ui_start(void)
     lv_obj_t *screen = lv_scr_act();
     lv_obj_set_style_bg_color(screen, lv_color_hex(COLOR_BG), 0);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    // Keys, the status bar and the detail panel pass swipes up to the screen (LVGL's default).
+    lv_obj_add_event_cb(screen, gesture_event, LV_EVENT_GESTURE, NULL);
 
-    const int grid_h = board->height - STATUS_HEIGHT;
-    key_w = (board->width - GRID_GAP * (GRID_COLS + 1)) / GRID_COLS;
-    key_h = (grid_h - GRID_GAP * (GRID_ROWS + 1)) / GRID_ROWS;
-    compact_h = key_h * 2 / 3;
-    detail_h = grid_h - 2 * compact_h - GRID_GAP * (GRID_ROWS + 1);
+    grid_w = board->width;
+    grid_h = board->height - STATUS_HEIGHT;
 
+    // Every key the largest grid needs; draw_keys_locked places and sizes them per layout.
     for (int i = 0; i < UI_KEYS; i++) {
-        const int row = i / GRID_COLS;
-        const int col = i % GRID_COLS;
         lv_obj_t *button = lv_btn_create(screen);
-        lv_obj_set_size(button, key_w, key_h);
-        lv_obj_set_pos(button, GRID_GAP + col * (key_w + GRID_GAP), GRID_GAP + row * (key_h + GRID_GAP));
         lv_obj_set_style_bg_color(button, lv_color_hex(COLOR_PRESSED), LV_STATE_PRESSED);
         lv_obj_set_style_radius(button, 8, 0);
         lv_obj_add_event_cb(button, key_event, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t *label = lv_label_create(button);
-        lv_obj_set_width(label, key_w - 8);
         lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(label);
@@ -289,8 +373,6 @@ void ui_start(void)
 
     detail_box = lv_obj_create(screen);
     lv_obj_remove_style_all(detail_box);
-    lv_obj_set_size(detail_box, board->width - 2 * GRID_GAP, key_h);
-    lv_obj_set_pos(detail_box, GRID_GAP, GRID_GAP + (key_h + GRID_GAP));
     lv_obj_set_style_bg_opa(detail_box, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(detail_box, lv_color_hex(COLOR_KEY_BLANK), 0);
     lv_obj_set_style_radius(detail_box, 8, 0);
@@ -317,6 +399,20 @@ void ui_start(void)
     lv_obj_set_style_text_color(status_label, lv_color_hex(COLOR_TEXT), 0);
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
     lv_obj_align(status_label, LV_ALIGN_LEFT_MID, GRID_GAP, 0);
+
+    pager = lv_obj_create(status_bar);
+    lv_obj_remove_style_all(pager);
+    lv_obj_set_size(pager, PAGER_WIDTH, STATUS_HEIGHT);
+    lv_obj_align(pager, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_color(pager, lv_color_hex(COLOR_PRESSED), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(pager, LV_OPA_COVER, LV_STATE_PRESSED);
+    lv_obj_add_flag(pager, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(pager, pager_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(pager, LV_OBJ_FLAG_HIDDEN);
+    pager_label = lv_label_create(pager);
+    lv_obj_set_style_text_font(pager_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(pager_label, lv_color_white(), 0);
+    lv_obj_center(pager_label);
 
     draw_keys_locked();
     update_status_locked();

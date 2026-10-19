@@ -1,0 +1,50 @@
+# Grids and pages (spec/protocol.md section 5): pages 1 and 3 have four big keys, page 2 sixteen
+# small ones. Keys without page or slot fill the next free slot and run onto the next page.
+[pack]
+id = "builtin.example-pages"
+name = "Pages example"
+version = "0.1.0"
+source = "builtin"
+grid = "2x2"
+
+[[page]]
+number = 2
+grid = "4x4"
+
+[match]
+web = ["video.example"]
+
+[[key]]
+label = "Play"
+icon = "play_arrow"
+action = { kind = "shortcut", keys = "Space" }
+
+[[key]]
+label = "Full screen"
+icon = "fullscreen"
+action = { kind = "shortcut", keys = "F" }
+
+[[key]]
+label = "Back 10 s"
+action = { kind = "shortcut", keys = "J" }
+
+[[key]]
+label = "Ahead 10 s"
+action = { kind = "shortcut", keys = "L" }
+
+# Page 1 is full: this one starts page 2.
+[[key]]
+label = "Captions"
+action = { kind = "shortcut", keys = "C" }
+
+[[key]]
+page = 2
+slot = 16
+label = "Mute"
+icon = "volume_off"
+action = { kind = "shortcut", keys = "M" }
+
+[[key]]
+page = 3
+label = "Home"
+action = { kind = "open", url = "/" }

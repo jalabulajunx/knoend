@@ -141,8 +141,8 @@ mod tests {
     fn finds_by_class_or_instance_and_reports_unsupported() {
         let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../spec/examples");
         let (catalog, rejected) = Catalog::load(&[examples.clone(), examples.join("invalid")]);
-        assert_eq!(catalog.len(), 2, "the two valid example libraries");
-        assert_eq!(rejected.len(), 4, "the four invalid example libraries");
+        assert_eq!(catalog.len(), 3, "the three valid example libraries");
+        assert_eq!(rejected.len(), 5, "the five invalid example libraries");
         assert_eq!(catalog.find(&focus("Code", "code")).map(|l| l.pack.id.as_str()), Some("builtin.vscode"));
         assert_eq!(catalog.find(&focus("code-oss", "")).map(|l| l.pack.id.as_str()), Some("builtin.vscode"));
         assert!(catalog.find(&focus("com.anthropic.Claude", "com.anthropic.claude")).is_none());

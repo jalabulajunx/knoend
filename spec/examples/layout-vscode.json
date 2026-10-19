@@ -1,5 +1,6 @@
 { "id": 7, "type": "openpager.layout", "body": {
     "layout": "builtin.vscode", "name": "VS Code", "source": "builtin", "reviewed": true,
+    "grid": { "cols": 3, "rows": 3 },
     "keys": [
       { "key": 1, "label": "Palette", "speak": "Command palette", "send": { "hid": { "modifiers": 3, "usage": 19 } } },
       { "key": 2, "label": "Quick open", "send": { "hid": { "modifiers": 1, "usage": 19 } } },

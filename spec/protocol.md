@@ -61,6 +61,7 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `openpager.layout` | C→B | Replace the keys on the board |
 | `openpager.layout.ack` | B→C | Layout accepted or rejected |
 | `openpager.key` | B→C | A key was tapped and its action needs the companion |
+| `openpager.page` | B→C | The person asked for the next or previous page of keys |
 | `openpager.status` | C→B | Show a message on the status bar |
 | `openpager.approve.request` | C→B | A coding agent asks permission; show it and wait for Approve/Deny |
 | `openpager.approve.response` | B→C | The person's answer |
@@ -83,13 +84,15 @@ arrives.
     "deviceId": "a0b1c2d3e4f5", "deviceName": "OpenPager", "deviceType": "board",
     "protocolVersion": 0, "firmware": "a1ea8a8",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
-               "grid": { "cols": 3, "rows": 3 }, "statusBar": true },
+               "grid": { "cols": 4, "rows": 4 }, "statusBar": true },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
     "incoming": ["openpager.layout", "openpager.status", "openpager.approve.request", "openpager.ping"],
-    "outgoing": ["openpager.key", "openpager.layout.ack", "openpager.approve.response", "openpager.ping"] } }
+    "outgoing": ["openpager.key", "openpager.page", "openpager.layout.ack", "openpager.approve.response", "openpager.ping"] } }
 ```
 
+- `board.grid`: the largest grid the board draws legibly (cols and rows 1-4), from its screen size.
+  The companion splits a page with a bigger grid onto pages of this size.
 - `deviceId`: stable per device (boards: base MAC, lowercase hex, no separators).
 - `deviceType`: `board`, `companion` or `sim` (the simulator identifies as `sim` but otherwise
   behaves exactly like a board).
@@ -102,6 +105,7 @@ arrives.
 ```json
 { "id": 7, "type": "openpager.layout", "body": {
     "layout": "builtin.vscode", "name": "VS Code", "source": "builtin", "reviewed": true,
+    "grid": { "cols": 3, "rows": 3 }, "page": 1, "pages": 2,
     "keys": [
       { "key": 1, "label": "Palette", "speak": "Command palette",
         "send": { "hid": { "modifiers": 3, "usage": 19 } } },
@@ -110,7 +114,12 @@ arrives.
         "send": { "hid": { "modifiers": 3, "usage": 14 } } } ] } }
 ```
 
-- `key`: slot 1–9, numbered left to right, top to bottom. Slots not listed are blank.
+- `grid`: columns and rows of this layout (1-4 each, within the board's `grid`); 3x3 when absent.
+- `key`: slot 1 to cols×rows (at most 16), numbered left to right, top to bottom. Slots not listed
+  are blank.
+- `page` / `pages`: this is page `page` of `pages` (both 1 when absent). With more than one page
+  the board shows a page indicator ("2/3 >") at the right end of the status bar. The companion holds the pages and
+  sends one at a time; see `openpager.page`.
 - `send` says what a tap does, decided by the companion when it builds the packet:
   - `hid`: the board types this itself over the keyboard link (USB HID usage + modifier bits:
     1 Ctrl, 2 Shift, 4 Alt, 8 GUI/Cmd; right-hand modifiers are not used). Works with no companion.
@@ -130,14 +139,27 @@ arrives.
 ### 3.4 `openpager.key`
 
 ```json
-{ "id": 18, "type": "openpager.key", "body": { "key": 2, "layout": "builtin.vscode", "seq": 31 } }
+{ "id": 18, "type": "openpager.key", "body": { "key": 2, "layout": "builtin.vscode", "page": 1, "seq": 31 } }
 ```
+
+`page` is the page the key was on (1 when the layout has one page). The companion ignores a tap
+whose page is not the one it last sent, so a tap that crosses a page change does nothing.
 
 Sent for keys whose `send` is `event`, and also for `hid` keys tapped while no Bluetooth
 keyboard host is connected: then the body carries `"hid": { "modifiers": 3, "usage": 19 }` and the
 companion types that keystroke into the focused app itself (a board whose USB cannot be a keyboard,
 like the ONX2432G028, still works over Wi-Fi or USB serial). `seq` counts every tap since boot, so the companion can
 detect lost packets. One packet per tap (sent on release), however long the key is held.
+
+### 3.4a `openpager.page`
+
+```json
+{ "id": 19, "type": "openpager.page", "body": { "layout": "builtin.vscode", "to": "next" } }
+```
+
+Sent when the person swipes left (`next`) or right (`prev`) across the keys, or taps the page indicator
+(`next`). Only while the layout has more than one page. The companion sends the new page as an
+`openpager.layout`; pages wrap around. A swipe never also taps the key it started on.
 
 ### 3.5 `openpager.status`
 
@@ -174,8 +196,9 @@ means until replaced. An empty `text` clears the bar.
   small label) or the name of a picture sent with `openpager.image` (`app:...`, `site:...`, drawn in
   colour). A board that does not know the name shows the label alone.
 - A layout's optional `detail` (up to 240 characters, `\n` for new lines) is shown in place of the
-  middle row (slots 4-6 are hidden); the top and bottom rows get shorter and the text scrolls.
-  Used for what a permission request is about.
+  middle rows (every row but the top and bottom; their keys are hidden); the top and bottom rows
+  get shorter and the text scrolls. Needs a grid of 3 rows or more; with fewer the board ignores
+  it. Used for what a permission request is about.
 
 ### 3.6b `openpager.image` / `openpager.image.ack`
 
@@ -319,8 +342,31 @@ punctuation keys by US-layout position: `Backquote`, `Minus`, `Equal`, `BracketL
 `Backslash`, `Semicolon`, `Quote`, `Comma`, `Period`, `Slash`.
 
 `confirm = true` on a key marks it risky (second tap); validators also flag keys whose label or
-action looks like buy/submit/send/delete without it. At most 9 keys; `slot` (1–9) is optional,
-otherwise keys fill slots in order.
+action looks like buy/submit/send/delete without it.
+
+**Grid and pages.** `grid = "2x2"` in `[pack]` (cols x rows, 1-4 each; default `"3x3"`) sets the
+grid of every page; a `[[page]]` entry overrides it for one page. A key's `page` (1-8, default 1) and
+`slot` (1 to cols×rows of its page) are optional: a key with neither takes the next free slot,
+running onto the next page when one is full; a key with only `page` takes the next free slot on
+that page. At most 64 keys. On a board whose `grid` is smaller, the companion splits each page onto
+pages of the board's size, keys in slot order. The media row is the bottom row of the page shown
+(only on grids of 3 rows or more); "Go to Claude" takes its last key. AI drafts get their grid from
+their number of keys, on one page: 1 key 1x1, 2 1x2, 3-4 2x2, 5-9 3x3, 10-16 4x4.
+
+```toml
+[pack]
+grid = "2x2"                  # pages 1 and 3: four big keys
+
+[[page]]
+number = 2
+grid = "4x4"                  # page 2: sixteen small keys (icon or label only)
+
+[[key]]
+page = 2
+slot = 16
+label = "Settings"
+action = { kind = "shortcut", keys = "Primary+Comma" }
+```
 
 Precedence when several libraries match: user override → installed library → AI draft → default keys.
 
@@ -348,7 +394,8 @@ person has used them and they are promoted into `recipes/` with a `tested` entry
 for that state: which slot holds which answer (`agent` actions), labels, icons. The companion fills in
 what changes per request: the explanation panel, the agent's options on `reply = "option"` keys (in
 order; spare ones are hidden), `always` only when the agent offers a rule to remember, `done` only on
-several-choice questions, and a second tap on allow/always for commands that look destructive. A user
+several-choice questions, and a second tap on allow/always for commands that look destructive. Agent
+screens use `grid = "3x3"`: the explanation panel needs three rows. A user
 library with the same `match.agent` replaces the built-in screen. An `agent` key in a library without
 `match.agent` is rejected (it would do nothing there).
 
@@ -356,7 +403,6 @@ library with the same `match.agent` replaces the built-in screen. An `agent` key
 
 - Pairing-code key exchange for computers without a cable (section 4.4).
 - Storing keys with NVS encryption on the board (today: plain NVS; reading them needs the board in hand).
-- Pages beyond 9 keys (`PluginDynamicFolder`-style folders).
 - Icons: format and size on 106×66 px keys, and whether they travel in packets or live on microSD.
 - What desktop `match` patterns are compared against on each OS (Linux: `.desktop` id or WM_CLASS;
   macOS: bundle id; Windows: executable name) and whether `*` wildcards are allowed.
