@@ -981,3 +981,4 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   Antigravity - Agentic Desktop Application" and "Claude 2.7032.0: Desktop application for Claude.ai"
   from the running windows. Not yet: the Antigravity keys on the board (Sundar's board still showed
   the draft: the running service predates this branch).
+- Sundar: the Antigravity recipe's keys work on the board (2026-10-18); tested entry added.

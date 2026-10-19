@@ -9,6 +9,12 @@ version = "0.1.0"
 source = "builtin"
 description = "Conversations, file search and the input box in the Antigravity desktop app."
 
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11), Antigravity 2.23.1"
+
 [match]
 linux = ["antigravity"]
 
