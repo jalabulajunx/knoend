@@ -1,12 +1,12 @@
 [package]
-name = "openpager-focus"
+name = "knoend-focus"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-openpager-core = { version = "0.1.0", path = "../core" }
+knoend-core = { version = "0.1.0", path = "../core" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = "0.14.0"

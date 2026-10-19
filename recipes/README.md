@@ -3,7 +3,7 @@
 Keys for apps, websites and coding agents, as data-only TOML layout libraries
 ([`spec/protocol.md`](../spec/protocol.md) section 5, schema
 [`spec/schemas/library.schema.json`](../spec/schemas/library.schema.json)). Every file here is compiled
-into `openpager` and checked by `python3 tools/validate_spec.py`.
+into `knoend` and checked by `python3 tools/validate_spec.py`.
 
 ```
 apps/      desktop apps: one file per app for every OS (match.linux / macos / windows, Primary shortcuts)
@@ -20,7 +20,7 @@ id; Windows: executable), check the shortcuts there, then add your `tested` entr
 
 ## From an AI draft to a recipe
 
-"Configure" on the board drafts keys into `~/.config/openpager/libraries/ai/` (Linux) on the computer
+"Configure" on the board drafts keys into `~/.config/knoend/libraries/ai/` (Linux) on the computer
 that asked. Once you have used a draft and it works:
 
 1. Copy it here (`apps/` or `sites/`), set `source = "builtin"` and an id starting `builtin.`.
@@ -30,4 +30,4 @@ that asked. Once you have used a draft and it works:
 4. Run `python3 tools/validate_spec.py` and the companion's tests, then open a pull request.
 
 A recipe here takes precedence over an AI draft of the same page; your own libraries in
-`~/.config/openpager/libraries/` (source `user`) take precedence over both.
+`~/.config/knoend/libraries/` (source `user`) take precedence over both.

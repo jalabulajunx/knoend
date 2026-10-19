@@ -1,6 +1,6 @@
 # Browser link (v0 draft)
 
-How the browser extension (Chrome, Chromium-based browsers, Firefox) and the `openpager` service
+How the browser extension (Chrome, Chromium-based browsers, Firefox) and the `knoend` service
 work together, so a board's keys can follow the website in the active tab and act on the page.
 Packets elsewhere in `spec/` are unchanged; this is a separate link between two programs on the
 same computer.
@@ -8,21 +8,21 @@ same computer.
 ## 1. Pieces and path
 
 ```
-extension (background) --native messaging--> openpager browser-host --local socket--> openpager serve
+extension (background) --native messaging--> knoend browser-host --local socket--> knoend serve
 ```
 
 - **Native messaging** (as KDE's Plasma browser integration does): the browser starts the
-  `openpager` binary itself and talks to it over stdin/stdout, each message a 32-bit
+  `knoend` binary itself and talks to it over stdin/stdout, each message a 32-bit
   native-endian length followed by that many bytes of UTF-8 JSON. Only extensions named in the
   host manifest may start it (`allowed_origins` in Chrome, `allowed_extensions` in Firefox). There
   is no network port and nothing for the person to pair.
 - The host is a relay: it connects to the running service's **browser socket** and copies messages
   both ways, one JSON object per line. The socket is a Unix domain socket that only this user can
-  open: `$XDG_RUNTIME_DIR/openpager/browser.sock` on Linux, `~/Library/Application
-  Support/openpager/browser.sock` on macOS. If the service is not running, the host tells the
+  open: `$XDG_RUNTIME_DIR/knoend/browser.sock` on Linux, `~/Library/Application
+  Support/knoend/browser.sock` on macOS. If the service is not running, the host tells the
   extension (`{"type": "service", "running": false}`) and keeps retrying.
-- Host manifest name: `io.github.jalabulajunx.openpager`. `openpager browser install` writes it for
-  each installed browser; the browser runs the `openpager` binary with its own arguments (an
+- Host manifest name: `io.github.jalabulajunx.knoend`. `knoend browser install` writes it for
+  each installed browser; the browser runs the `knoend` binary with its own arguments (an
   extension origin for Chrome; a manifest path and extension id for Firefox), which is how the
   binary knows to act as the host.
 

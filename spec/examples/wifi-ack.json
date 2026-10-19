@@ -1,1 +1,1 @@
-{ "id": 3, "re": 4, "type": "openpager.wifi.ack", "body": { "ok": true } }
+{ "id": 3, "re": 4, "type": "knoend.wifi.ack", "body": { "ok": true } }

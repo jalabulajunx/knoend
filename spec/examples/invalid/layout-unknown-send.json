@@ -1,1 +1,1 @@
-{ "id": 1, "type": "openpager.layout", "body": { "layout": "builtin.x", "name": "X", "keys": [ { "key": 1, "label": "Run", "send": { "shell": "rm -rf ~" } } ] } }
+{ "id": 1, "type": "knoend.layout", "body": { "layout": "builtin.x", "name": "X", "keys": [ { "key": 1, "label": "Run", "send": { "shell": "rm -rf ~" } } ] } }

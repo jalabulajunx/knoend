@@ -1,7 +1,7 @@
 # extension
 
-The OpenPager browser extension for Chrome (and Chromium, Edge, Brave) and Firefox. It tells the
-`openpager` service which website is active, so the board shows that site's keys, and carries out
+The KnoEnd browser extension for Chrome (and Chromium, Edge, Brave) and Firefox. It tells the
+`knoend` service which website is active, so the board shows that site's keys, and carries out
 those keys on the page: press a button, focus a field, control a video, open a page on the site.
 The design and messages are in [`spec/browser.md`](../spec/browser.md).
 
@@ -14,13 +14,13 @@ The design and messages are in [`spec/browser.md`](../spec/browser.md).
 
 At install it can see which site is active and nothing on the page. In its popup you turn board
 buttons on for one site at a time; the browser asks for that site's permission, and only then can the
-extension act on the page or list its controls. It talks only to `openpager` on this computer, through
+extension act on the page or list its controls. It talks only to `knoend` on this computer, through
 the browser's native messaging (no network port).
 
 ## Trying it
 
-1. Register openpager with your browsers once: `openpager browser install` (writes a small file per
-   browser that names the `openpager` binary; `openpager browser uninstall` removes them).
+1. Register knoend with your browsers once: `knoend browser install` (writes a small file per
+   browser that names the `knoend` binary; `knoend browser uninstall` removes them).
 2. Add the extension:
    - **Chrome / Edge / Brave:** open `chrome://extensions`, switch on Developer mode, "Load
      unpacked", pick `dist/extension/chrome`. Its id is `echibclfkpicikodohehemgjefbpakpj` (fixed
@@ -28,18 +28,18 @@ the browser's native messaging (no network port).
    - **Firefox:** open `about:debugging#/runtime/this-firefox`, "Load Temporary Add-on", pick
      `dist/extension/firefox/manifest.json`. A temporary add-on is removed when Firefox restarts.
      To keep it, have Mozilla sign it for self-distribution (free, automated, not listed publicly):
-     upload `dist/extension/openpager-firefox-<version>.zip` at
+     upload `dist/extension/knoend-firefox-<version>.zip` at
      https://addons.mozilla.org/developers/addon/submit/distribution, choose "On your own", then
-     open the signed `.xpi` it returns in Firefox. The add-on id stays `openpager@jalabulajunx.github.io`,
-     which is what `openpager browser install` allows.
-3. Run `openpager serve`. The popup shows "connected".
+     open the signed `.xpi` it returns in Firefox. The add-on id is `knoend@jalabulajunx.github.io` (the id from before the rename, `openpager@jalabulajunx.github.io`, is still allowed),
+     which is what `knoend browser install` allows.
+3. Run `knoend serve`. The popup shows "connected".
 4. Open a site, open the popup, and turn board buttons on. YouTube has keys built in (different
    ones on a video page); for any other site press "Make keys for this site with AI".
 
-Tested, against a stand-in for the service and the real `openpager` host:
+Tested, against a stand-in for the service and the real `knoend` host:
 
 - Firefox 156 (headless, installed through WebDriver BiDi `webExtension.install`, host registered by
-  `openpager browser install` in `~/.mozilla/native-messaging-hosts`): tab reports, inventory of a
+  `knoend browser install` in `~/.mozilla/native-messaging-hosts`): tab reports, inventory of a
   YouTube page (52 controls), media / focus / element / open actions; without the site granted,
   every page action and the inventory answer `not-granted` while `open` still works.
 - Chrome 152 (headless, DevTools `Extensions.loadUnpacked`): the same actions; 35 controls.

@@ -1,5 +1,5 @@
 //! macOS: keyboard events through Core Graphics. Posting them needs the Accessibility permission
-//! for the app that launched `openpager` (Terminal, iTerm, Visual Studio Code...): System Settings >
+//! for the app that launched `knoend` (Terminal, iTerm, Visual Studio Code...): System Settings >
 //! Privacy & Security > Accessibility. Without it macOS drops them silently, so we check first and
 //! say so. Tested on macOS 26.6 (2026-10-17): typed shortcuts reached VS Code and Firefox.
 
@@ -84,8 +84,8 @@ impl Typist {
         if accessibility_trusted() {
             Ok(Typist)
         } else {
-            let app = launching_app().unwrap_or_else(|| "the app that runs openpager (e.g. Terminal)".into());
-            Err(format!("macOS needs Accessibility permission to type for the board: System Settings > Privacy & Security > Accessibility, switch on {app}, then restart openpager"))
+            let app = launching_app().unwrap_or_else(|| "the app that runs knoend (e.g. Terminal)".into());
+            Err(format!("macOS needs Accessibility permission to type for the board: System Settings > Privacy & Security > Accessibility, switch on {app}, then restart knoend"))
         }
     }
 

@@ -3,7 +3,7 @@
 //!     endpoint), Ollama, and any other compatible server;
 //!   - Anthropic Messages API.
 //!
-//! Configuration: `~/.config/openpager/agent.toml` (provider, model, and optionally base_url,
+//! Configuration: `~/.config/knoend/agent.toml` (provider, model, and optionally base_url,
 //! `[options]` added to every request and `omit` for parameters never to send). API keys come from
 //! the environment, or from keys saved in the web app (`secrets.rs`), never from agent.toml.
 //!
@@ -101,7 +101,7 @@ impl AgentConfig {
         match self.provider {
             Provider::Ollama => Ok("qwen2.5-coder:7b".into()),
             Provider::Anthropic => Ok("claude-opus-5".into()),
-            _ => Err("set `model` in ~/.config/openpager/agent.toml for this provider".into()),
+            _ => Err("set `model` in ~/.config/knoend/agent.toml for this provider".into()),
         }
     }
 

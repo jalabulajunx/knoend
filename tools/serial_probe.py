@@ -103,18 +103,18 @@ def main():
 
     example = lambda name: json.loads((EXAMPLES / name).read_text())
 
-    rid = board.send("openpager.identity", example("identity-companion.json")["body"])
-    reply = board.expect("openpager.identity", rid)
+    rid = board.send("knoend.identity", example("identity-companion.json")["body"])
+    reply = board.expect("knoend.identity", rid)
     check("identity answered with the board's identity", reply is not None
           and reply["body"].get("deviceType") == "board",
           json.dumps(reply["body"])[:160] if reply else "no reply")
 
-    rid = board.send("openpager.ping", {})
-    check("ping answered", board.expect("openpager.ping", rid) is not None)
+    rid = board.send("knoend.ping", {})
+    check("ping answered", board.expect("knoend.ping", rid) is not None)
 
     for name in ("layout-vscode.json", "layout-amazon.json"):
-        rid = board.send("openpager.layout", example(name)["body"])
-        reply = board.expect("openpager.layout.ack", rid)
+        rid = board.send("knoend.layout", example(name)["body"])
+        reply = board.expect("knoend.layout.ack", rid)
         check(f"{name} accepted", reply is not None and reply["body"].get("ok") is True,
               json.dumps(reply["body"]) if reply else "no reply")
 
@@ -130,46 +130,46 @@ def main():
             {"key": 1, "label": "x" * 25, "send": {"event": True}}]},
     }
     for name, body in bad_layouts.items():
-        rid = board.send("openpager.layout", body)
-        reply = board.expect("openpager.layout.ack", rid)
+        rid = board.send("knoend.layout", body)
+        reply = board.expect("knoend.layout.ack", rid)
         check(f"layout rejected: {name}", reply is not None and reply["body"].get("ok") is False,
               reply["body"].get("error", "") if reply else "no reply")
 
-    rid = board.send("openpager.pair", {"companion": "serial-probe", "companionName": "Probe",
+    rid = board.send("knoend.pair", {"companion": "serial-probe", "companionName": "Probe",
                                         "key": secrets.token_hex(32)})
-    reply = board.expect("openpager.pair.ack", rid)
+    reply = board.expect("knoend.pair.ack", rid)
     check("pairing key accepted over serial", reply is not None and reply["body"].get("ok") is True,
           json.dumps(reply["body"]) if reply else "no reply")
 
-    rid = board.send("openpager.pair", {"companion": "serial-probe", "key": "00ff"})
-    reply = board.expect("openpager.pair.ack", rid)
+    rid = board.send("knoend.pair", {"companion": "serial-probe", "key": "00ff"})
+    reply = board.expect("knoend.pair.ack", rid)
     check("pairing rejected: short key", reply is not None and reply["body"].get("ok") is False,
           reply["body"].get("error", "") if reply else "no reply")
 
     board.send_raw("{not json")
-    reply = board.expect("openpager.error", None)
+    reply = board.expect("knoend.error", None)
     check("malformed JSON gets bad-packet", reply is not None and reply["body"].get("code") == "bad-packet")
 
-    board.send_raw(json.dumps({"id": 150, "type": "openpager.ping"}))
-    reply = board.expect("openpager.error", 150)
+    board.send_raw(json.dumps({"id": 150, "type": "knoend.ping"}))
+    reply = board.expect("knoend.error", 150)
     check("packet without body gets bad-packet", reply is not None and reply["body"].get("code") == "bad-packet")
 
-    board.send("openpager.approve.request", example("approve-request.json")["body"])
+    board.send("knoend.approve.request", example("approve-request.json")["body"])
     unexpected = [p for p in board.packets(1.5)]
     check("unknown/unsupported type is ignored", not unexpected,
           f"got {unexpected}" if unexpected else "")
 
-    board.send_raw('{"id": 160, "type": "openpager.ping", "body": {"pad": "' + "x" * 5000 + '"}}')
-    reply = board.expect("openpager.error", None, seconds=3.0)
+    board.send_raw('{"id": 160, "type": "knoend.ping", "body": {"pad": "' + "x" * 5000 + '"}}')
+    reply = board.expect("knoend.error", None, seconds=3.0)
     check("oversized line gets too-large", reply is not None and reply["body"].get("code") == "too-large")
 
-    rid = board.send("openpager.ping", {})
-    check("still answering after the bad input", board.expect("openpager.ping", rid) is not None)
+    rid = board.send("knoend.ping", {})
+    check("still answering after the bad input", board.expect("knoend.ping", rid) is not None)
 
-    rid = board.send("openpager.layout", BENCH_LAYOUT)
-    reply = board.expect("openpager.layout.ack", rid)
+    rid = board.send("knoend.layout", BENCH_LAYOUT)
+    reply = board.expect("knoend.layout.ack", rid)
     check("bench layout accepted", reply is not None and reply["body"].get("ok") is True)
-    board.send("openpager.status", {"text": "Serial probe: tap the keys", "level": "attention"})
+    board.send("knoend.status", {"text": "Serial probe: tap the keys", "level": "attention"})
 
     print(f"\n{sum(results)}/{len(results)} automatic checks passed. Listening {args.listen} s for taps:")
     for line in board.lines(args.listen):

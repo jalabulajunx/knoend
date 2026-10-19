@@ -1,4 +1,4 @@
-//! What the person is looking at: the focused app and, in a browser with the OpenPager
+//! What the person is looking at: the focused app and, in a browser with the KnoEnd
 //! extension, the site in its active tab.
 
 use serde::Serialize;

@@ -1,12 +1,12 @@
 //! Where firmware comes from: a release manifest and its parts, from a local folder or a URL
 //! (default: the latest GitHub release). Every part is checked against its SHA-256 before use.
 
-use openpager_flash::manifest::{Manifest, Part};
+use knoend_flash::manifest::{Manifest, Part};
 
 /// Size of the firmware's "board" partition (firmware/partitions.csv).
 const DEFINITION_PARTITION_SIZE: usize = 0x1000;
 
-pub const DEFAULT_SOURCE: &str = "https://github.com/jalabulajunx/openpager/releases/latest/download";
+pub const DEFAULT_SOURCE: &str = "https://github.com/jalabulajunx/knoend/releases/latest/download";
 
 async fn fetch(source: &str, file: &str) -> Result<Vec<u8>, String> {
     if source.starts_with("http://") || source.starts_with("https://") {

@@ -1,1 +1,1 @@
-{ "id": 5, "type": "openpager.ping", "body": {} }
+{ "id": 5, "type": "knoend.ping", "body": {} }

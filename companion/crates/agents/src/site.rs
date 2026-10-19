@@ -8,13 +8,13 @@
 
 use std::collections::HashSet;
 
-use openpager_core::library::{Action, Library};
+use knoend_core::library::{Action, Library};
 use serde_json::Value;
 
 use crate::provider::{self, AgentConfig, Message};
 use crate::{extract_toml, Draft};
 
-const SYSTEM_PROMPT: &str = r#"You design website layouts for OpenPager, a touchscreen keypad that sits
+const SYSTEM_PROMPT: &str = r#"You design website layouts for KnoEnd, a touchscreen keypad that sits
 next to the computer. You are given one website and the list of controls on the page the person is
 looking at. Choose up to 16 keys that make this site faster to use and return them as a TOML layout
 library.
@@ -167,10 +167,10 @@ pub async fn draft_site_library(config: &AgentConfig, host: &str, route: &str, o
              and adds at most {} keys for this page after them: choose the {} most useful things this page adds, most useful first, \
              and none the site keys already do. Prefer what the person starts on this page (a new post, compose, upload, a filter).",
             if site_keys.is_empty() { "none".into() } else { site_keys.join(", ") },
-            openpager_core::catalog::PAGE_EXTRAS, openpager_core::catalog::PAGE_EXTRAS),
+            knoend_core::catalog::PAGE_EXTRAS, knoend_core::catalog::PAGE_EXTRAS),
     };
     let prompt = format!("Website: {}\nPage: {}\nOperating system: {os}\n{purpose}\nIcon list: {}\nControls on this page:\n{}\n",
-                         site_of(host), route, openpager_core::library::icon_names().join(" "), describe(items));
+                         site_of(host), route, knoend_core::library::icon_names().join(" "), describe(items));
     let mut messages = vec![Message::user(prompt)];
     let mut last_error = String::new();
     for attempt in 1..=2 {

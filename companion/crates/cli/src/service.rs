@@ -6,17 +6,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use openpager_core::catalog::Catalog;
-use openpager_core::focus::{Focus, WebPage};
-use openpager_core::library::{Action, AgentReply, LibraryKey, MediaCommand};
-use openpager_agents::site::Scope;
-use openpager_media::NowPlaying;
+use knoend_core::catalog::Catalog;
+use knoend_core::focus::{Focus, WebPage};
+use knoend_core::library::{Action, AgentReply, LibraryKey, MediaCommand};
+use knoend_agents::site::Scope;
+use knoend_media::NowPlaying;
 use std::collections::{HashMap, HashSet};
-use openpager_core::layout;
-use openpager_core::library::Library;
-use openpager_core::protocol::{Grid, LayoutBody, LayoutKey, Packet, Send};
-use openpager_transport::pairing::{config_dir, Pairings};
-use openpager_transport::{discover, wifi};
+use knoend_core::layout;
+use knoend_core::library::Library;
+use knoend_core::protocol::{Grid, LayoutBody, LayoutKey, Packet, Send};
+use knoend_transport::pairing::{config_dir, Pairings};
+use knoend_transport::{discover, wifi};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -100,13 +100,13 @@ pub struct Shared {
     pub serial: Arc<tokio::sync::Mutex<()>>,
     pub firmware_source: String,
     /// Types keystrokes for a board that cannot (no Bluetooth host); connected on first use.
-    typist: Arc<std::sync::Mutex<Option<openpager_input::Typist>>>,
+    typist: Arc<std::sync::Mutex<Option<knoend_input::Typist>>>,
     /// The last log lines, for the setup assistant's snapshot.
     recent: std::sync::Mutex<std::collections::VecDeque<String>>,
     /// The browser extension link (`spec/browser.md`).
     pub browser: Arc<crate::browser::Browser>,
     /// Media players (MPRIS on Linux); None where there are none to read.
-    pub media: Option<Arc<openpager_media::Players>>,
+    pub media: Option<Arc<knoend_media::Players>>,
     /// The service loop's inbox, so background jobs can put a line on the board's status bar.
     inbox: std::sync::OnceLock<mpsc::Sender<Event>>,
 }
@@ -118,7 +118,7 @@ impl Shared {
                           typist: Arc::new(std::sync::Mutex::new(None)),
                           recent: std::sync::Mutex::new(std::collections::VecDeque::new()),
                           browser: Arc::new(crate::browser::Browser::default()),
-                          media: openpager_media::Players::connect().ok().map(Arc::new),
+                          media: knoend_media::Players::connect().ok().map(Arc::new),
                           inbox: std::sync::OnceLock::new() })
     }
 
@@ -146,7 +146,7 @@ impl Shared {
     /// Asks the browser to let the board act on the active site (the extension opens a page with
     /// an Allow button; browsers only grant on a click). Waits up to two minutes for the answer.
     pub async fn ask_site_permission(&self, site: &str) -> Result<(), String> {
-        self.board_status(format!("Allow {site} in your browser (OpenPager tab)"));
+        self.board_status(format!("Allow {site} in your browser (KnoEnd tab)"));
         let answer = self.browser.request(json!({"type": "grant"}), Duration::from_secs(125)).await?;
         if answer["ok"] == true {
             Ok(())
@@ -173,11 +173,17 @@ mod builtin {
     include!(concat!(env!("OUT_DIR"), "/builtin.rs"));
 }
 
-/// Built-in libraries are compiled in; `OPENPAGER_BUILTIN` (a folder) overrides them, for
+/// A folder of recipes to use instead of the compiled-in ones (`KNOEND_BUILTIN`, or
+/// `OPENPAGER_BUILTIN` from before the rename).
+fn builtin_override() -> Option<std::ffi::OsString> {
+    std::env::var_os("KNOEND_BUILTIN").or_else(|| std::env::var_os("OPENPAGER_BUILTIN"))
+}
+
+/// Built-in libraries are compiled in; `KNOEND_BUILTIN` (a folder) overrides them, for
 /// working on libraries without rebuilding.
 fn load_builtin(catalog: &mut Catalog) -> Vec<String> {
     let mut problems = Vec::new();
-    if std::env::var_os("OPENPAGER_BUILTIN").is_some() {
+    if builtin_override().is_some() {
         return problems;
     }
     for (name, text) in builtin::BUILTIN {
@@ -206,7 +212,7 @@ enum Event {
     /// Turn the page of the layout on the board: "next" or "prev" (a swipe or tap on the board).
     Page(String),
     /// A desktop notification from an app the board follows (Claude, Codex, ...).
-    Notified(openpager_desktop::Notification),
+    Notified(knoend_desktop::Notification),
     /// A coding agent's hook: a permission request or a notification.
     Agent(crate::agent_hooks::AgentEvent),
     /// A site's icon, fetched and shrunk to 32x32 RGBA.
@@ -217,9 +223,9 @@ enum Event {
 }
 
 pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
-    // OPENPAGER_BUILTIN is a recipes tree (apps/, sites/<host>/, agents/); the person's own
+    // KNOEND_BUILTIN is a recipes tree (apps/, sites/<host>/, agents/); the person's own
     // folder is read flat, since its ai/ subfolder is listed on its own.
-    let mut dirs: Vec<PathBuf> = std::env::var_os("OPENPAGER_BUILTIN").map(|d| Catalog::folders(Path::new(&d))).unwrap_or_default();
+    let mut dirs: Vec<PathBuf> = builtin_override().map(|d| Catalog::folders(Path::new(&d))).unwrap_or_default();
     dirs.extend([config_dir().join("libraries"), ai_libraries()]);
     dirs.extend(extra_libraries);
     let (mut catalog, rejected) = Catalog::load(&dirs);
@@ -274,7 +280,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     // Claude notifications that no local hook explains (a cloud session, which runs its hooks on
     // Anthropic's machines): the board cannot answer those, so it offers a key to show Claude.
     let mut last_hook: Option<std::time::Instant> = None;
-    let mut unexplained: Option<(openpager_desktop::Notification, std::time::Instant)> = None;
+    let mut unexplained: Option<(knoend_desktop::Notification, std::time::Instant)> = None;
     let mut calling: Option<Calling> = None;
 
     // What the OS says is focused, and the browser's active tab; `effective` joins them.
@@ -390,7 +396,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 _ = heartbeat.tick() => {
                     if last_heard.elapsed() > Duration::from_secs(25) {
                         Event::LinkDown("no reply from the board for 25 s".into())
-                    } else if sender.send("openpager.ping", json!({})).await.is_err() {
+                    } else if sender.send("knoend.ping", json!({})).await.is_err() {
                         Event::LinkDown("could not send to the board".into())
                     } else {
                         continue;
@@ -405,7 +411,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             }
             // A swipe on the board turns the page it was made on; a late one for another layout does nothing.
             let event = match event {
-                Event::Board(p) if p.kind == "openpager.page" => {
+                Event::Board(p) if p.kind == "knoend.page" => {
                     if p.body["layout"] != paging.layout.as_str() {
                         continue;
                     }
@@ -447,7 +453,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                     favicons.insert(host, pixels);
                 }
-                Event::Board(packet) if packet.kind == "openpager.key" && paging.stale(&packet) => {
+                Event::Board(packet) if packet.kind == "knoend.key" && paging.stale(&packet) => {
                     println!("  tap on page {} of {}, which is no longer shown; ignored", packet.body["page"], paging.layout);
                 }
                 Event::Page(to) => {
@@ -460,13 +466,13 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                 }
-                Event::Board(packet) if packet.kind == "openpager.key" && packet.body["layout"] != APPROVE
+                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE
                                         && calling.as_ref().is_some_and(|_| packet.body["key"] == paging.grid.size()) => {
                     let c = calling.take().expect("calling");
                     let names = c.names.clone();
                     let result = tokio::task::spawn_blocking(move || {
                         let names: Vec<&str> = names.iter().map(String::as_str).collect();
-                        openpager_focus::bring_to_front(&names)
+                        knoend_focus::bring_to_front(&names)
                     }).await.unwrap_or_else(|e| Err(e.to_string()));
                     match result {
                         Ok(()) => println!("  brought {} to the front", c.app),
@@ -478,7 +484,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                                               &mut shown, calling.as_ref(), &shared).await,
                     }
                 }
-                Event::Board(packet) if packet.kind == "openpager.key" && packet.body["layout"] == LAUNCHER => {
+                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] == LAUNCHER => {
                     let key = packet.body["key"].as_u64().and_then(|k| u8::try_from(k).ok()).unwrap_or(0);
                     if let Some(target) = launcher_targets.get(&key) {
                         let text = match target.open() {
@@ -517,7 +523,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                     }
                 }
-                Event::Board(packet) if packet.kind == "openpager.key" && packet.body["layout"] == APPROVE => {
+                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] == APPROVE => {
                     let key = packet.body["key"].as_u64().unwrap_or(0);
                     let decision = match approvals.front_mut() {
                         Some(front) => {
@@ -595,7 +601,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         println!("Agent notification ({kind}): {message}");
                         let text = board_text(&format!("Claude: {message}"), 80);
                         if approvals.is_empty() {
-                            let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
+                            let _ = sender.send("knoend.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
                         }
                     }
                 }
@@ -607,17 +613,17 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     let text = board_text(&format!("{}: {}", n.app, if n.summary.is_empty() { &n.body } else { &n.summary }), 80);
                     // A pending permission request keeps the status line (it is what the notification is about).
                     if approvals.is_empty() {
-                        let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
+                        let _ = sender.send("knoend.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
                     }
                     shared.emit("notification", json!({"app": n.app, "summary": n.summary}));
                 }
                 Event::Status(text) => {
-                    let _ = sender.send("openpager.status", json!({"text": board_text(&text, 80), "level": "attention", "ttl": 20})).await;
+                    let _ = sender.send("knoend.status", json!({"text": board_text(&text, 80), "level": "attention", "ttl": 20})).await;
                 }
                 Event::ConfigureSite => match effective(&focus, &tab).filter(|f| f.web.is_some()) {
                     Some(target) => {
                         let text = format!("Configuring {}: reading the page...", board_text(target.display_name(), 40));
-                        let _ = sender.send("openpager.status", json!({"text": text, "level": "attention"})).await;
+                        let _ = sender.send("knoend.status", json!({"text": text, "level": "attention"})).await;
                         let scope = site_scope(&catalog, &target);
                         start_configure(target, scope, &events, &shared).await;
                     }
@@ -660,7 +666,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                                                                    "app": target.display_name(), "error": error}));
                             let mut text = format!("Could not configure {}: {error}", target.display_name());
                             text.truncate(80);
-                            let _ = sender.send("openpager.status", json!({"text": text, "level": "alert", "ttl": 15})).await;
+                            let _ = sender.send("knoend.status", json!({"text": text, "level": "alert", "ttl": 15})).await;
                         }
                     }
                 }
@@ -711,7 +717,7 @@ fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
         shared.emit("log", json!({"text": note}));
     }
     std::thread::spawn(move || {
-        let watcher = match openpager_focus::Watcher::connect() {
+        let watcher = match knoend_focus::Watcher::connect() {
             Ok(w) => w,
             Err(e) => {
                 shared.emit("log", json!({"text": format!("Focus watcher: {e}")}));
@@ -737,7 +743,7 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
     let board = found.into_iter().find(|b| wanted.contains(&b.device_id))
         .ok_or("no paired board found on the network")?;
     let key = pairings.key_for(&board.device_id).ok_or("stored key is not valid hex")?;
-    let (sender, mut receiver) = wifi::connect((board.address, board.port).into(), &board.device_id, &pairings.companion, key)
+    let (sender, mut receiver) = wifi::connect((board.address, board.port).into(), &board.device_id, &pairings.companion, key, board.old_names)
         .await.map_err(|e| e.to_string())?;
 
     let identity = receiver.recv().await.map_err(|e| e.to_string())?;
@@ -785,7 +791,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     if shown.as_deref().is_some_and(|s| s.starts_with(APPROVE_SIGNATURE)) {
         return; // a permission request is on the board; it stays until answered
     }
-    let player = openpager_media::for_focus(players, &focus.app, &focus.instance);
+    let player = knoend_media::for_focus(players, &focus.app, &focus.instance);
     let mut actions: HashMap<u8, KeyRef> = HashMap::new();
     let found = catalog.layout_for(focus).map(|library| {
         let pages = layout::pages(&library, paging.max);
@@ -866,8 +872,8 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     let summary = json!({"id": id, "name": body.name, "source": body.source, "reviewed": body.reviewed, "grid": grid, "page": body.page, "pages": body.pages,
                          "keys": body.keys.iter().map(|k| json!({"key": k.key, "label": k.label})).collect::<Vec<_>>()});
     let body = serde_json::to_value(&body).expect("serialisable");
-    if sender.send("openpager.layout", body).await.is_ok() {
-        let _ = sender.send("openpager.status", status).await;
+    if sender.send("knoend.layout", body).await.is_ok() {
+        let _ = sender.send("knoend.status", status).await;
         *shown = Some(signature);
         shared.update(|s| s.layout = Some(summary)).await;
     }
@@ -924,7 +930,7 @@ async fn draft_new_page(catalog: &Catalog, focus: &Focus, drafted: &DraftedPages
     let Some(web) = focus.web.as_ref().filter(|w| w.granted && !w.fullscreen) else { return };
     let Some(site) = catalog.site_wide(web) else { return };
     // Only sites the person configured with the AI, and only where nothing more specific applies.
-    if site.pack.source != openpager_core::library::Source::Ai || catalog.find(focus).map(|l| &l.pack.id) != Some(&site.pack.id) {
+    if site.pack.source != knoend_core::library::Source::Ai || catalog.find(focus).map(|l| &l.pack.id) != Some(&site.pack.id) {
         return;
     }
     let kind = web.page_kind();
@@ -992,8 +998,8 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
         return;
     }
     println!("  -> launcher: {}", body.keys.iter().map(|k| k.label.as_str()).collect::<Vec<_>>().join(", "));
-    if sender.send("openpager.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
-        let _ = sender.send("openpager.status", json!({"text": status})).await;
+    if sender.send("knoend.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
+        let _ = sender.send("knoend.status", json!({"text": status})).await;
         *shown = Some(signature);
         shared.update(|s| s.layout = Some(json!({"id": LAUNCHER, "name": "Launcher"}))).await;
     }
@@ -1007,7 +1013,7 @@ async fn send_image(sender: &mut wifi::WifiSender, name: &str, rgba: &[u8]) -> b
     for (i, chunk) in pixels.chunks(2048).enumerate() {
         let body = json!({"name": name, "w": 32, "h": 32, "offset": i * 2048, "total": pixels.len(),
                           "data": base64::engine::general_purpose::STANDARD.encode(chunk)});
-        if sender.send("openpager.image", body).await.is_err() {
+        if sender.send("knoend.image", body).await.is_err() {
             return false;
         }
     }
@@ -1029,7 +1035,7 @@ fn spawn_favicon_fetch(host: String, url: String, events: mpsc::Sender<Event>) {
         };
         let Some(bytes) = bytes.filter(|b| b.len() <= 512 * 1024) else { return };
         let svg = url.contains("svg");
-        let pixels = tokio::task::spawn_blocking(move || openpager_desktop::picture::render_bytes(&bytes, svg, 32)).await.ok().flatten();
+        let pixels = tokio::task::spawn_blocking(move || knoend_desktop::picture::render_bytes(&bytes, svg, 32)).await.ok().flatten();
         if let Some(pixels) = pixels {
             let _ = events.send(Event::Favicon(host, pixels)).await;
         }
@@ -1043,7 +1049,7 @@ fn load_favicons() -> HashMap<String, Vec<u8>> {
         for entry in entries.flatten() {
             let path = entry.path();
             let host = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-            if let Some(pixels) = openpager_desktop::picture::render(&path, 32) {
+            if let Some(pixels) = knoend_desktop::picture::render(&path, 32) {
                 out.insert(host, pixels);
             }
         }
@@ -1053,7 +1059,7 @@ fn load_favicons() -> HashMap<String, Vec<u8>> {
 
 /// 32x32 RGBA as PNG bytes (for the favicon cache).
 fn image_png(rgba: &[u8]) -> Option<Vec<u8>> {
-    openpager_desktop::picture::png(rgba, 32, 32)
+    knoend_desktop::picture::png(rgba, 32, 32)
 }
 
 /// Layout id of a coding agent's permission request on the board.
@@ -1096,7 +1102,7 @@ struct Calling {
 }
 
 impl Calling {
-    fn new(n: &openpager_desktop::Notification, catalog: &Catalog) -> Calling {
+    fn new(n: &knoend_desktop::Notification, catalog: &Catalog) -> Calling {
         let names = [n.app.clone(), n.desktop_entry.clone()].into_iter().filter(|s| !s.is_empty()).collect();
         let screen = agent_screen(catalog, "elsewhere");
         let key = screen.keys.iter().zip(screen.placed().into_iter().map(|(_, slot)| slot))
@@ -1120,7 +1126,7 @@ impl Calling {
     }
 
     /// Whether `focus` is the app that posted `n`.
-    fn matches(focus: &Focus, n: &openpager_desktop::Notification) -> bool {
+    fn matches(focus: &Focus, n: &knoend_desktop::Notification) -> bool {
         Calling::named(focus, &n.app) || Calling::named(focus, &n.desktop_entry)
     }
 
@@ -1135,7 +1141,7 @@ impl Calling {
 const AGENT: &str = "claude-code";
 
 /// The recipe for one screen of the agent; the compiled-in one when the catalog has none (e.g.
-/// `OPENPAGER_BUILTIN` points at a folder without agent recipes).
+/// `KNOEND_BUILTIN` points at a folder without agent recipes).
 fn agent_screen(catalog: &Catalog, state: &str) -> Library {
     let name = format!("{AGENT}/{state}");
     catalog.agent(&name).cloned().unwrap_or_else(|| {
@@ -1262,8 +1268,8 @@ async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catal
     let body = LayoutBody { layout: APPROVE.into(), name: board_text(&title, 128), source: "builtin".into(), reviewed: true, keys, detail: Some(detail),
                             grid: Some(screen.grid(1)), ..LayoutBody::default() };
     let signature = format!("{APPROVE_SIGNATURE}{}", serde_json::to_string(&body).unwrap_or_default());
-    if sender.send("openpager.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
-        let _ = sender.send("openpager.status", json!({"text": board_text(&status, 80), "level": level})).await;
+    if sender.send("knoend.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
+        let _ = sender.send("knoend.status", json!({"text": board_text(&status, 80), "level": level})).await;
         *shown = Some(signature);
         shared.update(|s| s.layout = Some(json!({"id": APPROVE, "name": title, "summary": status}))).await;
     }
@@ -1324,7 +1330,7 @@ const NOTIFYING_APPS: &[&str] = &["claude", "codex", "antigravity", "chatgpt", "
 /// Forwards notifications from `NOTIFYING_APPS` (Linux; nothing elsewhere).
 fn spawn_notification_watcher(events: mpsc::Sender<Event>) {
     std::thread::spawn(move || {
-        let result = openpager_desktop::watch_notifications(|n| {
+        let result = knoend_desktop::watch_notifications(|n| {
             !n.from_any(NOTIFYING_APPS) || events.blocking_send(Event::Notified(n)).is_ok()
         });
         if let Err(e) = result {
@@ -1334,7 +1340,7 @@ fn spawn_notification_watcher(events: mpsc::Sender<Event>) {
 }
 
 /// Polls the media players every second and reports when anything shown changes.
-fn spawn_media_watcher(media: Arc<openpager_media::Players>, events: mpsc::Sender<Event>) {
+fn spawn_media_watcher(media: Arc<knoend_media::Players>, events: mpsc::Sender<Event>) {
     std::thread::spawn(move || {
         let mut last: Vec<NowPlaying> = Vec::new();
         loop {
@@ -1371,8 +1377,8 @@ fn unsupported_layout(focus: &Focus, paging: &mut Paging) -> LayoutBody {
 async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: &HashMap<u8, KeyRef>, players: &[NowPlaying],
                          sender: &mut wifi::WifiSender, shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
-        "openpager.layout.ack" if packet.body["ok"] != true => println!("  board rejected layout: {}", packet.body),
-        "openpager.key" => {
+        "knoend.layout.ack" if packet.body["ok"] != true => println!("  board rejected layout: {}", packet.body),
+        "knoend.key" => {
             let layout = packet.body["layout"].as_str().unwrap_or("");
             let key = packet.body["key"].as_u64().unwrap_or(0);
             shared.emit("key", json!({"text": format!("Key {key} on {layout}"), "key": key, "layout": layout}));
@@ -1382,7 +1388,7 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                 let result = tokio::task::spawn_blocking(move || {
                     let mut slot = typist.lock().map_err(|_| "typist lock".to_string())?;
                     if slot.is_none() {
-                        *slot = Some(openpager_input::Typist::connect()?);
+                        *slot = Some(knoend_input::Typist::connect()?);
                     }
                     slot.as_ref().expect("connected").tap(modifiers as u8, usage as u8)
                 }).await.unwrap_or_else(|e| Err(e.to_string()));
@@ -1397,16 +1403,16 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
             if let Some(library_key) = acting {
                 // Media keys go to the focused app's media player first (like the keyboard's
                 // media keys): the browser then allows starting playback.
-                let player = focus.and_then(|f| openpager_media::for_focus(players, &f.app, &f.instance));
+                let player = focus.and_then(|f| knoend_media::for_focus(players, &f.app, &f.instance));
                 if let (Action::Media { command, .. }, Some(player), Some(media)) = (&library_key.action, player, shared.media.clone()) {
                     let mpris = match command {
-                        MediaCommand::Toggle => Some(openpager_media::Command::PlayPause),
-                        MediaCommand::Play => Some(openpager_media::Command::Play),
-                        MediaCommand::Pause => Some(openpager_media::Command::Pause),
-                        MediaCommand::Next if player.can_go_next => Some(openpager_media::Command::Next),
-                        MediaCommand::Previous if player.can_go_previous => Some(openpager_media::Command::Previous),
-                        MediaCommand::Forward if player.can_seek => Some(openpager_media::Command::Seek(10)),
-                        MediaCommand::Back if player.can_seek => Some(openpager_media::Command::Seek(-10)),
+                        MediaCommand::Toggle => Some(knoend_media::Command::PlayPause),
+                        MediaCommand::Play => Some(knoend_media::Command::Play),
+                        MediaCommand::Pause => Some(knoend_media::Command::Pause),
+                        MediaCommand::Next if player.can_go_next => Some(knoend_media::Command::Next),
+                        MediaCommand::Previous if player.can_go_previous => Some(knoend_media::Command::Previous),
+                        MediaCommand::Forward if player.can_seek => Some(knoend_media::Command::Seek(10)),
+                        MediaCommand::Back if player.can_seek => Some(knoend_media::Command::Seek(-10)),
                         _ => None,
                     };
                     if let Some(mpris) = mpris {
@@ -1424,7 +1430,7 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                 if library_key.action.is_web() {
                     let (shared, label) = (shared.clone(), library_key.label.clone());
                     let action = serde_json::to_value(&library_key.action).unwrap_or_default();
-                    let site = focus.and_then(|f| f.web.as_ref()).map(|w| openpager_agents::site::site_of(&w.host)).unwrap_or_default();
+                    let site = focus.and_then(|f| f.web.as_ref()).map(|w| knoend_agents::site::site_of(&w.host)).unwrap_or_default();
                     tokio::spawn(async move {
                         let act = || shared.browser.request(json!({"type": "act", "action": action.clone()}), Duration::from_secs(5));
                         let mut answer = act().await;
@@ -1447,7 +1453,7 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                 let target = focus?.clone();
                 println!("  Configure requested for {}", target.display_name());
                 let text = format!("Configuring {}: drafting keys...", target.display_name());
-                let _ = sender.send("openpager.status", json!({"text": text, "level": "attention"})).await;
+                let _ = sender.send("knoend.status", json!({"text": text, "level": "attention"})).await;
                 return Some(target);
             }
         }
@@ -1530,9 +1536,9 @@ mod tests {
     #[test]
     fn go_to_key_comes_from_its_recipe_and_knows_the_window() {
         let catalog = recipes();
-        let n = openpager_desktop::Notification { app: "Claude".into(), desktop_entry: String::new(), summary: "Claude needs your attention".into(), body: String::new() };
+        let n = knoend_desktop::Notification { app: "Claude".into(), desktop_entry: String::new(), summary: "Claude needs your attention".into(), body: String::new() };
         let calling = Calling::new(&n, &catalog);
-        let claude = Focus { os: openpager_core::focus::Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new(), web: None };
+        let claude = Focus { os: knoend_core::focus::Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new(), web: None };
         let terminal = Focus { app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), ..claude.clone() };
         assert!(calling.is(&claude) && Calling::matches(&claude, &n));
         assert!(!calling.is(&terminal));
@@ -1556,7 +1562,7 @@ mod tests {
         assert!(paging.turn("prev"));
         assert_eq!(paging.page, 2, "back from the first page wraps to the last");
         assert_eq!(paging.enter("builtin.a", 3), 2, "the same layout keeps its page");
-        let tap = |page: u64| Packet { id: 1, re: None, kind: "openpager.key".into(), body: json!({"key": 1, "layout": "builtin.a", "page": page, "seq": 1}) };
+        let tap = |page: u64| Packet { id: 1, re: None, kind: "knoend.key".into(), body: json!({"key": 1, "layout": "builtin.a", "page": page, "seq": 1}) };
         assert!(paging.stale(&tap(1)) && !paging.stale(&tap(3)));
         assert_eq!(paging.enter("builtin.a", 2), 1, "fewer pages than before: the last one");
         assert_eq!(paging.enter("builtin.b", 1), 0, "another layout starts on its first page");
@@ -1573,7 +1579,7 @@ mod tests {
 
     #[test]
     fn configure_sits_in_the_middle_of_the_grid() {
-        let focus = Focus { os: openpager_core::focus::Os::Linux, app: "x".into(), instance: "x".into(), title: String::new(), web: None };
+        let focus = Focus { os: knoend_core::focus::Os::Linux, app: "x".into(), instance: "x".into(), title: String::new(), web: None };
         assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid::LARGEST)).keys[0].key, 5);
         assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid { cols: 2, rows: 2 })).keys[0].key, 1);
     }

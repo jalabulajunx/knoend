@@ -1,1 +1,1 @@
-{ "id": 19, "type": "openpager.page", "body": { "layout": "builtin.example-pages", "to": "next" } }
+{ "id": 19, "type": "knoend.page", "body": { "layout": "builtin.example-pages", "to": "next" } }

@@ -1,4 +1,4 @@
-# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Drafted by the KnoEnd configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
 # Sundar. Tested on Linux only: other systems need their own match entries and a test.
 [[key]]
 icon = "history"
@@ -7,7 +7,7 @@ speak = "Commit history"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/commits"
+url = "/jalabulajunx/knoend/commits"
 
 [[key]]
 icon = "download"
@@ -16,7 +16,7 @@ speak = "Repository releases"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/releases"
+url = "/jalabulajunx/knoend/releases"
 
 [[key]]
 icon = "task_alt"
@@ -25,7 +25,7 @@ speak = "Workflows and actions"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/actions"
+url = "/jalabulajunx/knoend/actions"
 
 [[key]]
 icon = "code"
@@ -61,7 +61,7 @@ speak = "Repository settings"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/settings"
+url = "/jalabulajunx/knoend/settings"
 
 [[key]]
 icon = "dashboard"
@@ -70,7 +70,7 @@ speak = "Repository insights"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/pulse"
+url = "/jalabulajunx/knoend/pulse"
 
 [[key]]
 icon = "description"
@@ -79,15 +79,15 @@ speak = "Repository wiki"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/wiki"
+url = "/jalabulajunx/knoend/wiki"
 
 [match]
-web = ["github.com/jalabulajunx/openpager"]
+web = ["github.com/jalabulajunx/knoend"]
 
 [pack]
 description = "Repository navigation, branches, commits, releases, and settings."
-id = "builtin.site-github-com-openpager"
-name = "OpenPager Repo"
+id = "builtin.site-github-com-knoend"
+name = "KnoEnd Repo"
 source = "builtin"
 version = "0.1.0"
 

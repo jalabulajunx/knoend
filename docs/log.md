@@ -1165,3 +1165,25 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   move and change keys, set the grid (https://github.com/jalabulajunx/openpager/issues/29).
 - Open: Sundar to flash this firmware on the ONX and try a swipe and the page tap (any app with
   pages, e.g. a copy of `spec/examples/library-pages.toml` with his own `match`).
+
+## 2026-10-19 - Sundar (Claude Code) - Rename to KnoEnd (#19), with fallback to the old names
+
+- Decided (Sundar; Tom agreed to the name on #19): rename everything, with fallback; repository
+  renamed in place; said "no end". Decision: [`docs/decisions/2026-10-19-rename-to-knoend.md`](decisions/2026-10-19-rename-to-knoend.md).
+- Changed: firmware (`knoend.*` with `openpager.*` accepted and answered per link; mDNS both names;
+  device and Bluetooth name "KnoEnd"; NVS namespace kept); companion (crates `knoend-*`, binary
+  `knoend`; `core::protocol::{current_name, old_name}` at the Wi-Fi and serial links; discovery of
+  both mDNS names with `old_names` per board; USB retries in the old names; settings folder moved
+  once; old socket folder also listened on; both browser host names and Firefox ids; old
+  background service removed on install; `KNOEND_BUILTIN`); spec (names, a section 1 paragraph on
+  the old names, schemas, examples with the Wi-Fi sessions re-signed where they were valid; the
+  validator checks `openpager.*` packets as their `knoend.*` form); extension, web app, tools, CI,
+  recipes (this repository's GitHub pages now `github.com/jalabulajunx/knoend`), docs, README
+  (pronunciation). Past log entries and decision records keep the old name.
+- Tested: workspace tests, `validate_spec.py` (0 problems; the three broken Wi-Fi sessions still
+  rejected for the same reasons), extension and firmware build. Against the ONX still on the
+  pre-rename firmware: a test copy of the new service (empty settings, own sockets) identified it
+  over USB through the old names ("OpenPager", v0.1.1-68-g3a329ee). Not yet: the new firmware on
+  the board, the settings move and hooks on Sundar's machine, macOS.
+- Before merging: rename the GitHub repository (the firmware download address now points at
+  `jalabulajunx/knoend`).

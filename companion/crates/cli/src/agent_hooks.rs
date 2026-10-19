@@ -1,5 +1,5 @@
-//! Coding agents asking the person, through the board: Claude Code's hooks run `openpager hook
-//! permission` (PermissionRequest) and `openpager hook notification` (Notification); the hook
+//! Coding agents asking the person, through the board: Claude Code's hooks run `knoend hook
+//! permission` (PermissionRequest) and `knoend hook notification` (Notification); the hook
 //! relays to the running service over a Unix socket only this user can open, and the board shows
 //! the request as keys. The agent's own prompt stays: whichever answers first applies, and a hook
 //! that gets no answer (or finds no service) prints nothing, so the agent asks as usual.
@@ -16,6 +16,11 @@ const WAIT_FOR_BOARD: Duration = Duration::from_secs(300);
 
 pub fn socket_path() -> PathBuf {
     crate::browser::socket_path().with_file_name("agents.sock")
+}
+
+/// Where hooks installed before the rename (running the old program) connect; also listened on.
+fn old_socket_path() -> PathBuf {
+    crate::browser::old_socket_path().with_file_name("agents.sock")
 }
 
 /// The person's answer from the board.
@@ -69,8 +74,8 @@ pub fn run_hook(kind: &str) -> Result<(), String> {
                 None => json!({"behavior": "allow"}),
             }
         }
-        Some("deny") => json!({"behavior": "deny", "message": "Denied on the OpenPager board."}),
-        Some("stop") => json!({"behavior": "deny", "message": "Stopped from the OpenPager board.", "interrupt": true}),
+        Some("deny") => json!({"behavior": "deny", "message": "Denied on the KnoEnd board."}),
+        Some("stop") => json!({"behavior": "deny", "message": "Stopped from the KnoEnd board.", "interrupt": true}),
         Some("answer") if reply["input"].is_object() => json!({"behavior": "allow", "updatedInput": reply["input"]}),
         _ => return Ok(()),
     };
@@ -88,21 +93,19 @@ pub fn run_hook(_kind: &str) -> Result<(), String> {
 /// Listens for hooks and hands their requests to the service loop.
 #[cfg(unix)]
 pub async fn serve(events: mpsc::Sender<AgentEvent>) {
-    use std::os::unix::fs::PermissionsExt;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
     let path = socket_path();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
-    }
-    let _ = std::fs::remove_file(&path);
-    let Ok(listener) = tokio::net::UnixListener::bind(&path) else {
+    let Ok(listener) = crate::browser::bind_private(&path) else {
         println!("Agent hooks off: cannot listen on {}", path.display());
         return;
     };
-    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    let old = crate::browser::bind_private(&old_socket_path()).ok();
     loop {
-        let Ok((stream, _)) = listener.accept().await else { continue };
+        let stream = match &old {
+            Some(old) => tokio::select! { s = listener.accept() => s, s = old.accept() => s },
+            None => listener.accept().await,
+        };
+        let Ok((stream, _)) = stream else { continue };
         let events = events.clone();
         tokio::spawn(async move {
             let (read, mut write) = stream.into_split();
@@ -261,7 +264,9 @@ fn claude_settings() -> PathBuf {
 
 /// Whether a hook entry is one of ours.
 fn ours(entry: &Value) -> bool {
-    entry["hooks"].as_array().is_some_and(|h| h.iter().any(|x| x["command"].as_str().is_some_and(|c| c.contains("openpager") && c.contains(" hook "))))
+    // "knoend", or "openpager" for hooks installed before the rename.
+    entry["hooks"].as_array().is_some_and(|h| h.iter().any(|x| x["command"].as_str()
+        .is_some_and(|c| (c.contains("knoend") || c.contains("openpager")) && c.contains(" hook "))))
 }
 
 /// The hooks in `settings`, with ours replaced by entries running `exe`.
@@ -314,15 +319,16 @@ pub fn install() -> Result<Vec<String>, String> {
     };
     let mut lines = Vec::new();
     // Keep the very first backup: installing again must not replace it with our own hooks.
-    let backup = path.with_extension("json.before-openpager");
-    if path.exists() && !backup.exists() {
+    let backup = path.with_extension("json.before-knoend");
+    let older = path.with_extension("json.before-openpager"); // the first backup, if made before the rename
+    if path.exists() && !backup.exists() && !older.exists() {
         std::fs::copy(&path, &backup).map_err(|e| e.to_string())?;
         lines.push(format!("backup: {}", backup.display()));
     }
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
     let updated = with_hooks(current, exe.to_str().ok_or("path not UTF-8")?);
     std::fs::write(&path, serde_json::to_string_pretty(&updated).unwrap() + "\n").map_err(|e| e.to_string())?;
-    lines.push(format!("{}: PermissionRequest, Notification, PostToolUse, Stop and UserPromptSubmit hooks run openpager",
+    lines.push(format!("{}: PermissionRequest, Notification, PostToolUse, Stop and UserPromptSubmit hooks run knoend",
                        path.display()));
     lines.push("Claude Code sessions started from now on use them (new sessions; restart running ones)".into());
     Ok(lines)
@@ -334,7 +340,7 @@ pub fn uninstall() -> Result<Vec<String>, String> {
     let Ok(text) = std::fs::read_to_string(&path) else { return Ok(vec!["no Claude Code settings file".into()]) };
     let current: Value = serde_json::from_str(&text).map_err(|e| format!("{} is not valid JSON ({e}); not changed", path.display()))?;
     std::fs::write(&path, serde_json::to_string_pretty(&without_hooks(current)).unwrap() + "\n").map_err(|e| e.to_string())?;
-    Ok(vec![format!("{}: OpenPager hooks removed", path.display())])
+    Ok(vec![format!("{}: KnoEnd hooks removed", path.display())])
 }
 
 #[cfg(test)]
@@ -359,11 +365,11 @@ mod tests {
     #[test]
     fn hooks_are_added_once_and_removed_without_touching_others() {
         let mine = json!({"model": "opus", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "check.sh"}]}]}});
-        let once = with_hooks(mine.clone(), "/opt/openpager");
-        let twice = with_hooks(once.clone(), "/opt/openpager");
+        let once = with_hooks(mine.clone(), "/opt/knoend");
+        let twice = with_hooks(once.clone(), "/opt/knoend");
         assert_eq!(once, twice, "installing twice changes nothing");
-        assert_eq!(twice["hooks"]["PermissionRequest"][0]["hooks"][0]["command"], "\"/opt/openpager\" hook permission");
-        assert_eq!(twice["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "\"/opt/openpager\" hook event");
+        assert_eq!(twice["hooks"]["PermissionRequest"][0]["hooks"][0]["command"], "\"/opt/knoend\" hook permission");
+        assert_eq!(twice["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "\"/opt/knoend\" hook event");
         assert_eq!(twice["hooks"]["PreToolUse"], mine["hooks"]["PreToolUse"]);
         assert_eq!(without_hooks(twice), mine);
     }

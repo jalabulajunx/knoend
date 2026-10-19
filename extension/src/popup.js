@@ -1,4 +1,4 @@
-// The popup: is openpager reachable, and are board buttons on for this site? Turning them on asks
+// The popup: is knoend reachable, and are board buttons on for this site? Turning them on asks
 // the browser for this one site's permission (spec/browser.md section 5).
 const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
@@ -16,12 +16,12 @@ async function render() {
   const status = await api.runtime.sendMessage({ type: "status" }).catch(() => null);
   const link = $("link");
   if (status && status.service) { link.textContent = "connected"; link.className = "pill ok"; }
-  else if (status && status.host) { link.textContent = "openpager not running"; link.className = "pill bad"; }
+  else if (status && status.host) { link.textContent = "knoend not running"; link.className = "pill bad"; }
   else { link.textContent = "not set up"; link.className = "pill bad"; }
   if (!status || !status.host) {
-    help("Run ", "openpager browser install", " once, then restart the browser.");
+    help("Run ", "knoend browser install", " once, then restart the browser.");
   } else if (!status.service) {
-    help("Start it with ", "openpager serve", ".");
+    help("Start it with ", "knoend serve", ".");
   }
 
   if (!tab || !/^https?:\/\//.test(tab.url || "")) {

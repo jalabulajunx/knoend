@@ -1,4 +1,5 @@
 #include "link_wifi.h"
+#include "protocol.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,7 +24,7 @@
 #define NONCE_HEX     32
 #define MAC_HEX       64
 #define MAX_FRAME     (10 * 1024) // a 4096-byte packet, escaped inside a JSON string, plus fields
-#define NVS_NAMESPACE "openpager"
+#define NVS_NAMESPACE "openpager" // kept from before the rename: Wi-Fi settings survive updates
 
 static const char *TAG = "link_wifi";
 
@@ -264,6 +265,7 @@ static void handle_proof(httpd_req_t *req, const char *proof)
     }
     printf("WIFI session open\n");
     fflush(stdout);
+    protocol_wifi_session_started();
     session_cb();
 }
 
@@ -362,11 +364,13 @@ static void start_services(void)
     services_started = true;
 
     char hostname[32];
-    snprintf(hostname, sizeof(hostname), "openpager-%s", device_id + 6);
+    snprintf(hostname, sizeof(hostname), "knoend-%s", device_id + 6);
     if (mdns_init() == ESP_OK) {
         mdns_hostname_set(hostname);
-        mdns_instance_name_set("OpenPager");
+        mdns_instance_name_set("KnoEnd");
         mdns_txt_item_t txt[] = { { "id", device_id }, { "pv", "0" } };
+        mdns_service_add(NULL, "_knoend", "_tcp", 80, txt, 2);
+        // Also under the name used before the rename, so older companions still find the board.
         mdns_service_add(NULL, "_openpager", "_tcp", 80, txt, 2);
     } else {
         ESP_LOGE(TAG, "mDNS did not start");
@@ -384,7 +388,7 @@ static void start_services(void)
         .uri = "/ws", .method = HTTP_GET, .handler = ws_handler, .is_websocket = true,
     };
     httpd_register_uri_handler(server, &ws);
-    printf("WIFI services up: %s.local, _openpager._tcp port 80\n", hostname);
+    printf("WIFI services up: %s.local, _knoend._tcp (and _openpager._tcp) port 80\n", hostname);
     fflush(stdout);
 }
 
@@ -519,7 +523,7 @@ esp_err_t link_wifi_start(const char *id, link_wifi_packet_cb on_packet, link_wi
     }
     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
     char hostname[32];
-    snprintf(hostname, sizeof(hostname), "openpager-%s", device_id + 6);
+    snprintf(hostname, sizeof(hostname), "knoend-%s", device_id + 6);
     esp_netif_set_hostname(netif, hostname);
 
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
@@ -535,7 +539,7 @@ esp_err_t link_wifi_start(const char *id, link_wifi_packet_cb on_packet, link_wi
         join(&stored);
         memset(&stored, 0, sizeof(stored));
     } else {
-        printf("WIFI no network stored; send openpager.wifi over USB\n");
+        printf("WIFI no network stored; send knoend.wifi over USB\n");
         fflush(stdout);
     }
     return ESP_OK;

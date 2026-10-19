@@ -1,5 +1,5 @@
 [package]
-name = "openpager-desktop"
+name = "knoend-desktop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

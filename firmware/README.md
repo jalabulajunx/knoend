@@ -22,7 +22,7 @@ idf.py -B build/universal -p /dev/ttyUSB0 flash monitor
 ```
 
 `idf.py flash` does not write a board definition; without one the board boots headless
-(`BOARD no definition`). Install once through the web app (`openpager serve`), or package with
-`tools/release_firmware.py` and flash with `openpager flash`. Full guide: [`../docs/setup.md`](../docs/setup.md).
+(`BOARD no definition`). Install once through the web app (`knoend serve`), or package with
+`tools/release_firmware.py` and flash with `knoend flash`. Full guide: [`../docs/setup.md`](../docs/setup.md).
 
 Each tap prints `KEY <n> ...` on the console (115200 baud on the ONX).

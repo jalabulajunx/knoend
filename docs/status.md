@@ -10,16 +10,16 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | Piece | Where | Try it |
 | --- | --- | --- |
 | Universal firmware image + board definitions | `firmware/components/board_generic`, `firmware/boards/` | `idf.py -B build/universal build` |
-| Web app: AI or manual setup, find, identify, install, pair, Wi-Fi from a scan, dashboard | `web/`, `companion/crates/cli/src/web.rs` | `openpager serve --firmware ../dist/firmware` |
-| Identify and flash boards, manifest with SHA-256 per part | `companion/crates/flash`, `tools/release_firmware.py` | `openpager devices`, `openpager flash` |
+| Web app: AI or manual setup, find, identify, install, pair, Wi-Fi from a scan, dashboard | `web/`, `companion/crates/cli/src/web.rs` | `knoend serve --firmware ../dist/firmware` |
+| Identify and flash boards, manifest with SHA-256 per part | `companion/crates/flash`, `tools/release_firmware.py` | `knoend devices`, `knoend flash` |
 | Setup assistant grounded in the knowledge base | `companion/crates/agents/src/assistant.rs`, `docs/knowledge/setup.md` | "Ask the assistant" in the web app |
 | Key grid, status bar, confirm-tap for risky keys | `firmware/main/ui.c` | tap a key; console prints `KEY n ...` |
 | Grids 1x1 to 4x4 per layout, pages turned by swipe or the "2/3 >" tap (Freenove tested; ONX not yet) | `firmware/main/ui.c`, `core/src/layout.rs`, `cli/src/service.rs` | `spec/examples/library-pages.toml` |
-| Bluetooth LE keyboard ("Just Works") | `firmware/main/ble_keyboard.c` | pair "OpenPager"; keys type |
+| Bluetooth LE keyboard ("Just Works") | `firmware/main/ble_keyboard.c` | pair "KnoEnd"; keys type |
 | Keys typed by the service when no Bluetooth host is connected | `companion/crates/input` | turn Bluetooth off; keys still type |
-| Protocol v0 over USB serial and authenticated Wi-Fi WebSocket, mDNS | `firmware/main/`, `companion/crates/transport` | `openpager pair`, then `openpager run` |
+| Protocol v0 over USB serial and authenticated Wi-Fi WebSocket, mDNS | `firmware/main/`, `companion/crates/transport` | `knoend pair`, then `knoend run` |
 | Layout follows the focused app (Linux X11) | `companion/crates/focus`, `cli/src/service.rs` | switch to VS Code |
-| Configure agent: drafts a library for an unsupported app (any provider) | `companion/crates/agents` | tap Configure, or `openpager draft` |
+| Configure agent: drafts a library for an unsupported app (any provider) | `companion/crates/agents` | tap Configure, or `knoend draft` |
 | Shared contracts and validator | `spec/`, `tools/validate_spec.py` | `python3 tools/validate_spec.py` |
 | macOS: layout follows the front window, keys typed by the service, assistant snapshot shows USB driver and Accessibility state | `focus/src/macos.rs`, `input/src/macos.rs`, `cli/src/diagnostics.rs` | switch apps on a Mac; "Ask the assistant" |
 | USB-Serial-JTAG serial line (native-USB boards): identify, install, pair | `firmware/main/`, `companion/crates/flash` | Freenove FNK0104B on macOS |
@@ -31,15 +31,15 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | Piece | Where | Try it |
 | --- | --- | --- |
 | Extension for Firefox and Chrome: active site, per-site buttons, page actions, page inventory, favicon | `extension/`, `spec/browser.md` | `python3 tools/build_extension.py`; see `extension/README.md` |
-| Native messaging host + service socket | `companion/crates/cli/src/browser.rs` | `openpager browser install` |
+| Native messaging host + service socket | `companion/crates/cli/src/browser.rs` | `knoend browser install` |
 | Site layouts (`match.web`: host, routes incl. `#/` hash routes, `@fullscreen`); built-in YouTube, Google Slides presenting | `recipes/sites/`, `core/src/focus.rs`, `core/src/catalog.rs` | YouTube; present a Slides deck |
 | "Configure this site" (board or popup): AI drafts keys from the page's controls, site-wide then per kind of page | `agents/src/site.rs`, `cli/src/service.rs` | Configure on the board in any site |
 | Now playing (MPRIS, Linux): media keys reach the player; media row in slots 7-9 while something plays | `companion/crates/media` | play anything |
 | Material icons on keys (132 names, built into the firmware) | `spec/icons.txt`, `firmware/components/icons`, `tools/build_icons.py` | any built-in library |
-| Claude Code asks through the board: permission requests (Allow / Always / Deny / Stop) with a scrollable explanation; withdrawn when answered on screen | `cli/src/agent_hooks.rs` | `openpager claude-hooks install`, new Claude Code session |
+| Claude Code asks through the board: permission requests (Allow / Always / Deny / Stop) with a scrollable explanation; withdrawn when answered on screen | `cli/src/agent_hooks.rs` | `knoend claude-hooks install`, new Claude Code session |
 | Desktop notifications from followed apps (Linux D-Bus) | `companion/crates/desktop` | Claude desktop notifications |
-| Launcher when nothing is focused: most used / recent apps and sites with their own colour icons; tap opens (Linux; macOS since 2026-10-18) | `cli/src/launcher.rs`, `desktop/src/apps.rs`, `mac_apps.rs`, `focus/src/macos.rs`, `openpager.image` | empty workspace; on a Mac click the desktop |
-| Background service (systemd user unit / LaunchAgent) | `cli/src/background.rs` | `openpager service install` |
+| Launcher when nothing is focused: most used / recent apps and sites with their own colour icons; tap opens (Linux; macOS since 2026-10-18) | `cli/src/launcher.rs`, `desktop/src/apps.rs`, `mac_apps.rs`, `focus/src/macos.rs`, `knoend.image` | empty workspace; on a Mac click the desktop |
+| Background service (systemd user unit / LaunchAgent) | `cli/src/background.rs` | `knoend service install` |
 | Recipes: apps, sites and Claude Code's screens as data, each with who tested it on which OS | `recipes/`, `spec/protocol.md` section 5 | `python3 tools/validate_spec.py` |
 
 ## Built, not yet tested

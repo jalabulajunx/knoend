@@ -1,12 +1,15 @@
-//! Running `openpager serve` in the background, started at login and restarted if it stops:
+//! Running `knoend serve` in the background, started at login and restarted if it stops:
 //! a systemd user service on Linux, a LaunchAgent on macOS. Both run this binary as it is now
 //! (its full path), without opening the browser.
 
 use std::path::PathBuf;
 use std::process::Command;
 
-const UNIT: &str = "openpager.service";
-const AGENT: &str = "io.github.jalabulajunx.openpager";
+const UNIT: &str = "knoend.service";
+/// Names from before the rename: removed when installing, so only one service runs.
+const OLD_UNIT: &str = "openpager.service";
+const AGENT: &str = "io.github.jalabulajunx.knoend";
+const OLD_AGENT: &str = "io.github.jalabulajunx.openpager";
 
 fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
@@ -27,8 +30,8 @@ fn run(program: &str, args: &[&str]) -> Result<String, String> {
 /// `Restart=always` tries again until they do.
 pub fn systemd_unit(exe: &str) -> String {
     format!("[Unit]
-Description=OpenPager companion (keys follow the focused app; board link)
-Documentation=https://github.com/jalabulajunx/openpager
+Description=KnoEnd companion (keys follow the focused app; board link)
+Documentation=https://github.com/jalabulajunx/knoend
 After=graphical-session.target
 
 [Service]
@@ -42,9 +45,9 @@ WantedBy=default.target
 }
 
 /// The macOS LaunchAgent: runs at login, kept alive. Accessibility (typing keys) must then be
-/// allowed for the `openpager` binary itself, as nothing else launches it.
+/// allowed for the `knoend` binary itself, as nothing else launches it.
 pub fn launch_agent(exe: &str) -> String {
-    let log = home().join("Library/Logs/openpager.log");
+    let log = home().join("Library/Logs/knoend.log");
     format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -69,26 +72,47 @@ fn agent_path() -> PathBuf {
     home().join("Library/LaunchAgents").join(format!("{AGENT}.plist"))
 }
 
+/// Stops and removes a background service installed under the name from before the rename.
+fn remove_old() -> Option<String> {
+    if cfg!(target_os = "macos") {
+        let path = home().join("Library/LaunchAgents").join(format!("{OLD_AGENT}.plist"));
+        if !path.exists() {
+            return None;
+        }
+        let _ = run("launchctl", &["unload", "-w", path.to_str().unwrap_or_default()]);
+        let _ = std::fs::remove_file(&path);
+        return Some(format!("removed the older LaunchAgent {}", path.display()));
+    }
+    let path = unit_path().with_file_name(OLD_UNIT);
+    if !path.exists() {
+        return None;
+    }
+    let _ = run("systemctl", &["--user", "disable", "--now", OLD_UNIT]);
+    let _ = std::fs::remove_file(&path);
+    Some(format!("removed the older service {}", path.display()))
+}
+
 /// Installs and starts the background service; returns what was done, line by line.
 pub fn install() -> Result<Vec<String>, String> {
     let exe = exe()?;
-    let exe = exe.to_str().ok_or("the openpager path is not valid UTF-8")?;
+    let exe = exe.to_str().ok_or("the knoend path is not valid UTF-8")?;
+    let old = remove_old();
     if cfg!(target_os = "macos") {
         let path = agent_path();
         std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
         std::fs::write(&path, launch_agent(exe)).map_err(|e| format!("{}: {e}", path.display()))?;
         let _ = run("launchctl", &["unload", path.to_str().unwrap_or_default()]);
         run("launchctl", &["load", "-w", path.to_str().unwrap_or_default()])?;
-        return Ok(vec![format!("LaunchAgent {} loaded; runs at login", path.display()),
-                       "Allow openpager under System Settings > Privacy & Security > Accessibility so it can type keys".into()]);
+        return Ok(old.into_iter().chain([format!("LaunchAgent {} loaded; runs at login", path.display()),
+                       "Allow knoend under System Settings > Privacy & Security > Accessibility so it can type keys".into()]).collect());
     }
     let path = unit_path();
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
     std::fs::write(&path, systemd_unit(exe)).map_err(|e| format!("{}: {e}", path.display()))?;
     run("systemctl", &["--user", "daemon-reload"])?;
     run("systemctl", &["--user", "enable", "--now", UNIT])?;
-    Ok(vec![format!("{} written; enabled and started (starts at login)", path.display()),
-            "Logs: journalctl --user -u openpager -f".into()])
+    Ok(old.into_iter().chain([format!("{} written; enabled and started (starts at login)", path.display()),
+            "Logs: journalctl --user -u knoend -f".into()]).collect())
 }
 
 /// Stops and removes the background service.
@@ -111,11 +135,11 @@ pub fn status() -> String {
     if cfg!(target_os = "macos") {
         return match run("launchctl", &["list", AGENT]) {
             Ok(_) => format!("LaunchAgent {AGENT}: loaded"),
-            Err(_) => "not installed (openpager service install)".into(),
+            Err(_) => "not installed (knoend service install)".into(),
         };
     }
     if !unit_path().exists() {
-        return "not installed (openpager service install)".into();
+        return "not installed (knoend service install)".into();
     }
     let active = run("systemctl", &["--user", "is-active", UNIT]).unwrap_or_else(|e| e);
     let enabled = run("systemctl", &["--user", "is-enabled", UNIT]).unwrap_or_else(|e| e);
@@ -128,12 +152,12 @@ mod tests {
 
     #[test]
     fn unit_runs_this_binary_and_restarts() {
-        let unit = systemd_unit("/opt/openpager/openpager");
-        assert!(unit.contains("ExecStart=/opt/openpager/openpager serve --no-open"));
+        let unit = systemd_unit("/opt/knoend/knoend");
+        assert!(unit.contains("ExecStart=/opt/knoend/knoend serve --no-open"));
         assert!(unit.contains("Restart=always"));
         assert!(unit.contains("WantedBy=default.target"));
-        let plist = launch_agent("/Applications/openpager");
-        assert!(plist.contains("<string>/Applications/openpager</string><string>serve</string><string>--no-open</string>"));
+        let plist = launch_agent("/Applications/knoend");
+        assert!(plist.contains("<string>/Applications/knoend</string><string>serve</string><string>--no-open</string>"));
         assert!(plist.contains("<key>KeepAlive</key><true/>"));
     }
 }

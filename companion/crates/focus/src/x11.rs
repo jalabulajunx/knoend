@@ -1,7 +1,7 @@
 //! Linux/X11: EWMH `_NET_ACTIVE_WINDOW` on the root window, so it works with i3 and any
 //! standards-following window manager.
 
-use openpager_core::focus::{Focus, Os};
+use knoend_core::focus::{Focus, Os};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{AtomEnum, ChangeWindowAttributesAux, ConnectionExt, EventMask, Window};
 use x11rb::protocol::Event;

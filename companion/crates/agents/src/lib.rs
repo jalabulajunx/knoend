@@ -11,8 +11,8 @@ pub mod provider;
 pub mod secrets;
 pub mod site;
 
-use openpager_core::focus::{Focus, Os};
-use openpager_core::library::Library;
+use knoend_core::focus::{Focus, Os};
+use knoend_core::library::Library;
 
 pub use provider::{AgentConfig, Provider};
 
@@ -23,7 +23,7 @@ pub struct Draft {
     pub attempts: u32,
 }
 
-const SYSTEM_PROMPT: &str = r#"You design layouts for OpenPager, a touchscreen shortcut keypad. Given a
+const SYSTEM_PROMPT: &str = r#"You design layouts for KnoEnd, a touchscreen shortcut keypad. Given a
 desktop application, choose up to 16 of its most useful DEFAULT keyboard shortcuts on the stated
 operating system and return them as a TOML layout library.
 How many keys decides how big they are (one page): 1 key fills the screen, 2 are two wide keys,
@@ -74,7 +74,7 @@ fn user_prompt(focus: &Focus, about: &[String]) -> String {
     };
     let about = if about.is_empty() { String::new() } else { format!("About the app (from its own files): {}\n", about.join("; ")) };
     format!("Application: {}\nWindow class: {}\nWindow instance: {}\n{about}Operating system: {os}\nIcon list: {}\n",
-            focus.display_name(), focus.app, focus.instance, openpager_core::library::icon_names().join(" "))
+            focus.display_name(), focus.app, focus.instance, knoend_core::library::icon_names().join(" "))
 }
 
 /// A slug for ids and file names: lowercase letters, digits and dashes.
@@ -236,7 +236,7 @@ action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
         assert_eq!(library.pack.version, "0.1.0");
         assert!(library.matches.web.is_empty(), "web match removed");
         assert_eq!(library.matches.linux, vec!["xfce4-terminal".to_string()], "class equals instance ignoring case");
-        assert!(matches!(library.pack.source, openpager_core::library::Source::Ai));
+        assert!(matches!(library.pack.source, knoend_core::library::Source::Ai));
         assert_eq!(library.pack.grid.as_deref(), Some("1x1"), "one key: one big key");
     }
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/jalabulajunx/openpager/spec/schemas/packet.schema.json",
-  "title": "OpenPager packet (protocol v0, draft)",
+  "$id": "https://github.com/jalabulajunx/knoend/spec/schemas/packet.schema.json",
+  "title": "KnoEnd packet (protocol v0, draft)",
   "description": "One packet between a board and a companion. See spec/protocol.md.",
   "type": "object",
   "required": [
@@ -20,7 +20,7 @@
     },
     "type": {
       "type": "string",
-      "pattern": "^openpager\\.[a-z]+(\\.[a-z]+)*$"
+      "pattern": "^knoend\\.[a-z]+(\\.[a-z]+)*$"
     },
     "body": {
       "type": "object"
@@ -31,7 +31,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.identity"
+            "const": "knoend.identity"
           }
         }
       },
@@ -47,7 +47,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.layout"
+            "const": "knoend.layout"
           }
         }
       },
@@ -63,7 +63,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.layout.ack"
+            "const": "knoend.layout.ack"
           }
         }
       },
@@ -82,7 +82,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.key"
+            "const": "knoend.key"
           }
         }
       },
@@ -98,7 +98,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.status"
+            "const": "knoend.status"
           }
         }
       },
@@ -114,7 +114,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.approve.request"
+            "const": "knoend.approve.request"
           }
         }
       },
@@ -130,7 +130,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.approve.response"
+            "const": "knoend.approve.response"
           }
         }
       },
@@ -149,7 +149,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.error"
+            "const": "knoend.error"
           }
         }
       },
@@ -165,7 +165,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.pair"
+            "const": "knoend.pair"
           }
         }
       },
@@ -181,7 +181,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.pair.ack"
+            "const": "knoend.pair.ack"
           }
         }
       },
@@ -200,7 +200,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.wifi"
+            "const": "knoend.wifi"
           }
         }
       },
@@ -216,7 +216,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.wifi.ack"
+            "const": "knoend.wifi.ack"
           }
         }
       },
@@ -235,7 +235,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.wifi.networks"
+            "const": "knoend.wifi.networks"
           }
         }
       },
@@ -254,7 +254,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.image"
+            "const": "knoend.image"
           }
         }
       },
@@ -270,7 +270,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.image.ack"
+            "const": "knoend.image.ack"
           }
         }
       },
@@ -286,7 +286,7 @@
       "if": {
         "properties": {
           "type": {
-            "const": "openpager.page"
+            "const": "knoend.page"
           }
         }
       },
@@ -312,7 +312,7 @@
     },
     "packetType": {
       "type": "string",
-      "pattern": "^openpager\\.[a-z]+(\\.[a-z]+)*$"
+      "pattern": "^knoend\\.[a-z]+(\\.[a-z]+)*$"
     },
     "identity": {
       "type": "object",
@@ -500,7 +500,7 @@
                 "maxLength": 80
               },
               "icon": {
-                "description": "A name from spec/icons.txt, or a picture sent with openpager.image (app:..., site:...); a board that does not know it shows the label alone.",
+                "description": "A name from spec/icons.txt, or a picture sent with knoend.image (app:..., site:...); a board that does not know it shows the label alone.",
                 "type": "string",
                 "pattern": "^([a-z0-9_]{1,40}|(app|site):[a-z0-9._-]{1,60})$"
               },

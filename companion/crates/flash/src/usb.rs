@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn sysfs_devices_and_their_drivers() {
-        let root = std::env::temp_dir().join(format!("openpager-sysfs-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("knoend-sysfs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let dev = root.join("1-2");
         std::fs::create_dir_all(&dev).unwrap();

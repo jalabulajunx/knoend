@@ -1,6 +1,6 @@
 //! Things on a Mac only the person can approve, brought to the screen for them: the settings page
 //! to switch on, or a USB driver's installer. A fixed list; nothing is approved or installed here.
-//! The setup assistant offers these as buttons (see `openpager_agents::assistant::ACTIONS`).
+//! The setup assistant offers these as buttons (see `knoend_agents::assistant::ACTIONS`).
 
 /// WCH's macOS driver for its USB-serial chips (needed for the CH340K, 1a86:7522), from WCH's
 /// own GitHub account.
@@ -29,7 +29,7 @@ pub async fn open(target: &str) -> Result<String, String> {
             // A new folder only this user can write, so nothing can swap the file between the
             // check and the opening.
             let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-            let dir = std::env::temp_dir().join(format!("openpager-driver-{}-{nanos}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!("knoend-driver-{}-{nanos}", std::process::id()));
             #[cfg(unix)]
             std::os::unix::fs::DirBuilderExt::mode(&mut std::fs::DirBuilder::new(), 0o700).create(&dir)
                 .map_err(|e| format!("{}: {e}", dir.display()))?;

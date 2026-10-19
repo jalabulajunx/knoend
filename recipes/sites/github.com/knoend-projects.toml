@@ -1,4 +1,4 @@
-# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Drafted by the KnoEnd configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
 # Sundar. Tested on Linux only: other systems need their own match entries and a test.
 [[key]]
 icon = "search"
@@ -16,7 +16,7 @@ speak = "Go to code"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager"
+url = "/jalabulajunx/knoend"
 
 [[key]]
 icon = "play_arrow"
@@ -25,7 +25,7 @@ speak = "Go to Actions"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/actions"
+url = "/jalabulajunx/knoend/actions"
 
 [[key]]
 icon = "task_alt"
@@ -34,7 +34,7 @@ speak = "Go to Milestones"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/milestones"
+url = "/jalabulajunx/knoend/milestones"
 
 [[key]]
 icon = "bookmark"
@@ -43,7 +43,7 @@ speak = "Go to Labels"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/labels"
+url = "/jalabulajunx/knoend/labels"
 
 [[key]]
 icon = "view_list"
@@ -52,7 +52,7 @@ speak = "Go to Views"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/issues/views"
+url = "/jalabulajunx/knoend/issues/views"
 
 [[key]]
 icon = "dashboard"
@@ -61,7 +61,7 @@ speak = "Go to Insights"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/pulse"
+url = "/jalabulajunx/knoend/pulse"
 
 [[key]]
 icon = "description"
@@ -70,7 +70,7 @@ speak = "Go to Wiki"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/wiki"
+url = "/jalabulajunx/knoend/wiki"
 
 [[key]]
 icon = "settings"
@@ -79,15 +79,15 @@ speak = "Go to Settings"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/settings"
+url = "/jalabulajunx/knoend/settings"
 
 [match]
-web = ["github.com/jalabulajunx/openpager/projects"]
+web = ["github.com/jalabulajunx/knoend/projects"]
 
 [pack]
 description = "Repository navigation and project controls for GitHub project boards."
-id = "builtin.site-github-com-openpager-projects"
-name = "OpenPager Projects"
+id = "builtin.site-github-com-knoend-projects"
+name = "KnoEnd Projects"
 source = "builtin"
 version = "0.1.0"
 

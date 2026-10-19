@@ -1,4 +1,4 @@
-//! OpenPager companion core: layout libraries, app matching and protocol packets.
+//! KnoEnd companion core: layout libraries, app matching and protocol packets.
 //!
 //! Everything here is pure (no I/O beyond reading library files), so both the service and the
 //! board simulator can use it. The contracts live in `spec/`; tests check this crate against the

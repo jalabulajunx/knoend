@@ -1,7 +1,7 @@
 //! Platforms without a focus backend yet: the service still runs (flashing, pairing, Wi-Fi), but
 //! layouts do not follow the focused app.
 
-use openpager_core::focus::Focus;
+use knoend_core::focus::Focus;
 
 pub struct Watcher;
 

@@ -1,1 +1,1 @@
-{ "id": 19, "type": "openpager.key", "body": { "key": 1, "layout": "builtin.vscode", "seq": 32, "hid": { "modifiers": 3, "usage": 19 } } }
+{ "id": 19, "type": "knoend.key", "body": { "key": 1, "layout": "builtin.vscode", "seq": 32, "hid": { "modifiers": 3, "usage": 19 } } }

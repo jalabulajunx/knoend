@@ -1,4 +1,4 @@
-{ "id": 7, "type": "openpager.layout", "body": {
+{ "id": 7, "type": "knoend.layout", "body": {
     "layout": "builtin.vscode", "name": "VS Code", "source": "builtin", "reviewed": true,
     "grid": { "cols": 3, "rows": 3 },
     "keys": [

@@ -1,11 +1,11 @@
 //! Talking to a board over USB serial: who are you (probe), and pairing + Wi-Fi provisioning
-//! (spec/protocol.md section 4.1). Used by `openpager pair` and by the web app.
+//! (spec/protocol.md section 4.1). Used by `knoend pair` and by the web app.
 
 use std::time::{Duration, Instant};
 
-use openpager_transport::auth;
-use openpager_transport::pairing::Pairings;
-use openpager_transport::serial::SerialLink;
+use knoend_transport::auth;
+use knoend_transport::pairing::Pairings;
+use knoend_transport::serial::SerialLink;
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -20,7 +20,7 @@ pub struct Provisioned {
 fn hello(pairings: &Pairings) -> Value {
     json!({
         "deviceId": pairings.companion, "deviceName": pairings.companion_name, "deviceType": "companion",
-        "protocolVersion": 0, "incoming": ["openpager.key"], "outgoing": ["openpager.layout", "openpager.status"],
+        "protocolVersion": 0, "incoming": ["knoend.key"], "outgoing": ["knoend.layout", "knoend.status"],
     })
 }
 
@@ -33,8 +33,13 @@ fn settle(link: &mut SerialLink) -> Option<Value> {
     while let Some(left) = deadline.min(quiet_until).checked_duration_since(Instant::now()) {
         let Some(line) = link.read_line(left) else { break };
         quiet_until = Instant::now() + Duration::from_millis(1500);
-        if let Ok(packet) = serde_json::from_str::<openpager_core::protocol::Packet>(&line) {
-            if packet.kind == "openpager.identity" {
+        if let Ok(packet) = serde_json::from_str::<knoend_core::protocol::Packet>(&line) {
+            // A board from before the rename announces itself as openpager.identity: talk to it
+            // in its own names from now on.
+            if packet.kind.starts_with(knoend_core::protocol::OLD_PREFIX) {
+                link.old_names = true;
+            }
+            if knoend_core::protocol::current_name(&packet.kind) == "knoend.identity" {
                 link.drain(Duration::from_millis(300));
                 return Some(packet.body);
             }
@@ -43,20 +48,30 @@ fn settle(link: &mut SerialLink) -> Option<Value> {
     None
 }
 
-/// Sends a request and waits for its reply; sends it once more if the first goes unanswered.
-fn ask(link: &mut SerialLink, kind: &str, body: Value, reply: &str, wait: Duration) -> Result<openpager_core::protocol::Packet, String> {
-    link.request(kind, body.clone(), reply, wait).or_else(|_| link.request(kind, body, reply, wait))
+/// Sends a request and waits for its reply; sends it once more if the first goes unanswered, and
+/// then once in the names from before the rename (a board with older firmware ignores the new ones;
+/// the link keeps using the old names after that answers).
+fn ask(link: &mut SerialLink, kind: &str, body: Value, reply: &str, wait: Duration) -> Result<knoend_core::protocol::Packet, String> {
+    link.request(kind, body.clone(), reply, wait)
+        .or_else(|_| link.request(kind, body.clone(), reply, wait))
+        .or_else(|error| {
+            if link.old_names {
+                return Err(error);
+            }
+            link.old_names = true;
+            link.request(kind, body, reply, wait).inspect_err(|_| link.old_names = false)
+        })
 }
 
-/// Asks whatever is on `port` for its OpenPager identity. None: not OpenPager firmware (or not
+/// Asks whatever is on `port` for its KnoEnd identity. None: not KnoEnd firmware (or not
 /// answering), so the caller falls back to the chip's boot ROM.
 pub fn probe(port: &str) -> Option<Value> {
     let mut link = SerialLink::open(port).ok()?;
     if let Some(announced) = settle(&mut link) {
         return Some(announced);
     }
-    ask(&mut link, "openpager.identity", hello(&Pairings::load()), "openpager.identity", Duration::from_secs(2))
-        .ok().filter(|p| p.kind == "openpager.identity").map(|p| p.body)
+    ask(&mut link, "knoend.identity", hello(&Pairings::load()), "knoend.identity", Duration::from_secs(2))
+        .ok().filter(|p| p.kind == "knoend.identity").map(|p| p.body)
 }
 
 /// Pairs the board on `port` with this computer (fresh random key), and if `wifi` is given, sends
@@ -67,7 +82,7 @@ pub fn provision(port: &str, wifi: Option<(&str, &str)>, log: &mut dyn FnMut(Str
     let mut link = SerialLink::open(port)?;
     settle(&mut link);
 
-    let identity = ask(&mut link, "openpager.identity", hello(&pairings), "openpager.identity", Duration::from_secs(3))?;
+    let identity = ask(&mut link, "knoend.identity", hello(&pairings), "knoend.identity", Duration::from_secs(3))?;
     let board = identity.body["deviceId"].as_str().ok_or("board sent no deviceId")?.to_string();
     let profile = identity.body["board"]["profile"].as_str().unwrap_or("?").to_string();
     let firmware = identity.body["firmware"].as_str().unwrap_or("?").to_string();
@@ -75,9 +90,9 @@ pub fn provision(port: &str, wifi: Option<(&str, &str)>, log: &mut dyn FnMut(Str
 
     let key = auth::new_key();
     let key_hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
-    let ack = link.request("openpager.pair", json!({
+    let ack = link.request("knoend.pair", json!({
         "companion": pairings.companion, "companionName": pairings.companion_name, "key": key_hex,
-    }), "openpager.pair.ack", Duration::from_secs(3))?;
+    }), "knoend.pair.ack", Duration::from_secs(3))?;
     if ack.body["ok"] != true {
         return Err(format!("pairing refused: {}", ack.body));
     }
@@ -99,7 +114,7 @@ pub fn change_wifi(port: &str, ssid: &str, password: &str, log: &mut dyn FnMut(S
     let pairings = Pairings::load();
     let mut link = SerialLink::open(port)?;
     settle(&mut link);
-    let identity = ask(&mut link, "openpager.identity", hello(&pairings), "openpager.identity", Duration::from_secs(3))?;
+    let identity = ask(&mut link, "knoend.identity", hello(&pairings), "knoend.identity", Duration::from_secs(3))?;
     let board = identity.body["deviceId"].as_str().ok_or("board sent no deviceId")?.to_string();
     let profile = identity.body["board"]["profile"].as_str().unwrap_or("?").to_string();
     let firmware = identity.body["firmware"].as_str().unwrap_or("?").to_string();
@@ -114,8 +129,8 @@ pub fn change_wifi(port: &str, ssid: &str, password: &str, log: &mut dyn FnMut(S
 /// Sends the network name and password and waits for the board to join (30 s). The password is
 /// never passed to `log`.
 fn join_wifi(link: &mut SerialLink, ssid: &str, password: &str, log: &mut dyn FnMut(String)) -> Result<Option<String>, String> {
-    let ack = link.request("openpager.wifi", json!({"ssid": ssid, "password": password}),
-                           "openpager.wifi.ack", Duration::from_secs(3))?;
+    let ack = link.request("knoend.wifi", json!({"ssid": ssid, "password": password}),
+                           "knoend.wifi.ack", Duration::from_secs(3))?;
     if ack.body["ok"] != true {
         return Err(format!("Wi-Fi settings refused: {}", ack.body["error"]));
     }
@@ -151,8 +166,8 @@ fn join_wifi(link: &mut SerialLink, ssid: &str, password: &str, log: &mut dyn Fn
 pub fn scan_wifi(port: &str) -> Result<Value, String> {
     let mut link = SerialLink::open(port)?;
     settle(&mut link);
-    let reply = ask(&mut link, "openpager.wifi.scan", json!({}), "openpager.wifi.networks", Duration::from_secs(8))?;
-    if reply.kind == "openpager.error" {
+    let reply = ask(&mut link, "knoend.wifi.scan", json!({}), "knoend.wifi.networks", Duration::from_secs(8))?;
+    if reply.kind == "knoend.error" {
         return Err(reply.body["message"].as_str().unwrap_or("the board refused the scan").to_string());
     }
     Ok(reply.body)

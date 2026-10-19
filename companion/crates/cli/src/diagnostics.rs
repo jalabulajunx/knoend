@@ -20,7 +20,7 @@ fn redact(line: &str) -> String {
 }
 
 #[cfg(target_os = "linux")]
-fn linux_checks(ports: &[openpager_flash::Port]) -> Value {
+fn linux_checks(ports: &[knoend_flash::Port]) -> Value {
     use std::os::unix::fs::MetadataExt;
 
     // Bluetooth radios that are soft-blocked (rfkill).
@@ -54,11 +54,11 @@ fn linux_checks(ports: &[openpager_flash::Port]) -> Value {
     // (brltty takes CH340s through "usbfs" on some distributions).
     let brltty = ["/usr/bin/brltty", "/bin/brltty", "/usr/sbin/brltty"].iter().any(|p| std::path::Path::new(p).exists());
     json!({"bluetooth_radios": bluetooth, "serial_access": access, "user_groups": group_names,
-           "usb_serial_devices": openpager_flash::usb_serial_devices(ports),
+           "usb_serial_devices": knoend_flash::usb_serial_devices(ports),
            "brltty_installed": brltty, "desktop_session": desktop_session()})
 }
 
-/// The graphical session and what OpenPager can do in it. Following the focused app and typing
+/// The graphical session and what KnoEnd can do in it. Following the focused app and typing
 /// keys use X11 (EWMH, XTest); a Wayland session hides native Wayland windows from both, so there
 /// the layout does not follow apps and the service cannot type (the board's Bluetooth keyboard
 /// still can). Wayland support is planned, not built.
@@ -87,15 +87,15 @@ pub fn session_support(session_type: &str, desktop: &str, wayland_display: bool,
 /// macOS: what stops a board being found or keys being typed, none of it visible from the port
 /// list alone (all confirmed on macOS 26.6, 2026-10-17).
 #[cfg(target_os = "macos")]
-fn macos_checks(ports: &[openpager_flash::Port]) -> Value {
+fn macos_checks(ports: &[knoend_flash::Port]) -> Value {
     json!({
         // A USB-serial chip with no serial port means no driver claimed it: Apple's CH34x driver
         // covers 1a86:7523 and 1a86:55d4 but not the CH340K's 1a86:7522 (ONX2432G028).
-        "usb_serial_devices": openpager_flash::usb_serial_devices(ports),
+        "usb_serial_devices": knoend_flash::usb_serial_devices(ports),
         "wch_driver_extension": wch_driver_state(),
         "accessibility": {
-            "can_type_keys": openpager_input::accessibility_trusted(),
-            "app_to_allow": openpager_input::launching_app(),
+            "can_type_keys": knoend_input::accessibility_trusted(),
+            "app_to_allow": knoend_input::launching_app(),
         },
     })
 }
@@ -110,7 +110,7 @@ pub fn wch_driver_state() -> String {
         .unwrap_or_else(|| "not installed".into())
 }
 
-fn system_checks(ports: &[openpager_flash::Port]) -> Value {
+fn system_checks(ports: &[knoend_flash::Port]) -> Value {
     #[cfg(target_os = "linux")]
     return linux_checks(ports);
     #[cfg(target_os = "macos")]
@@ -124,12 +124,12 @@ fn system_checks(ports: &[openpager_flash::Port]) -> Value {
 
 pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
     let status = serde_json::to_value(shared.status.read().await.clone()).unwrap_or_default();
-    let ports = tokio::task::spawn_blocking(openpager_flash::list_ports).await.unwrap_or_default();
+    let ports = tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default();
     let agent = crate::agent_config().ok();
     json!({
         "os": std::env::consts::OS,
         "arch": std::env::consts::ARCH,
-        "openpager_version": env!("CARGO_PKG_VERSION"),
+        "knoend_version": env!("CARGO_PKG_VERSION"),
         "service_status": status,
         "usb_serial_ports": ports,
         "system_checks": system_checks(&ports),

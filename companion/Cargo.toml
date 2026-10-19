@@ -6,4 +6,4 @@ members = ["crates/agents","crates/cli","crates/core", "crates/desktop", "crates
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/jalabulajunx/openpager"
+repository = "https://github.com/jalabulajunx/knoend"

@@ -43,7 +43,7 @@ fn fail(status: StatusCode, message: impl Into<String>) -> (StatusCode, Json<Val
 pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await
         .map_err(|e| format!("cannot listen on 127.0.0.1:{port}: {e}"))?;
-    let token = openpager_transport::auth::nonce();
+    let token = knoend_transport::auth::nonce();
     let app = App { shared, token, port };
 
     let api = Router::new()
@@ -72,7 +72,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .with_state(app);
 
     let url = format!("http://127.0.0.1:{port}/");
-    println!("OpenPager is at {url}");
+    println!("KnoEnd is at {url}");
     if open {
         let opener = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
         let _ = std::process::Command::new(opener).arg(&url).spawn();
@@ -102,9 +102,9 @@ struct TokenQuery {
 async fn require_token(State(app): State<App>, Query(query): Query<TokenQuery>, headers: HeaderMap,
                        request: Request, next: Next) -> Response {
     // EventSource cannot send headers, so the event stream alone takes the token in the URL.
-    let given = headers.get("x-openpager-token").and_then(|t| t.to_str().ok()).map(str::to_string)
+    let given = headers.get("x-knoend-token").and_then(|t| t.to_str().ok()).map(str::to_string)
         .or_else(|| (request.uri().path() == "/events").then_some(query.token).flatten());
-    if !given.is_some_and(|t| openpager_transport::auth::equal(&t, &app.token)) {
+    if !given.is_some_and(|t| knoend_transport::auth::equal(&t, &app.token)) {
         return fail(StatusCode::UNAUTHORIZED, "missing or wrong token").into_response();
     }
     next.run(request).await
@@ -137,8 +137,8 @@ async fn firmware(State(app): State<App>) -> ApiResult {
 /// them), so the wizard can say why "no board" without the AI.
 async fn ports() -> ApiResult {
     let (ports, no_port, driver) = tokio::task::spawn_blocking(|| {
-        let ports = openpager_flash::list_ports();
-        let no_port: Vec<_> = openpager_flash::usb_serial_devices(&ports).into_iter().filter(|d| !d.has_serial_port).collect();
+        let ports = knoend_flash::list_ports();
+        let no_port: Vec<_> = knoend_flash::usb_serial_devices(&ports).into_iter().filter(|d| !d.has_serial_port).collect();
         #[cfg(target_os = "macos")]
         let driver = (!no_port.is_empty()).then(crate::diagnostics::wch_driver_state);
         #[cfg(not(target_os = "macos"))]
@@ -153,12 +153,12 @@ struct PortRequest {
     port: String,
 }
 
-/// Who is on this port: OpenPager's own identity if it answers (gentle), else the chip's boot
+/// Who is on this port: KnoEnd's own identity if it answers (gentle), else the chip's boot
 /// ROM (resets the board). Returns ranked board suggestions from the firmware manifest.
 async fn identify(State(app): State<App>, Json(request): Json<PortRequest>) -> ApiResult {
     let _serial = app.shared.serial.clone().try_lock_owned()
         .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;
-    let port = openpager_flash::list_ports().into_iter().find(|p| p.name == request.port)
+    let port = knoend_flash::list_ports().into_iter().find(|p| p.name == request.port)
         .ok_or_else(|| fail(StatusCode::NOT_FOUND, format!("{} is not connected", request.port)))?;
 
     let name = port.name.clone();
@@ -167,7 +167,7 @@ async fn identify(State(app): State<App>, Json(request): Json<PortRequest>) -> A
     let profile = running.as_ref().and_then(|r| r["board"]["profile"].as_str()).map(str::to_string);
 
     let name = port.name.clone();
-    let chip = tokio::task::spawn_blocking(move || openpager_flash::identify(&name)).await
+    let chip = tokio::task::spawn_blocking(move || knoend_flash::identify(&name)).await
         .map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let (chip, chip_error) = match chip {
         Ok(c) => (Some(c), None),
@@ -204,8 +204,8 @@ async fn flash(State(app): State<App>, Json(request): Json<FlashRequest>) -> Api
     tokio::task::spawn_blocking(move || {
         let _guard = guard;
         let mut last_percent = None;
-        let result = openpager_flash::flash(&request.port, &parts, request.erase, &mut |p| {
-            if let openpager_flash::Progress::Writing { done, total, .. } = &p {
+        let result = knoend_flash::flash(&request.port, &parts, request.erase, &mut |p| {
+            if let knoend_flash::Progress::Writing { done, total, .. } = &p {
                 let percent = if *total == 0 { 100 } else { done * 100 / total };
                 if last_percent == Some(percent) {
                     return;
@@ -253,7 +253,7 @@ async fn drafts() -> ApiResult {
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for path in entries.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "toml")) {
             if let Ok(library) = std::fs::read_to_string(&path).map_err(|e| e.to_string())
-                .and_then(|t| openpager_core::library::Library::parse(&t).map_err(|e| e.to_string())) {
+                .and_then(|t| knoend_core::library::Library::parse(&t).map_err(|e| e.to_string())) {
                 out.push(json!({"id": library.pack.id, "name": library.pack.name, "keys": library.keys.len(),
                                 "labels": library.keys.iter().map(|k| k.label.clone()).collect::<Vec<_>>(),
                                 "file": path.file_name().map(|n| n.to_string_lossy().to_string())}));
@@ -266,7 +266,7 @@ async fn drafts() -> ApiResult {
 // ---- AI settings and the setup assistant ----
 
 fn agent_toml() -> std::path::PathBuf {
-    openpager_transport::pairing::config_dir().join("agent.toml")
+    knoend_transport::pairing::config_dir().join("agent.toml")
 }
 
 /// Provider, model and where the key comes from. The key itself is never returned.
@@ -336,7 +336,7 @@ async fn save_ai_settings(Json(request): Json<AiRequest>) -> ApiResult {
             table.insert("options".into(), toml::Value::Table(keep));
         }
     }
-    let text = format!("# Written by the OpenPager web app. API keys are kept in secrets.json, not here.\n{}",
+    let text = format!("# Written by the KnoEnd web app. API keys are kept in secrets.json, not here.\n{}",
                        toml::to_string(&table).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?);
     std::fs::create_dir_all(agent_toml().parent().expect("parent")).ok();
     std::fs::write(agent_toml(), text).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -344,9 +344,9 @@ async fn save_ai_settings(Json(request): Json<AiRequest>) -> ApiResult {
     let config = crate::agent_config().map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
     if let Some(key) = request.api_key.as_ref().map(|k| k.trim()).filter(|k| !k.is_empty()) {
         let name = config.api_key_name().ok_or_else(|| fail(StatusCode::BAD_REQUEST, "this provider takes no API key"))?;
-        openpager_agents::secrets::save(&name, key).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        knoend_agents::secrets::save(&name, key).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
-    match openpager_agents::assistant::check(&config).await {
+    match knoend_agents::assistant::check(&config).await {
         Ok(reply) => Ok(Json(json!({"ok": true, "describe": config.describe(), "key": config.key_source(), "reply": reply}))),
         Err(e) => Ok(Json(json!({"ok": false, "describe": config.describe(), "key": config.key_source(), "error": e}))),
     }
@@ -364,16 +364,16 @@ struct AssistRequest {
 async fn assist(State(app): State<App>, Json(request): Json<AssistRequest>) -> ApiResult {
     let config = crate::agent_config().map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
     let snapshot = crate::diagnostics::snapshot(&app.shared, request.context).await;
-    let advice = openpager_agents::assistant::advise(&config, &request.question, &snapshot).await
+    let advice = knoend_agents::assistant::advise(&config, &request.question, &snapshot).await
         .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
     Ok(Json(json!({"answer": advice.answer, "actions": advice.actions, "fix": advice.fix, "sent": snapshot, "by": config.describe()})))
 }
 
-/// Whether this computer lets openpager type for the board (macOS asks for Accessibility; elsewhere
+/// Whether this computer lets knoend type for the board (macOS asks for Accessibility; elsewhere
 /// always yes). The wizard polls it after opening the settings page.
 async fn typing() -> ApiResult {
     #[cfg(target_os = "macos")]
-    return Ok(Json(json!({"can_type_keys": openpager_input::accessibility_trusted(), "app_to_allow": openpager_input::launching_app()})));
+    return Ok(Json(json!({"can_type_keys": knoend_input::accessibility_trusted(), "app_to_allow": knoend_input::launching_app()})));
     #[cfg(not(target_os = "macos"))]
     Ok(Json(json!({"can_type_keys": true})))
 }
@@ -401,11 +401,11 @@ struct ModelsRequest {
 /// The models a provider offers, for the web app's model list. A key given here is used for this
 /// request only and not stored.
 async fn ai_models(Json(request): Json<ModelsRequest>) -> ApiResult {
-    let config: openpager_agents::AgentConfig = toml::from_str(&format!(
+    let config: knoend_agents::AgentConfig = toml::from_str(&format!(
         "provider = {:?}\n{}", request.provider,
         request.base_url.filter(|u| !u.trim().is_empty()).map(|u| format!("base_url = {:?}\n", u.trim())).unwrap_or_default()
     )).map_err(|e| fail(StatusCode::BAD_REQUEST, e.to_string()))?;
-    let models = openpager_agents::provider::list_models(&config, request.api_key.as_deref().map(str::trim)).await
+    let models = knoend_agents::provider::list_models(&config, request.api_key.as_deref().map(str::trim)).await
         .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
     Ok(Json(json!({"models": models})))
 }

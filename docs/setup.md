@@ -1,4 +1,4 @@
-# Setting up OpenPager
+# Setting up KnoEnd
 
 From nothing to a board whose keys follow the app you are using. Part 1 is for anyone with a board;
 part 2 is for people working on the code. When something goes wrong, see
@@ -21,27 +21,27 @@ Windows is not supported yet.
 
 ## Part 1: set up a board
 
-### 1. Get the `openpager` service
+### 1. Get the `knoend` service
 
-Download it from the [latest release](https://github.com/jalabulajunx/openpager/releases/latest):
-`openpager-x86_64-unknown-linux-gnu.tar.gz` (Linux), `openpager-aarch64-apple-darwin.tar.gz` (Apple
-silicon Mac) or `openpager-x86_64-apple-darwin.tar.gz` (Intel Mac), and unpack it:
+Download it from the [latest release](https://github.com/jalabulajunx/knoend/releases/latest):
+`knoend-x86_64-unknown-linux-gnu.tar.gz` (Linux), `knoend-aarch64-apple-darwin.tar.gz` (Apple
+silicon Mac) or `knoend-x86_64-apple-darwin.tar.gz` (Intel Mac), and unpack it:
 
 ```bash
-tar xzf openpager-*.tar.gz
-./openpager --version
+tar xzf knoend-*.tar.gz
+./knoend --version
 ```
 
 On a Mac the binary is not signed yet: the first time, right-click > Open, or run
-`xattr -d com.apple.quarantine openpager`.
+`xattr -d com.apple.quarantine knoend`.
 
 Or build it from source (stable Rust from [rustup](https://rustup.rs); on a Mac also the Xcode
 Command Line Tools, `xcode-select --install`; on Linux also `pkg-config` and the libudev headers:
 `libudev-dev` on Debian and Ubuntu, already in `systemd-libs` on Arch):
 
 ```bash
-git clone https://github.com/jalabulajunx/openpager.git
-cd openpager/companion
+git clone https://github.com/jalabulajunx/knoend.git
+cd knoend/companion
 cargo build --release
 ```
 
@@ -78,7 +78,7 @@ only the definition differs.
 ### 3. Start the service and follow the web app
 
 ```bash
-./openpager serve
+./knoend serve
 ```
 
 (Add `--firmware ../dist/firmware` for a firmware you built yourself.)
@@ -88,7 +88,7 @@ then walks you through the setup:
 
 1. **Choose how to set up.** *Guided by AI* is recommended if you'd rather not troubleshoot.
    Pick a provider, a model from the list, and enter your API key in the page.
-   - Keys are stored in `~/.config/openpager/secrets.json`, readable only by you.
+   - Keys are stored in `~/.config/knoend/secrets.json`, readable only by you.
    - An environment variable such as `GEMINI_API_KEY` overrides the stored key.
    - *Manual* skips the AI.
 2. **Find the board.** Plug it in. The service lists the USB serial ports and identifies the chip.
@@ -109,17 +109,17 @@ network. The service finds it by mDNS.
 
 ### Keep it running
 
-`./openpager serve` stops when its terminal closes. To run it in the background from now on,
+`./knoend serve` stops when its terminal closes. To run it in the background from now on,
 started at login and restarted if it stops:
 
 ```bash
-./openpager service install
+./knoend service install
 ```
 
-On Linux this is a systemd user service (`journalctl --user -u openpager -f` shows its log); on a
-Mac, a LaunchAgent (log in `~/Library/Logs/openpager.log`; allow `openpager` itself under
-Accessibility so it can type keys). `./openpager service status` and `./openpager service uninstall`
-check and remove it. Stop any `openpager serve` you started by hand first: two copies fight over the
+On Linux this is a systemd user service (`journalctl --user -u knoend -f` shows its log); on a
+Mac, a LaunchAgent (log in `~/Library/Logs/knoend.log`; allow `knoend` itself under
+Accessibility so it can type keys). `./knoend service status` and `./knoend service uninstall`
+check and remove it. Stop any `knoend serve` you started by hand first: two copies fight over the
 board.
 
 ### 4. Use it
@@ -127,26 +127,26 @@ board.
 - **Switch apps.** The board's layout follows the focused window. VS Code has a built-in layout.
 - **Unsupported apps.** An app with no layout shows *Unsupported app: <name>* with a **Configure**
   key. Tapping it asks the AI to draft a layout.
-  - Drafts are saved in `~/.config/openpager/libraries/ai/` and marked unreviewed.
+  - Drafts are saved in `~/.config/knoend/libraries/ai/` and marked unreviewed.
   - To keep your own edits, change `source` to `"user"` in the file.
 - **How keys reach the computer:**
-  - If the board is paired as a Bluetooth keyboard ("OpenPager"), it types by itself, with nothing
+  - If the board is paired as a Bluetooth keyboard ("KnoEnd"), it types by itself, with nothing
     else running.
   - Otherwise it sends each key to the service, which types it for you.
 - **On a Mac,** the service can only type for you once you allow it: System Settings > Privacy &
-  Security > Accessibility, then switch on the app you started `openpager` from (Terminal, iTerm,
-  or Visual Studio Code if you started it in VS Code's terminal), and restart `openpager`. The
+  Security > Accessibility, then switch on the app you started `knoend` from (Terminal, iTerm,
+  or Visual Studio Code if you started it in VS Code's terminal), and restart `knoend`. The
   service log names the app; the setup assistant has a button that opens the page.
 
 ### Websites (browser extension)
 
 The board can follow the website in your browser and press things on the page. Run
-`./openpager browser install` once, add the extension (see `extension/README.md`), and turn board
+`./knoend browser install` once, add the extension (see `extension/README.md`), and turn board
 buttons on per site from the extension's popup. YouTube has a built-in layout.
 
 ### Where things are kept
 
-Everything is in `~/.config/openpager/` (or `$XDG_CONFIG_HOME/openpager/`):
+Everything is in `~/.config/knoend/` (or `$XDG_CONFIG_HOME/knoend/`):
 
 | File | What |
 | --- | --- |
@@ -212,7 +212,7 @@ cargo test
 | `input` | typing keys (XTest on Linux, Core Graphics on macOS) |
 | `flash` | identify and flash boards (espflash), firmware manifest |
 | `agents` | AI providers, setup assistant, layout drafting, key storage |
-| `cli` | the `openpager` binary and the web API |
+| `cli` | the `knoend` binary and the web API |
 
 The web app (`web/`) is plain HTML, CSS and JS, built into the binary. Rebuild the binary after
 editing it.
@@ -220,11 +220,11 @@ editing it.
 Other commands:
 
 ```bash
-openpager devices --firmware ../dist/firmware
-openpager flash --board onx2432g028 --port /dev/ttyUSB0 --firmware ../dist/firmware
-openpager pair --port /dev/ttyUSB0
-openpager run
-openpager draft --class Code --instance code
+knoend devices --firmware ../dist/firmware
+knoend flash --board onx2432g028 --port /dev/ttyUSB0 --firmware ../dist/firmware
+knoend pair --port /dev/ttyUSB0
+knoend run
+knoend draft --class Code --instance code
 ```
 
 - `devices`: list the ports, identify the chip, and suggest a board.
@@ -241,9 +241,9 @@ python3 tools/validate_spec.py
 
 This checks `spec/examples/` and the board definitions against `spec/schemas/`. It needs Python
 3.11+ and `jsonschema`. On Arch, install `python-jsonschema`, or use a virtualenv. On macOS
-(Homebrew): `brew install python@3.13`, `python3.13 -m venv ~/.venvs/openpager`,
-`~/.venvs/openpager/bin/pip install jsonschema`, then run the script with
-`~/.venvs/openpager/bin/python`. Changes under
+(Homebrew): `brew install python@3.13`, `python3.13 -m venv ~/.venvs/knoend`,
+`~/.venvs/knoend/bin/pip install jsonschema`, then run the script with
+`~/.venvs/knoend/bin/python`. Changes under
 `spec/` need review from both maintainers.
 
 CI (`.github/workflows/ci.yml`) runs the spec checks, the companion on Linux and macOS, and the

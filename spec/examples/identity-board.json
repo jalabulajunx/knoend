@@ -1,9 +1,9 @@
-{ "id": 0, "type": "openpager.identity", "body": {
-    "deviceId": "a0b1c2d3e4f5", "deviceName": "OpenPager", "deviceType": "board",
+{ "id": 0, "type": "knoend.identity", "body": {
+    "deviceId": "a0b1c2d3e4f5", "deviceName": "KnoEnd", "deviceType": "board",
     "protocolVersion": 0, "firmware": "a1ea8a8",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
                "grid": { "cols": 4, "rows": 4 }, "statusBar": true },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
-    "incoming": ["openpager.layout", "openpager.status", "openpager.approve.request", "openpager.ping"],
-    "outgoing": ["openpager.key", "openpager.page", "openpager.layout.ack", "openpager.approve.response", "openpager.ping"] } }
+    "incoming": ["knoend.layout", "knoend.status", "knoend.approve.request", "knoend.ping"],
+    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.approve.response", "knoend.ping"] } }

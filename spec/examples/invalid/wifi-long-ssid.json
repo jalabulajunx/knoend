@@ -1,1 +1,1 @@
-{ "id": 4, "type": "openpager.wifi", "body": { "ssid": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "password": "" } }
+{ "id": 4, "type": "knoend.wifi", "body": { "ssid": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "password": "" } }

@@ -1,5 +1,5 @@
 [package]
-name = "openpager-core"
+name = "knoend-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

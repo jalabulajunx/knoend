@@ -1,5 +1,5 @@
 # Built-in library for a Google Slides presentation while it is showing (the page is full screen,
-# reported by the OpenPager extension on an allowed site). The keys are Slides' own presenting
+# reported by the KnoEnd extension on an allowed site). The keys are Slides' own presenting
 # shortcuts, typed as real key presses.
 [pack]
 id = "builtin.google-slides-present"

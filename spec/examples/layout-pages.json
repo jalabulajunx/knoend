@@ -1,4 +1,4 @@
-{ "id": 8, "type": "openpager.layout", "body": {
+{ "id": 8, "type": "knoend.layout", "body": {
     "layout": "builtin.example-pages", "name": "Pages example", "source": "builtin", "reviewed": true,
     "grid": { "cols": 2, "rows": 2 }, "page": 1, "pages": 3,
     "keys": [

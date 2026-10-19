@@ -1,9 +1,9 @@
-# OpenPager protocol, v0 (draft)
+# KnoEnd protocol, v0 (draft)
 
 Status: **draft for review** (both owners review every change under `spec/`). `protocolVersion` is
 `0` until the first tagged release; until then breaking changes are allowed but must be logged.
 
-This document covers what travels between a **board** and a **companion** (the local `openpager`
+This document covers what travels between a **board** and a **companion** (the local `knoend`
 service, or the board simulator). The service's own HTTP API for the web app is out of scope here.
 
 Machine-checkable versions of everything below are in [`schemas/`](schemas/); every file in
@@ -15,13 +15,13 @@ Every message is one JSON object, UTF-8, the same shape on every transport (borr
 Connect's packet format, concepts only):
 
 ```json
-{ "id": 42, "type": "openpager.key", "body": { "key": 5, "layout": "builtin.vscode" } }
+{ "id": 42, "type": "knoend.key", "body": { "key": 5, "layout": "builtin.vscode" } }
 ```
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | integer ≥ 0 | Sender's sequence number, +1 per packet, restarting at 0 on reboot or reconnect |
-| `type` | string | `openpager.<name>`, one of the types in section 3 |
+| `type` | string | `knoend.<name>`, one of the types in section 3 |
 | `re` | integer, optional | `id` of the packet this one answers |
 | `body` | object | Type-specific content; unknown fields must be ignored |
 
@@ -32,12 +32,21 @@ Rules:
 - Packets are at most **4096 bytes** of JSON. A layout that does not fit is an error, not split.
 - Text shown on the board (`label`, `text`, `summary`) is plain UTF-8, no markup.
 
+**Names from before the rename.** The project was called OpenPager until 2026-10-19, and boards and
+companions from then (v0.1.x) name every type `openpager.<name>` (`openpager.layout`) and announce
+`_openpager._tcp`. Both sides accept either prefix: a receiver treats `openpager.<name>` as
+`knoend.<name>`, and answers each peer in the prefix that peer last used (a board) or that its
+firmware understands (a companion: a board seen only as `_openpager._tcp`, or that answered only
+`openpager.identity` over USB, gets `openpager.*`). Boards announce both `_knoend._tcp` and
+`_openpager._tcp`. What a board stores (its NVS namespace `openpager`) keeps its old name, so a
+firmware update keeps pairings and Wi-Fi. To be dropped once no v0.1.x boards or companions remain.
+
 ## 2. Transports and framing
 
 | Transport | Framing | Notes |
 | --- | --- | --- |
 | USB-C serial | One packet per line (`\n`-terminated JSON), 115200 baud on the ONX2432G028 | Lines not starting with `{` are console/log output and are ignored |
-| Wi-Fi | WebSocket `ws://<board>/ws` (found as `openpager.local`), one packet per text frame | Authenticated frames only, see section 4 |
+| Wi-Fi | WebSocket `ws://<board>/ws` (found as `knoend-<id>.local`), one packet per text frame | Authenticated frames only, see section 4 |
 | Bluetooth LE data | GATT service below; packets as `\n`-terminated JSON, split across writes/notifications | Runs beside the HID keyboard service on the same connection |
 
 Bluetooth LE data service (proposed UUIDs, random base `f0e35c51-f991-4cdb-b330-97d0615e____`):
@@ -57,38 +66,38 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 
 | Type | Dir | Purpose |
 | --- | --- | --- |
-| `openpager.identity` | both | First packet on every connection: who I am and what I can do |
-| `openpager.layout` | C→B | Replace the keys on the board |
-| `openpager.layout.ack` | B→C | Layout accepted or rejected |
-| `openpager.key` | B→C | A key was tapped and its action needs the companion |
-| `openpager.page` | B→C | The person asked for the next or previous page of keys |
-| `openpager.status` | C→B | Show a message on the status bar |
-| `openpager.approve.request` | C→B | A coding agent asks permission; show it and wait for Approve/Deny |
-| `openpager.approve.response` | B→C | The person's answer |
-| `openpager.pair` | C→B | Serial only: hand the board a Wi-Fi key (section 4.1) |
-| `openpager.pair.ack` | B→C | Key stored |
-| `openpager.wifi` | C→B | Serial only: the home Wi-Fi name and password (section 4.1) |
-| `openpager.wifi.ack` | B→C | Credentials stored; the board joins the network |
-| `openpager.wifi.scan` | C→B | Serial only: list the Wi-Fi networks the board can hear (empty body) |
-| `openpager.wifi.networks` | B→C | Up to 20 networks, strongest first: `ssid`, `rssi` (dBm), `channel`, `secured`. The ESP32-S3 hears 2.4 GHz only |
-| `openpager.ping` | both | Liveness check; answer with `openpager.ping` and `re` set |
-| `openpager.error` | both | A packet could not be handled |
+| `knoend.identity` | both | First packet on every connection: who I am and what I can do |
+| `knoend.layout` | C→B | Replace the keys on the board |
+| `knoend.layout.ack` | B→C | Layout accepted or rejected |
+| `knoend.key` | B→C | A key was tapped and its action needs the companion |
+| `knoend.page` | B→C | The person asked for the next or previous page of keys |
+| `knoend.status` | C→B | Show a message on the status bar |
+| `knoend.approve.request` | C→B | A coding agent asks permission; show it and wait for Approve/Deny |
+| `knoend.approve.response` | B→C | The person's answer |
+| `knoend.pair` | C→B | Serial only: hand the board a Wi-Fi key (section 4.1) |
+| `knoend.pair.ack` | B→C | Key stored |
+| `knoend.wifi` | C→B | Serial only: the home Wi-Fi name and password (section 4.1) |
+| `knoend.wifi.ack` | B→C | Credentials stored; the board joins the network |
+| `knoend.wifi.scan` | C→B | Serial only: list the Wi-Fi networks the board can hear (empty body) |
+| `knoend.wifi.networks` | B→C | Up to 20 networks, strongest first: `ssid`, `rssi` (dBm), `channel`, `secured`. The ESP32-S3 hears 2.4 GHz only |
+| `knoend.ping` | both | Liveness check; answer with `knoend.ping` and `re` set |
+| `knoend.error` | both | A packet could not be handled |
 
-### 3.1 `openpager.identity`
+### 3.1 `knoend.identity`
 
 Sent by both sides immediately after connecting; nothing else is sent before the peer's identity
 arrives.
 
 ```json
-{ "id": 0, "type": "openpager.identity", "body": {
-    "deviceId": "a0b1c2d3e4f5", "deviceName": "OpenPager", "deviceType": "board",
+{ "id": 0, "type": "knoend.identity", "body": {
+    "deviceId": "a0b1c2d3e4f5", "deviceName": "KnoEnd", "deviceType": "board",
     "protocolVersion": 0, "firmware": "a1ea8a8",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
                "grid": { "cols": 4, "rows": 4 }, "statusBar": true },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
-    "incoming": ["openpager.layout", "openpager.status", "openpager.approve.request", "openpager.ping"],
-    "outgoing": ["openpager.key", "openpager.page", "openpager.layout.ack", "openpager.approve.response", "openpager.ping"] } }
+    "incoming": ["knoend.layout", "knoend.status", "knoend.approve.request", "knoend.ping"],
+    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.approve.response", "knoend.ping"] } }
 ```
 
 - `board.grid`: the largest grid the board draws legibly (cols and rows 1-4), from its screen size.
@@ -100,10 +109,10 @@ arrives.
 - A companion that receives a higher `protocolVersion` than it supports shows "update needed" and
   sends nothing else.
 
-### 3.2 `openpager.layout`
+### 3.2 `knoend.layout`
 
 ```json
-{ "id": 7, "type": "openpager.layout", "body": {
+{ "id": 7, "type": "knoend.layout", "body": {
     "layout": "builtin.vscode", "name": "VS Code", "source": "builtin", "reviewed": true,
     "grid": { "cols": 3, "rows": 3 }, "page": 1, "pages": 2,
     "keys": [
@@ -119,27 +128,27 @@ arrives.
   are blank.
 - `page` / `pages`: this is page `page` of `pages` (both 1 when absent). With more than one page
   the board shows a page indicator ("2/3 >") at the right end of the status bar. The companion holds the pages and
-  sends one at a time; see `openpager.page`.
+  sends one at a time; see `knoend.page`.
 - `send` says what a tap does, decided by the companion when it builds the packet:
   - `hid`: the board types this itself over the keyboard link (USB HID usage + modifier bits:
     1 Ctrl, 2 Shift, 4 Alt, 8 GUI/Cmd; right-hand modifiers are not used). Works with no companion.
     The companion has already resolved `Primary` to Ctrl or Cmd for the connected computer's OS.
-  - `event`: the board sends `openpager.key` and the companion carries out the action (open a
+  - `event`: the board sends `knoend.key` and the companion carries out the action (open a
     page, run a named command, press a page element via the extension).
 - `confirm: true`: risky action (buy, submit, send, delete). The first tap shows "Tap again to
   confirm"; only a second tap on the same key within 3 s acts.
 - `reviewed: false` (AI-drafted, unreviewed): the board marks the layout as unreviewed on screen.
 - The board stores the last layout and keeps using it while the companion is away.
 
-### 3.3 `openpager.layout.ack`
+### 3.3 `knoend.layout.ack`
 
 `{ "re": 7, "body": { "layout": "builtin.vscode", "ok": true } }`; on failure `ok: false` and
 `error` (short reason, e.g. `"too many keys"`).
 
-### 3.4 `openpager.key`
+### 3.4 `knoend.key`
 
 ```json
-{ "id": 18, "type": "openpager.key", "body": { "key": 2, "layout": "builtin.vscode", "page": 1, "seq": 31 } }
+{ "id": 18, "type": "knoend.key", "body": { "key": 2, "layout": "builtin.vscode", "page": 1, "seq": 31 } }
 ```
 
 `page` is the page the key was on (1 when the layout has one page). The companion ignores a tap
@@ -151,36 +160,36 @@ companion types that keystroke into the focused app itself (a board whose USB ca
 like the ONX2432G028, still works over Wi-Fi or USB serial). `seq` counts every tap since boot, so the companion can
 detect lost packets. One packet per tap (sent on release), however long the key is held.
 
-### 3.4a `openpager.page`
+### 3.4a `knoend.page`
 
 ```json
-{ "id": 19, "type": "openpager.page", "body": { "layout": "builtin.vscode", "to": "next" } }
+{ "id": 19, "type": "knoend.page", "body": { "layout": "builtin.vscode", "to": "next" } }
 ```
 
 Sent when the person swipes left (`next`) or right (`prev`) across the keys, or taps the page indicator
 (`next`). Only while the layout has more than one page. The companion sends the new page as an
-`openpager.layout`; pages wrap around. A swipe never also taps the key it started on.
+`knoend.layout`; pages wrap around. A swipe never also taps the key it started on.
 
-### 3.5 `openpager.status`
+### 3.5 `knoend.status`
 
 ```json
-{ "id": 9, "type": "openpager.status", "body": { "text": "Build passed", "level": "info", "ttl": 30 } }
+{ "id": 9, "type": "knoend.status", "body": { "text": "Build passed", "level": "info", "ttl": 30 } }
 ```
 
 `level`: `info`, `attention` (highlighted) or `alert` (highlighted + beep). `ttl` seconds; omitted
 means until replaced. An empty `text` clears the bar.
 
-### 3.6 `openpager.approve.request` / `openpager.approve.response`
+### 3.6 `knoend.approve.request` / `knoend.approve.response`
 
 ```json
-{ "id": 12, "type": "openpager.approve.request", "body": {
-    "request": "c1f3", "agent": "claude-code", "session": "openpager",
+{ "id": 12, "type": "knoend.approve.request", "body": {
+    "request": "c1f3", "agent": "claude-code", "session": "knoend",
     "summary": "Run a shell command", "command": "rm -rf build/", "destructive": true,
     "timeout": 120 } }
 ```
 
 ```json
-{ "id": 40, "re": 12, "type": "openpager.approve.response", "body": { "request": "c1f3", "decision": "deny" } }
+{ "id": 40, "re": 12, "type": "knoend.approve.response", "body": { "request": "c1f3", "decision": "deny" } }
 ```
 
 - The board shows `summary` and the real `command` (truncated with an ellipsis if too long, never
@@ -193,24 +202,24 @@ means until replaced. An empty `text` clears the bar.
 ### 3.6a Layout extras: `icon`, `detail`
 
 - A key's optional `icon` is a name from [`icons.txt`](icons.txt) (Material Icons, drawn white above a
-  small label) or the name of a picture sent with `openpager.image` (`app:...`, `site:...`, drawn in
+  small label) or the name of a picture sent with `knoend.image` (`app:...`, `site:...`, drawn in
   colour). A board that does not know the name shows the label alone.
 - A layout's optional `detail` (up to 240 characters, `\n` for new lines) is shown in place of the
   middle rows (every row but the top and bottom; their keys are hidden); the top and bottom rows
   get shorter and the text scrolls. Needs a grid of 3 rows or more; with fewer the board ignores
   it. Used for what a permission request is about.
 
-### 3.6b `openpager.image` / `openpager.image.ack`
+### 3.6b `knoend.image` / `knoend.image.ack`
 
 ```json
-{ "id": 30, "type": "openpager.image", "body": { "name": "app:firefox", "w": 32, "h": 32,
+{ "id": 30, "type": "knoend.image", "body": { "name": "app:firefox", "w": 32, "h": 32,
     "offset": 0, "total": 3072, "data": "<base64 of this slice>" } }
 ```
 
 A picture for keys: `w`x`h` pixels (at most 64x64) of RGB565 with its two bytes swapped (as LVGL
 draws with `LV_COLOR_16_SWAP`), then one byte of alpha: `total` = w*h*3 bytes. It is sent in slices
 that each fit a packet (the companion uses 2048 bytes), in order, starting at `offset` 0. After the
-last slice the board answers `openpager.image.ack` `{ "name": ..., "ok": true }` (or `ok: false` and
+last slice the board answers `knoend.image.ack` `{ "name": ..., "ok": true }` (or `ok: false` and
 `error`). The board keeps about 48 pictures (least recently used replaced) until it restarts; the
 companion sends a picture again on each new connection, before the layout that uses it.
 
@@ -223,7 +232,7 @@ companion sends a picture again on each new connection, before the layout that u
   person used most and most recently, with their own icons; a tap opens one. Usage (seconds in front
   per app and site) is kept on the computer only.
 
-### 3.7 `openpager.error`
+### 3.7 `knoend.error`
 
 `{ "re": 7, "body": { "code": "unsupported", "message": "..." } }`. Codes: `bad-packet`,
 `unsupported`, `too-large`, `unauthorised`, `busy`.
@@ -242,17 +251,17 @@ While the board is connected by USB, including right after the companion flashes
 1. The companion generates `K` from the operating system's secure random source and stores it in
    the OS keyring under the board's `deviceId`.
 2. It sends, **over serial only**:
-   `{ "id": 3, "type": "openpager.pair", "body": { "companion": "laptop-3f9c2a", "companionName": "Workstation", "key": "<64 hex digits>" } }`
+   `{ "id": 3, "type": "knoend.pair", "body": { "companion": "laptop-3f9c2a", "companionName": "Workstation", "key": "<64 hex digits>" } }`
 3. The board stores `K` for that companion (up to 4 companions; the oldest is replaced) and answers
-   `openpager.pair.ack` with `{ "companion": "laptop-3f9c2a", "ok": true }`.
+   `knoend.pair.ack` with `{ "companion": "laptop-3f9c2a", "ok": true }`.
 
 4. The companion can send the home Wi-Fi credentials the same way, also **serial only**:
-   `{ "type": "openpager.wifi", "body": { "ssid": "Home", "password": "..." } }`, answered by
-   `openpager.wifi.ack` `{ "ok": true }`. The board stores them and joins the network; neither side
+   `{ "type": "knoend.wifi", "body": { "ssid": "Home", "password": "..." } }`, answered by
+   `knoend.wifi.ack` `{ "ok": true }`. The board stores them and joins the network; neither side
    logs the password. An open network has an empty password.
 
 Rules:
-- The board **rejects `openpager.pair` and `openpager.wifi` on any transport other than serial** (`openpager.error`,
+- The board **rejects `knoend.pair` and `knoend.wifi` on any transport other than serial** (`knoend.error`,
   code `unauthorised`).
 - `K` is never part of the firmware image. Firmware is public and every board runs the same image,
   so a built-in key would be the same on every board.
@@ -263,8 +272,9 @@ Rules:
 
 ### 4.2 Discovery and session handshake
 
-- The board announces `_openpager._tcp` (port 80) over mDNS with TXT `id=<deviceId>` and
-  `pv=<protocolVersion>`, host name `openpager-<last 6 hex digits of deviceId>.local`.
+- The board announces `_knoend._tcp` (port 80) over mDNS with TXT `id=<deviceId>` and
+  `pv=<protocolVersion>`, host name `knoend-<last 6 hex digits of deviceId>.local`; also
+  `_openpager._tcp`, the name from before the rename (section 1).
   Nothing derived from `K` is broadcast (it could be replayed, and would let anyone track the board).
 - The companion opens `ws://<board>/ws`. The first three text frames prove both sides hold `K`, using
   fresh 16-byte random nonces written as 32 hex digits:
@@ -382,7 +392,7 @@ date = "2026-10-18"
 note = "Arch Linux, i3 (X11), Firefox"
 ```
 
-**Recipes.** Libraries shipped with OpenPager live in the repository's `recipes/` folder and are
+**Recipes.** Libraries shipped with KnoEnd live in the repository's `recipes/` folder and are
 compiled into the companion: `apps/` (desktop apps, one file covering every OS through its `match`
 entries and `Primary` shortcuts), `sites/` (`<host>.toml` for the whole site, `<host>/<page>.toml` for
 a kind of page), and `agents/`. Each has `source = "builtin"` and an id starting `builtin.`;

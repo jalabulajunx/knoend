@@ -74,7 +74,7 @@ pub fn icon(bundle_id: &str, name: &str, size: u32) -> Option<Vec<u8>> {
     }
     let pixels = (|| {
         let icns = icns_file(&bundle_path(bundle_id, name)?)?;
-        let out = std::env::temp_dir().join(format!("openpager-icon-{}-{}.png", std::process::id(),
+        let out = std::env::temp_dir().join(format!("knoend-icon-{}-{}.png", std::process::id(),
                                                     bundle_id.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>()));
         // Twice the size: sips picks the nearest representation, the resize to `size` is ours.
         let ok = output("sips", &["-s", "format", "png", "-Z", &(size * 2).to_string(), icns.to_str()?, "--out", out.to_str()?]).is_some();

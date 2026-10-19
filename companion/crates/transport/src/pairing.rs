@@ -1,5 +1,5 @@
 //! This companion's identity and the keys it shares with boards, in
-//! `$XDG_CONFIG_HOME/openpager/companion.json` (mode 600). An OS keyring is the planned home.
+//! `$XDG_CONFIG_HOME/knoend/companion.json` (mode 600). An OS keyring is the planned home.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -19,10 +19,24 @@ pub struct Pairings {
     pub boards: BTreeMap<String, String>,
 }
 
-pub fn config_dir() -> PathBuf {
+fn config_root() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
-        .join("openpager")
+}
+
+pub fn config_dir() -> PathBuf {
+    config_root().join("knoend")
+}
+
+/// Moves the settings folder from its name before the rename (`openpager`) to `knoend`, once, so
+/// pairings, API keys, libraries and drafts carry over. Leaves both alone when `knoend` already
+/// exists. Returns a line to print when it moved something.
+pub fn move_old_settings() -> Option<String> {
+    let (old, new) = (config_root().join("openpager"), config_dir());
+    if !old.is_dir() || new.exists() {
+        return None;
+    }
+    fs::rename(&old, &new).ok().map(|_| format!("Settings moved from {} to {} (the project is now KnoEnd)", old.display(), new.display()))
 }
 
 fn path() -> PathBuf {
