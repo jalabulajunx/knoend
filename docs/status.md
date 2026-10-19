@@ -37,7 +37,7 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | Material icons on keys (132 names, built into the firmware) | `spec/icons.txt`, `firmware/components/icons`, `tools/build_icons.py` | any built-in library |
 | Claude Code asks through the board: permission requests (Allow / Always / Deny / Stop) with a scrollable explanation; withdrawn when answered on screen | `cli/src/agent_hooks.rs` | `openpager claude-hooks install`, new Claude Code session |
 | Desktop notifications from followed apps (Linux D-Bus) | `companion/crates/desktop` | Claude desktop notifications |
-| Launcher when nothing is focused: most used / recent apps and sites with their own colour icons; tap opens | `cli/src/launcher.rs`, `desktop/src/apps.rs`, `mac_apps.rs`, `openpager.image` | empty workspace |
+| Launcher when nothing is focused: most used / recent apps and sites with their own colour icons; tap opens (Linux; macOS since 2026-10-18) | `cli/src/launcher.rs`, `desktop/src/apps.rs`, `mac_apps.rs`, `focus/src/macos.rs`, `openpager.image` | empty workspace; on a Mac click the desktop |
 | Background service (systemd user unit / LaunchAgent) | `cli/src/background.rs` | `openpager service install` |
 | Recipes: apps, sites and Claude Code's screens as data, each with who tested it on which OS | `recipes/`, `spec/protocol.md` section 5 | `python3 tools/validate_spec.py` |
 
@@ -45,7 +45,7 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 
 - GT911 touch, display start-up commands, active-high reset; the ESP32-S3-BOX-3 and Waveshare
   ESP32-S3-Touch-LCD-2 definitions (status "unverified").
-- macOS: launcher app icons (`desktop/src/mac_apps.rs`: Spotlight + `plutil` + `sips`), site icons,
+- macOS: site icons,
   Claude Code hooks, LaunchAgent. Compiled in CI only.
 - The assistant's macOS buttons (open Accessibility, open Driver Extensions, install WCH's USB
   driver after Apple's notarization check), `cli/src/macos_help.rs`: the same steps were done by
