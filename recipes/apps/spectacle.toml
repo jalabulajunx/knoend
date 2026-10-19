@@ -1,0 +1,67 @@
+# KDE Spectacle (screenshots). Drafted by the OpenPager configure agent (openai/gpt-6-sol) on Linux,
+# then used and kept by Sundar. Tested on Linux only.
+
+[[key]]
+icon = "photo_camera"
+label = "New Capture"
+
+[key.action]
+keys = "Primary+N"
+kind = "shortcut"
+
+[[key]]
+icon = "content_copy"
+label = "Copy"
+
+[key.action]
+keys = "Primary+C"
+kind = "shortcut"
+
+[[key]]
+icon = "save"
+label = "Save"
+
+[key.action]
+keys = "Primary+S"
+kind = "shortcut"
+
+[[key]]
+icon = "save"
+label = "Save As"
+
+[key.action]
+keys = "Primary+Shift+S"
+kind = "shortcut"
+
+[[key]]
+icon = "print"
+label = "Print"
+
+[key.action]
+keys = "Primary+P"
+kind = "shortcut"
+
+[[key]]
+confirm = true
+icon = "close"
+label = "Quit"
+
+[key.action]
+keys = "Primary+Q"
+kind = "shortcut"
+
+[match]
+linux = ["spectacle"]
+
+[pack]
+description = "Shortcuts for capturing, copying, saving, and printing screenshots."
+id = "builtin.spectacle"
+name = "Spectacle"
+source = "builtin"
+version = "0.1.0"
+
+[[pack.tested]]
+os = "linux"
+by = "Sundar"
+date = "2026-10-18"
+note = "Arch Linux, i3 (X11)"
