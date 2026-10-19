@@ -30,6 +30,8 @@
             <dt>Address</dt><dd id="f-address"></dd>
             <dt>ID</dt><dd id="f-id"></dd>
           </dl>
+          <p class="actions left"><button type="button" id="change-wifi" class="secondary small-button">Change Wi-Fi</button>
+            <span class="muted small">New router, new password or another place: over the USB cable, keeps pairing and settings.</span></p>
         </article>
         <article class="card">
           <h2>Now</h2>
@@ -100,7 +102,7 @@
         <li data-step="1" class="current">Find the board</li>
         <li data-step="2">Choose firmware</li>
         <li data-step="3">Install</li>
-        <li data-step="4">Pair and Wi-Fi</li>
+        <li data-step="4" id="step4-name">Pair and Wi-Fi</li>
       </ol>
 
       <article class="card step" data-step="1">
@@ -138,8 +140,8 @@
       </article>
 
       <article class="card step" data-step="4" hidden>
-        <h2>Pair and Wi-Fi</h2>
-        <p>The board and this computer agree on a secret key over the cable. Wi-Fi lets the board work away from the desk; your password goes to the board over the cable only and is not stored here.</p>
+        <h2 id="step4-title">Pair and Wi-Fi</h2>
+        <p id="step4-intro">The board and this computer agree on a secret key over the cable. Wi-Fi lets the board work away from the desk; your password goes to the board over the cable only and is not stored here.</p>
         <form id="pair-form" autocomplete="off">
           <div class="row-head"><strong>Wi-Fi network</strong>
             <button type="button" id="scan-wifi" class="secondary small-button">Find networks</button></div>
@@ -150,8 +152,8 @@
           <label id="password-wrap">Password
             <input id="password" name="password" type="password" maxlength="64"></label>
           <div class="actions">
-            <button type="button" class="secondary" data-back="3">Back</button>
-            <button type="submit" class="primary">Pair</button>
+            <button type="button" class="secondary" id="step4-back" data-back="3">Back</button>
+            <button type="submit" class="primary" id="step4-submit">Pair</button>
           </div>
         </form>
         <ol id="pair-log" class="log compact"></ol>
