@@ -184,7 +184,6 @@ form select, form textarea {
 .ok-badge { background: #dff3e6; color: #1e6b3d; margin-left: 6px; }
 @media (prefers-color-scheme: dark) { .ok-badge { background: #173825; color: #8fd8a8; } }
 #mode-card { margin-bottom: 16px; }
-#assistant { margin-top: 16px; }
 .ask { display: flex; gap: 8px; }
 .ask input {
   flex: 1; padding: 8px 10px; font: inherit; border: 1px solid var(--line); border-radius: 8px;
@@ -232,3 +231,21 @@ form textarea { font-family: ui-monospace, monospace; font-size: 13px; resize: v
 .combo-list li[aria-selected="true"] { font-weight: 600; }
 .fix { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-top: 10px; }
 .fix ul { margin: 4px 0 8px; padding-left: 18px; }
+
+/* The assistant floats beside every page: a button at the bottom right opens a panel on the right
+   (a sheet from the bottom on a phone). */
+.assistant-open {
+  position: fixed; right: 16px; bottom: 16px; z-index: 30; border-radius: 999px; padding: 10px 16px;
+  background: var(--accent); color: var(--accent-text); border: none; box-shadow: 0 4px 16px rgb(0 0 0 / .25); cursor: pointer;
+}
+.assistant-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 100vw); z-index: 40; overflow-y: auto;
+  background: var(--surface); color: var(--text); border-left: 1px solid var(--line);
+  box-shadow: -8px 0 24px rgb(0 0 0 / .2); padding: 16px;
+}
+.assistant-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.assistant-head h2 { margin: 0; font-size: 16px; }
+.assistant-panel .ask { margin-top: 12px; }
+@media (max-width: 640px) {
+  .assistant-panel { top: auto; height: 75vh; width: 100vw; border-left: none; border-top: 1px solid var(--line); border-radius: 12px 12px 0 0; }
+}

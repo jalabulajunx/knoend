@@ -1445,15 +1445,18 @@ async function applyFix(fix) {
 
 async function ask(question, error) {
   if (!aiReady) {
+    assistantPanel(true);
     $("assistant-off").hidden = false;
     return;
   }
+  assistantPanel(true);
   const box = $("advice");
   box.hidden = false;
   $("advice-text").textContent = "Thinking...";
   $("advice-actions").replaceChildren();
   $("advice-fix").hidden = true;
-  const context = { wizard_task: setup.task, wizard_step: setup.step, port: setup.port, chosen_board: setup.board,
+  const page = [...document.querySelectorAll("main .view")].find((v) => !v.hidden)?.id.replace("view-", "") || null;
+  const context = { page, wizard_task: setup.task, wizard_step: setup.step, port: setup.port, chosen_board: setup.board,
                     identify_result: setup.identified, error: error || null, setup_mode: setup.mode,
                     ai_models_available: models.slice(0, 200) };
   try {
@@ -1487,6 +1490,17 @@ async function ask(question, error) {
 function autoAssist(error) {
   if (setup.mode === "ai" && aiReady) ask("", error);
 }
+
+/** Opens or closes the floating assistant; it keeps its last answer while closed. */
+function assistantPanel(open) {
+  $("assistant").hidden = !open;
+  $("assistant-open").hidden = open;
+  $("assistant-open").setAttribute("aria-expanded", String(open));
+  if (open) $("ask-input").focus();
+}
+$("assistant-open").addEventListener("click", () => assistantPanel(true));
+$("assistant-close").addEventListener("click", () => assistantPanel(false));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("assistant").hidden) assistantPanel(false); });
 
 $("ask-form").addEventListener("submit", (e) => {
   e.preventDefault();

@@ -276,8 +276,14 @@
         <p id="setup-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
       </article>
 
-      <article class="card" id="assistant">
-        <h2>Setup assistant <span id="assistant-by" class="muted small"></span></h2>
+    </section>
+  </main>
+  <button type="button" id="assistant-open" class="assistant-open" aria-controls="assistant" aria-expanded="false">Ask the assistant</button>
+  <aside id="assistant" class="assistant-panel" aria-label="Setup assistant" hidden>
+        <div class="assistant-head">
+          <h2>Assistant <span id="assistant-by" class="muted small"></span></h2>
+          <button type="button" id="assistant-close" class="secondary small-button" aria-label="Close the assistant">Close</button>
+        </div>
         <form id="ask-form" class="ask">
           <input id="ask-input" maxlength="500" placeholder="Describe what you see, or ask what to do next">
           <button type="submit" class="secondary">Ask</button>
@@ -293,10 +299,8 @@
           </div>
           <details><summary class="muted small">What was sent to the AI</summary><pre id="advice-sent"></pre></details>
         </div>
-        <p id="assistant-off" class="muted small" hidden>Set up an AI provider above to use the assistant.</p>
-      </article>
-    </section>
-  </main>
+        <p id="assistant-off" class="muted small" hidden>Set up an AI provider in Set up a board to use the assistant.</p>
+  </aside>
   <script src="/app.js" type="module"></script>
 </body>
 </html>
