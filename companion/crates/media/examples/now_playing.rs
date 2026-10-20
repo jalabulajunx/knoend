@@ -1,6 +1,6 @@
-//! Prints every media player and what it is playing: `cargo run -p openpager-media --example now_playing`
+//! Prints every media player and what it is playing: `cargo run -p knoend-media --example now_playing`
 fn main() {
-    match openpager_media::Players::connect() {
+    match knoend_media::Players::connect() {
         Ok(players) => {
             for p in players.list() {
                 println!("{} [{}] {:?} by {:?} ({}) seek={} next={} prev={}", p.player, p.status, p.title, p.artist, p.url,

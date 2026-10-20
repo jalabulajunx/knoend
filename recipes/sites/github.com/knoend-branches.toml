@@ -1,4 +1,4 @@
-# Drafted by the OpenPager configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
+# Drafted by the KnoEnd configure agent (gemini/gemini-3.8-flash) on Linux, then used and kept by
 # Sundar. Tested on Linux only: other systems need their own match entries and a test.
 [[key]]
 icon = "search"
@@ -14,7 +14,7 @@ label = "Your Branches"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/branches/yours"
+url = "/jalabulajunx/knoend/branches/yours"
 
 [[key]]
 icon = "schedule"
@@ -22,7 +22,7 @@ label = "Active"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/branches/active"
+url = "/jalabulajunx/knoend/branches/active"
 
 [[key]]
 icon = "lock"
@@ -30,7 +30,7 @@ label = "Branch Rules"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/settings/rules/new"
+url = "/jalabulajunx/knoend/settings/rules/new"
 
 [[key]]
 icon = "code"
@@ -38,7 +38,7 @@ label = "Code"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager"
+url = "/jalabulajunx/knoend"
 
 [[key]]
 icon = "task_alt"
@@ -46,7 +46,7 @@ label = "Actions"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/actions"
+url = "/jalabulajunx/knoend/actions"
 
 [[key]]
 icon = "dashboard"
@@ -54,7 +54,7 @@ label = "Insights"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/pulse"
+url = "/jalabulajunx/knoend/pulse"
 
 [[key]]
 icon = "description"
@@ -62,7 +62,7 @@ label = "Wiki"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/wiki"
+url = "/jalabulajunx/knoend/wiki"
 
 [[key]]
 icon = "settings"
@@ -70,15 +70,15 @@ label = "Settings"
 
 [key.action]
 kind = "open"
-url = "/jalabulajunx/openpager/settings"
+url = "/jalabulajunx/knoend/settings"
 
 [match]
-web = ["github.com/jalabulajunx/openpager/branches"]
+web = ["github.com/jalabulajunx/knoend/branches"]
 
 [pack]
 description = "Quick branch searching and repository navigation."
-id = "builtin.site-github-com-openpager-branches"
-name = "OpenPager Branches"
+id = "builtin.site-github-com-knoend-branches"
+name = "KnoEnd Branches"
 source = "builtin"
 version = "0.1.0"
 

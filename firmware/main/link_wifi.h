@@ -1,5 +1,5 @@
 // Wi-Fi transport (spec/protocol.md sections 2 and 4): joins the home network, announces
-// _openpager._tcp over mDNS, and accepts one authenticated WebSocket session at ws://<board>/ws.
+// _knoend._tcp (and the older _openpager._tcp) over mDNS, and accepts one authenticated WebSocket session at ws://<board>/ws.
 #pragma once
 
 #include <stdbool.h>

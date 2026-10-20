@@ -1,4 +1,4 @@
-# Setting up an OpenPager board: what we know
+# Setting up an KnoEnd board: what we know
 
 The one place for what has been learned getting boards working. Coding agents read it before
 hardware work (see `AGENTS.md`); the companion's setup assistant has it built into its prompt.
@@ -10,7 +10,7 @@ When you learn something new on the bench, add it here (symptom, cause, fix, how
   **board definition** (JSON, in the 4 KB `board` partition at 0x310000) tells it which display,
   touch controller, pins and serial line it has. Without a definition it still boots, with no
   display ("BOARD no definition"), so it can be fixed over USB.
-- **The companion service** (`openpager serve`) runs on the computer: it flashes and pairs boards
+- **The companion service** (`knoend serve`) runs on the computer: it flashes and pairs boards
   over USB, then talks to the board over Wi-Fi (or USB serial), follows the focused app and pushes
   matching layouts. Its web app is at `http://127.0.0.1:7342/`.
 - **Keys reach the computer two ways.** The board can type by itself as a Bluetooth keyboard (no
@@ -55,7 +55,7 @@ C3, C6) are not supported.
 - **Port listed but cannot be opened (permission denied).** On Linux the user must be in the group
   that owns the port (`uucp` on Arch, `dialout` on Debian/Ubuntu): `ls -l /dev/ttyUSB0`, then add the
   user to that group and log out and in. Also close anything else holding the port (serial
-  monitors, `idf.py monitor`, another `openpager`).
+  monitors, `idf.py monitor`, another `knoend`).
 - **Opening the port resets the ONX.** Its CH340 auto-reset circuit can restart the chip when a
   program opens the port (seen with the companion; not with pyserial). The companion therefore
   takes the board's start-up announcement as its identity. A board that restarts when you connect
@@ -73,7 +73,7 @@ C3, C6) are not supported.
   bootloader mode.
 - **Verification failed on the board definition only.** Same padding issue as above; make sure the
   companion is current.
-- **Erase or not?** A board that already runs OpenPager does not need erasing: updates keep its
+- **Erase or not?** A board that already runs KnoEnd does not need erasing: updates keep its
   pairing keys and Wi-Fi settings (the settings partition never moves). Erase a board that ran other
   firmware, or one that misbehaves after an update. Erasing removes pairing and Wi-Fi; the person
   must agree first.
@@ -91,7 +91,7 @@ C3, C6) are not supported.
   port re-applied its own). With the fix the picture follows `display.mirror_*`; touch has its own
   `touch.mirror_x/mirror_y/swap_xy` and must be flipped the same way. A definition alone can be
   rewritten with `esptool write_flash 0x310000 <definition.json>` (no firmware flash); confirm by
-  tapping the corner keys. Once OpenPager runs, the board
+  tapping the corner keys. Once KnoEnd runs, the board
   reports its definition and identify ranks that board first, even if it was the wrong one.
 
 ### After flashing
@@ -126,7 +126,7 @@ C3, C6) are not supported.
   pairing and settings stay. Pair again is not needed, and erasing is never needed for this. Over
   USB only for now (the board takes Wi-Fi details only over the cable), which also covers a
   computer that already moved to the new network. Confirmed from the code 2026-10-18.
-- **Companion cannot find the board** although it joined: mDNS (`_openpager._tcp`) is blocked
+- **Companion cannot find the board** although it joined: mDNS (`_knoend._tcp`) is blocked
   between the computer and the board (guest networks, client isolation, some mesh systems, a VPN
   on the computer). Same network, not a guest one; disconnect the VPN.
 - **Found but the handshake fails ("board proof does not verify").** The board and this computer
@@ -150,7 +150,7 @@ C3, C6) are not supported.
 Confirmed on macOS 26.6 (Apple silicon) on 2026-10-17 with the ONX2432G028 and the Freenove
 FNK0104B: install, pairing, Wi-Fi, layouts following the focused app, keys typed by the companion,
 and drafting a layout with OpenAI. The assistant's snapshot (`system_checks`) shows the USB serial
-devices and whether each has a port, the WCH driver state, and whether openpager may type.
+devices and whether each has a port, the WCH driver state, and whether knoend may type.
 
 - **USB device seen but no port** ("No board found"; `system_checks.usb_serial_devices` shows the
   device with `has_serial_port: false`). macOS sees the board's USB chip but no driver claimed it.
@@ -166,16 +166,16 @@ devices and whether each has a port, the WCH driver state, and whether openpager
   `activated enabled`, and a port `/dev/cu.wchusbserial...` appears.
 - **Keys typed by the companion do nothing on a Mac.** The log says "macOS needs Accessibility
   permission". macOS only lets a program type into other apps with Accessibility, and it asks for
-  it for the **app that launched `openpager`**, not the binary: Terminal, iTerm, or Visual Studio
+  it for the **app that launched `knoend`**, not the binary: Terminal, iTerm, or Visual Studio
   Code when started from VS Code's terminal or a coding agent inside it
   (`system_checks.accessibility.app_to_allow` names it). System Settings > Privacy & Security >
   Accessibility (the "Open Accessibility settings" button), switch that app on, then restart
-  `openpager`; restarting the app itself was not needed on macOS 26.6.
+  `knoend`; restarting the app itself was not needed on macOS 26.6.
 - **The layout does not follow the app on a Mac** (it stays on the first app). Fixed in
   v0.1.1: `NSWorkspace.frontmostApplication` never updates in a program without a main run loop, so
   the watcher now asks the window server which app owns the front window. With v0.1.0, update.
-- **"openpager" cannot be opened because the developer cannot be verified.** The binary is not
-  signed yet: right-click > Open once, or `xattr -d com.apple.quarantine openpager`.
+- **"knoend" cannot be opened because the developer cannot be verified.** The binary is not
+  signed yet: right-click > Open once, or `xattr -d com.apple.quarantine knoend`.
 - **Two ports per board** (`/dev/cu.*` and `/dev/tty.*`): the companion lists only the `cu.*` one,
   which is the one to use.
 - **Building the companion on a Mac** (developers only; not needed with the release binary):
@@ -194,17 +194,17 @@ devices and whether each has a port, the WCH driver state, and whether openpager
 
 ### Coding agents asking on the board
 
-- **Claude Code's approvals and "needs input" on the board:** `openpager claude-hooks install` adds
+- **Claude Code's approvals and "needs input" on the board:** `knoend claude-hooks install` adds
   a PermissionRequest and a Notification hook to `~/.claude/settings.json` (backup:
-  `settings.json.before-openpager`; `openpager claude-hooks uninstall` removes them). They apply to
+  `settings.json.before-knoend` (`settings.json.before-openpager` if made before the rename); `knoend claude-hooks uninstall` removes them). They apply to
   new Claude Code sessions in the terminal and in the desktop app. A request shows on the board as
   Allow / Always / Deny / Stop with the tool and command on the status line; destructive commands
   need a second tap. Claude's own prompt stays: whichever is answered first applies; a request
   answered on screen leaves the board within a second; with no service running, the hook says
   nothing and Claude asks as usual.
 - **Nothing reaches the board from Claude:** the session was started before the hooks were installed
-  (restart it), or the running `openpager serve` is older than the hooks (no `agents.sock` in
-  `$XDG_RUNTIME_DIR/openpager/`): restart it.
+  (restart it), or the running `knoend serve` is older than the hooks (no `agents.sock` in
+  `$XDG_RUNTIME_DIR/knoend/`): restart it.
   Also: Claude Code's auto-approval (or a command it allows by itself, such as `ls`) asks nothing,
   so no request is made and nothing reaches the board. Switch the session to manual approval and
   ask for a command that needs it (seen on macOS 2026-10-18; manual approval then worked: Deny,
@@ -228,10 +228,10 @@ devices and whether each has a port, the WCH driver state, and whether openpager
 
 ### Running in the background
 
-- **Board stops following apps after the computer or Claude Code restarts.** `openpager serve` was
+- **Board stops following apps after the computer or Claude Code restarts.** `knoend serve` was
   started by hand (or by a coding agent's session) and stopped with it. Install it as a background
-  service: `openpager service install` (systemd user service on Linux, LaunchAgent on macOS), then
-  `openpager service status`. Never run a second copy beside it.
+  service: `knoend service install` (systemd user service on Linux, LaunchAgent on macOS), then
+  `knoend service status`. Never run a second copy beside it.
 - **Service runs but the layout does not follow the focused app (Linux).** The systemd user manager
   lacks the graphical session's `DISPLAY`/`XAUTHORITY` (`systemctl --user show-environment`); most
   desktop sessions import them. Run `systemctl --user import-environment DISPLAY XAUTHORITY` once in
@@ -239,11 +239,11 @@ devices and whether each has a port, the WCH driver state, and whether openpager
 
 ### The browser extension
 
-- **Popup says "not set up".** The browser could not start openpager: `openpager browser install` was
-  not run, or the browser was not restarted afterwards, or the openpager binary moved (the
+- **Popup says "not set up".** The browser could not start knoend: `knoend browser install` was
+  not run, or the browser was not restarted afterwards, or the knoend binary moved (the
   registration names its full path; run install again). Chrome only lets the extension id
   `echibclfkpicikodohehemgjefbpakpj` start it; a copy loaded with another id cannot connect.
-- **Popup says "openpager not running".** Start `openpager serve`; the extension reconnects by itself.
+- **Popup says "knoend not running".** Start `knoend serve`; the extension reconnects by itself.
 - **The board does not change for a site.** The site needs a layout (`match.web`), and the focused
   window must be the browser. A key that acts on the page answers "not-granted" until board buttons
   are turned on for that site in the popup.

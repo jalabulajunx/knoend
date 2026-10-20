@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
-use openpager_core::protocol::Packet;
+use knoend_core::protocol::Packet;
 use serde_json::{json, Value};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
@@ -28,6 +28,8 @@ pub enum LinkError {
 }
 
 pub struct WifiSender {
+    /// The board runs firmware from before the rename: send `openpager.*` names.
+    old_names: bool,
     sink: SplitSink<Socket, Message>,
     key: Key,
     session_id: String,
@@ -54,7 +56,8 @@ async fn next_text(stream: &mut SplitStream<Socket>) -> Result<String, LinkError
 }
 
 /// Connects and runs the handshake. Fails unless the board proves it holds `key` and is `board_id`.
-pub async fn connect(address: SocketAddr, board_id: &str, companion: &str, key: Key)
+/// `old_names`: the board is from before the rename (it advertised only `_openpager._tcp`).
+pub async fn connect(address: SocketAddr, board_id: &str, companion: &str, key: Key, old_names: bool)
     -> Result<(WifiSender, WifiReceiver), LinkError> {
     let (socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await
         .map_err(|e| LinkError::Connection(e.to_string()))?;
@@ -81,7 +84,7 @@ pub async fn connect(address: SocketAddr, board_id: &str, companion: &str, key: 
 
     let session_id = format!("{board_nonce}{companion_nonce}");
     Ok((
-        WifiSender { sink, key, session_id: session_id.clone(), next_ctr: 0, next_id: 0 },
+        WifiSender { old_names, sink, key, session_id: session_id.clone(), next_ctr: 0, next_id: 0 },
         WifiReceiver { stream, key, session_id, last_ctr: None },
     ))
 }
@@ -91,7 +94,8 @@ impl WifiSender {
     pub async fn send(&mut self, kind: &str, body: Value) -> Result<u32, LinkError> {
         let id = self.next_id;
         self.next_id += 1;
-        let packet = serde_json::to_string(&Packet { id, re: None, kind: kind.to_string(), body }).expect("serialisable");
+        let kind = if self.old_names { knoend_core::protocol::old_name(kind) } else { kind.to_string() };
+        let packet = serde_json::to_string(&Packet { id, re: None, kind, body }).expect("serialisable");
         let ctr = self.next_ctr;
         self.next_ctr += 1;
         let frame = json!({"ctr": ctr, "mac": auth::frame_mac(&self.key, &self.session_id, ctr, &packet), "packet": packet});
@@ -115,6 +119,8 @@ impl WifiReceiver {
             return Err(LinkError::Frame(format!("counter {ctr} did not increase")));
         }
         self.last_ctr = Some(ctr);
-        serde_json::from_str(packet).map_err(|e| LinkError::Frame(e.to_string()))
+        let mut packet: Packet = serde_json::from_str(packet).map_err(|e| LinkError::Frame(e.to_string()))?;
+        packet.kind = knoend_core::protocol::current_name(&packet.kind);
+        Ok(packet)
     }
 }

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """A stand-in for the companion service, for bench-testing the board's Wi-Fi link.
 
-  pair     Over USB serial: hand the board a fresh pairing key (openpager.pair) and, if you
-           type them, your Wi-Fi name and password (openpager.wifi). Run it yourself: it prompts
+  pair     Over USB serial: hand the board a fresh pairing key (knoend.pair) and, if you
+           type them, your Wi-Fi name and password (knoend.wifi). Run it yourself: it prompts
            for the password, which is sent to the board only and never stored or printed here.
   listen   Find the board over mDNS, connect, run the handshake from spec/protocol.md section 4,
            push a layout and a status message, then print every packet the board sends.
   attacks  Try three things the board must refuse: an unknown companion, a replayed handshake,
            and a tampered frame. Each must end with the board closing the connection.
 
-The pairing key is kept in ~/.config/openpager/dummy-companion.json (mode 600). The real
+The pairing key is kept in ~/.config/knoend/dummy-companion.json (mode 600). The real
 companion will use the OS keyring instead.
 
 `pair` needs pyserial; `listen` and `attacks` need websockets and zeroconf. On the bench these
@@ -30,7 +30,7 @@ import sys
 import time
 from pathlib import Path
 
-CONFIG = Path.home() / ".config" / "openpager" / "dummy-companion.json"
+CONFIG = Path.home() / ".config" / "knoend" / "dummy-companion.json"
 EXAMPLES = Path(__file__).resolve().parent.parent / "spec" / "examples"
 
 
@@ -80,25 +80,25 @@ def pair(args):
         for line in lines(seconds):
             if line.startswith("{"):
                 packet = json.loads(line)
-                if packet.get("type") in (reply_type, "openpager.error") and packet.get("re") == packet_id:
+                if packet.get("type") in (reply_type, "knoend.error") and packet.get("re") == packet_id:
                     return packet
         return None
 
     for _ in lines(1.5):  # drain boot/console output
         pass
 
-    identity = request("openpager.identity", {
+    identity = request("knoend.identity", {
         "deviceId": config["companion"], "deviceName": config["companionName"], "deviceType": "companion",
-        "protocolVersion": 0, "incoming": ["openpager.key"], "outgoing": ["openpager.layout"]},
-        "openpager.identity")
+        "protocolVersion": 0, "incoming": ["knoend.key"], "outgoing": ["knoend.layout"]},
+        "knoend.identity")
     if identity is None:
-        sys.exit("No identity from the board. Is it on this port, running OpenPager firmware?")
+        sys.exit("No identity from the board. Is it on this port, running KnoEnd firmware?")
     board = identity["body"]["deviceId"]
     print(f"Board {board} ({identity['body']['board']['profile']}, firmware {identity['body'].get('firmware')})")
 
     key = secrets.token_bytes(32)
-    ack = request("openpager.pair", {"companion": config["companion"], "companionName": config["companionName"],
-                                     "key": key.hex()}, "openpager.pair.ack")
+    ack = request("knoend.pair", {"companion": config["companion"], "companionName": config["companionName"],
+                                     "key": key.hex()}, "knoend.pair.ack")
     if ack is None or not ack["body"].get("ok"):
         sys.exit(f"Pairing failed: {ack}")
     config["boards"][board] = key.hex()
@@ -109,7 +109,7 @@ def pair(args):
     if not ssid:
         return
     password = getpass.getpass(f"Password for {ssid!r} (not shown, not stored here): ")
-    ack = request("openpager.wifi", {"ssid": ssid, "password": password}, "openpager.wifi.ack")
+    ack = request("knoend.wifi", {"ssid": ssid, "password": password}, "knoend.wifi.ack")
     password = None
     if ack is None or not ack["body"].get("ok"):
         sys.exit(f"Wi-Fi settings rejected: {ack}")
@@ -126,11 +126,11 @@ def pair(args):
 # ---- Wi-Fi (discovery, handshake, frames) ----
 
 def discover(config, seconds):
-    """Browses _openpager._tcp; resolves names afterwards (zeroconf forbids blocking calls in
+    """Browses _knoend._tcp; resolves names afterwards (zeroconf forbids blocking calls in
     its own callback thread)."""
     from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 
-    service = "_openpager._tcp.local."
+    service = "_knoend._tcp.local."
     names = set()
 
     class Listener(ServiceListener):
@@ -219,7 +219,7 @@ async def listen(args):
         sys.exit("No paired board. Run the pair step over USB first.")
     target = await asyncio.to_thread(discover, config, args.discover)  # zeroconf blocks; keep it off the loop
     if target is None:
-        sys.exit("No paired board found on the network (mDNS _openpager._tcp).")
+        sys.exit("No paired board found on the network (mDNS _knoend._tcp).")
     board, address, port = target
     check_packet = packet_checker()
 
@@ -232,9 +232,9 @@ async def listen(args):
         print(f"Board identity over Wi-Fi: {identity['body']['deviceId']} firmware {identity['body'].get('firmware')}")
 
         layout = json.loads((EXAMPLES / "layout-amazon.json").read_text())["body"]
-        await session.send("openpager.layout", layout)
-        await session.send("openpager.status", {"text": "Dummy companion over Wi-Fi: tap a key", "level": "attention"})
-        await session.send("openpager.ping", {})
+        await session.send("knoend.layout", layout)
+        await session.send("knoend.status", {"text": "Dummy companion over Wi-Fi: tap a key", "level": "attention"})
+        await session.send("knoend.ping", {})
 
         problems = 0
         end = time.time() + args.seconds
@@ -291,7 +291,7 @@ async def attacks(args):
         session = Session(ws, key, config["companion"])
         await session.handshake(board)
         await session.receive(5)  # identity
-        packet = json.dumps({"id": 0, "type": "openpager.ping", "body": {}}, separators=(",", ":"))
+        packet = json.dumps({"id": 0, "type": "knoend.ping", "body": {}}, separators=(",", ":"))
         good_mac = mac(key, session.session_id, "0", packet)
         tampered = packet.replace("ping", "pong")
         await ws.send(json.dumps({"ctr": 0, "mac": good_mac, "packet": tampered}))

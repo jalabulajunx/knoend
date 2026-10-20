@@ -1189,3 +1189,35 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   turning as described. Test library removed afterwards (to the Trash).
 - For Tom: a long single word now breaks mid-word on two lines ("Fullscree / n" on Xfce Terminal's
   Fullscreen key, no icon); shrink the text or break only between words.
+
+## 2026-10-19 - Sundar (Claude Code) - Rename to KnoEnd (#19), with fallback to the old names
+
+- Decided (Sundar; Tom agreed to the name on #19): rename everything, with fallback; repository
+  renamed in place; said "no end". Decision: [`docs/decisions/2026-10-19-rename-to-knoend.md`](decisions/2026-10-19-rename-to-knoend.md).
+- Changed: firmware (`knoend.*` with `openpager.*` accepted and answered per link; mDNS both names;
+  device and Bluetooth name "KnoEnd"; NVS namespace kept); companion (crates `knoend-*`, binary
+  `knoend`; `core::protocol::{current_name, old_name}` at the Wi-Fi and serial links; discovery of
+  both mDNS names with `old_names` per board; USB retries in the old names; settings folder moved
+  once; old socket folder also listened on; both browser host names and Firefox ids; old
+  background service removed on install; `KNOEND_BUILTIN`); spec (names, a section 1 paragraph on
+  the old names, schemas, examples with the Wi-Fi sessions re-signed where they were valid; the
+  validator checks `openpager.*` packets as their `knoend.*` form); extension, web app, tools, CI,
+  recipes (this repository's GitHub pages now `github.com/jalabulajunx/knoend`), docs, README
+  (pronunciation). Past log entries and decision records keep the old name.
+- Tested: workspace tests, `validate_spec.py` (0 problems; the three broken Wi-Fi sessions still
+  rejected for the same reasons), extension and firmware build. Against the ONX still on the
+  pre-rename firmware: a test copy of the new service (empty settings, own sockets) identified it
+  over USB through the old names ("OpenPager", v0.1.1-68-g3a329ee). Not yet: the new firmware on
+  the board, the settings move and hooks on Sundar's machine, macOS.
+- Before merging: rename the GitHub repository (the firmware download address now points at
+  `jalabulajunx/knoend`).
+- Sundar ran the new service (`knoend`) on his machine while the board still had the pre-rename
+  firmware: settings moved to `~/.config/knoend`, hooks and browser hosts re-registered
+  (`knoend claude-hooks install`, `knoend browser install`), extension reloaded; working with the
+  old board through the fallback. GitHub repository renamed to `jalabulajunx/knoend`.
+- Flashed the KnoEnd firmware (c6ae1af) to the ONX (hashes verified): `READY knoend ...`,
+  identity "KnoEnd", Wi-Fi joined with the stored settings (NVS kept), announces
+  `_knoend._tcp` and `_openpager._tcp` as `knoend-dbcdb8.local`.
+- With both sides on KnoEnd (Sundar's machine and the ONX): the board connects over Wi-Fi, keys
+  follow apps and sites, and a Claude Code question reached the board; Sundar's Decline came back as
+  "Denied on the KnoEnd board." (hooks re-registered to `knoend`).

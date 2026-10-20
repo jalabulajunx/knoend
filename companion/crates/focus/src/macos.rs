@@ -19,7 +19,7 @@ use objc2_app_kit::NSRunningApplication;
 use objc2_core_foundation::CFArray;
 use objc2_core_graphics::{kCGNullWindowID, CGWindowListCopyWindowInfo, CGWindowListOption};
 use objc2_foundation::{ns_string, NSArray, NSDictionary, NSNumber, NSString};
-use openpager_core::focus::{Focus, Os};
+use knoend_core::focus::{Focus, Os};
 
 pub struct Watcher;
 

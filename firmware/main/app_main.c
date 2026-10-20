@@ -1,4 +1,4 @@
-// OpenPager firmware: start-up only. The grid lives in ui.c, the protocol in protocol.c.
+// KnoEnd firmware: start-up only. The grid lives in ui.c, the protocol in protocol.c.
 //
 // Every tap prints one console line so a bench test can count presses on the board, the screen
 // and the computer:
@@ -15,7 +15,7 @@
 #include "protocol.h"
 #include "ui.h"
 
-#define DEVICE_NAME "OpenPager"
+#define DEVICE_NAME "KnoEnd"
 
 void app_main(void)
 {
@@ -39,7 +39,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(ble_keyboard_start(DEVICE_NAME));
 
-    printf("READY openpager %s board=%s\n", esp_app_get_description()->version, board_info()->id);
+    printf("READY knoend %s board=%s\n", esp_app_get_description()->version, board_info()->id);
     fflush(stdout);
     ESP_ERROR_CHECK(protocol_start());
 

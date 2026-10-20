@@ -104,7 +104,7 @@ impl Part {
 }
 
 impl Manifest {
-    /// Ranks the boards this hardware could be. An exact identity from running OpenPager firmware
+    /// Ranks the boards this hardware could be. An exact identity from running KnoEnd firmware
     /// beats everything; otherwise chip, flash size and USB bridge decide, and the person confirms.
     pub fn candidates(&self, port: &Port, chip: Option<&Chip>, running_profile: Option<&str>) -> Vec<Candidate> {
         let mut out: Vec<Candidate> = Vec::new();
@@ -114,7 +114,7 @@ impl Manifest {
             let mut reasons = Vec::new();
             if running_profile == Some(id.as_str()) {
                 score += 100;
-                reasons.push("OpenPager firmware on it says so".to_string());
+                reasons.push("KnoEnd firmware on it says so".to_string());
             }
             if let (Some(chip), Some(image)) = (chip, image) {
                 if chip.chip.replace('-', "").eq_ignore_ascii_case(&image.chip) {

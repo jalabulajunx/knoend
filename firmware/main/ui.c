@@ -121,7 +121,7 @@ static void update_status_locked(void)
                                                           : COLOR_BG;
     } else {
         const char *link = ble_keyboard_connected() ? "Bluetooth connected"
-                                                    : "Pair \"OpenPager\" over Bluetooth";
+                                                    : "Pair \"KnoEnd\" over Bluetooth";
         const char *unreviewed = layout.reviewed ? "" : "Unreviewed - ";
         if (last_key == 0) {
             lv_label_set_text_fmt(status_label, "%s%s  -  %s", unreviewed, layout.name, link);

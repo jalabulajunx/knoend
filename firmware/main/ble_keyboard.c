@@ -121,7 +121,7 @@ esp_err_t ble_keyboard_start(const char *name)
         .vendor_id = 0x16C0,  // as in the ESP-IDF example
         .product_id = 0x05DF,
         .version = 0x0100,
-        .manufacturer_name = "OpenPager",
+        .manufacturer_name = "KnoEnd",
         .serial_number = "0001",
         .report_maps = report_maps,
         .report_maps_len = 1,

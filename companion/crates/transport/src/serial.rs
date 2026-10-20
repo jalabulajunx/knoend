@@ -4,20 +4,22 @@
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
-use openpager_core::protocol::Packet;
+use knoend_core::protocol::{current_name, old_name, Packet};
 use serde_json::Value;
 
 pub struct SerialLink {
     port: Box<dyn serialport::SerialPort>,
     buffer: Vec<u8>,
     next_id: u32,
+    /// The board runs firmware from before the rename: send `openpager.*` names.
+    pub old_names: bool,
 }
 
 impl SerialLink {
     pub fn open(path: &str) -> Result<SerialLink, String> {
         let port = serialport::new(path, 115_200).timeout(Duration::from_millis(100)).open()
             .map_err(|e| format!("cannot open {path}: {e}"))?;
-        Ok(SerialLink { port, buffer: Vec::new(), next_id: 0 })
+        Ok(SerialLink { port, buffer: Vec::new(), next_id: 0, old_names: false })
     }
 
     /// Next complete line within `timeout`, or None.
@@ -49,7 +51,8 @@ impl SerialLink {
     pub fn request(&mut self, kind: &str, body: Value, reply_type: &str, timeout: Duration) -> Result<Packet, String> {
         let id = self.next_id;
         self.next_id += 1;
-        let packet = Packet { id, re: None, kind: kind.to_string(), body };
+        let kind = if self.old_names { old_name(kind) } else { kind.to_string() };
+        let packet = Packet { id, re: None, kind, body };
         let mut text = serde_json::to_string(&packet).expect("serialisable");
         text.push('\n');
         self.port.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
@@ -60,8 +63,9 @@ impl SerialLink {
             if !line.starts_with('{') {
                 continue;
             }
-            if let Ok(reply) = serde_json::from_str::<Packet>(&line) {
-                if reply.re == Some(id) && (reply.kind == reply_type || reply.kind == "openpager.error") {
+            if let Ok(mut reply) = serde_json::from_str::<Packet>(&line) {
+                reply.kind = current_name(&reply.kind);
+                if reply.re == Some(id) && (reply.kind == reply_type || reply.kind == "knoend.error") {
                     return Ok(reply);
                 }
             }

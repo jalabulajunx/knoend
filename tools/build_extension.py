@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the OpenPager browser extension for Chrome (and other Chromium browsers) and Firefox.
+"""Build the KnoEnd browser extension for Chrome (and other Chromium browsers) and Firefox.
 
 extension/manifest.json is shared; extension/chrome.json and extension/firefox.json add what
 differs (background page, Chrome's public key that fixes the extension id, Firefox's add-on id).
@@ -25,7 +25,7 @@ def build(browser: str) -> Path:
         shutil.rmtree(target)
     shutil.copytree(SRC, target)
     (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    archive = OUT / f"openpager-{browser}-{manifest['version']}.zip"
+    archive = OUT / f"knoend-{browser}-{manifest['version']}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         for path in sorted(target.rglob("*")):
             if path.is_file():

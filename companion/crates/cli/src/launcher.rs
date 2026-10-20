@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use openpager_core::focus::Focus;
+use knoend_core::focus::Focus;
 use serde::{Deserialize, Serialize};
 
 /// Something that can be opened from the launcher.
@@ -75,7 +75,7 @@ fn now() -> u64 {
 
 impl Usage {
     fn path() -> PathBuf {
-        openpager_transport::pairing::config_dir().join("usage.json")
+        knoend_transport::pairing::config_dir().join("usage.json")
     }
 
     pub fn load() -> Usage {
@@ -144,8 +144,8 @@ impl AppInfo {
 pub fn installed_apps() -> Vec<AppInfo> {
     #[cfg(target_os = "linux")]
     {
-        // Same order of preference as openpager_desktop::apps::for_window: window class first.
-        let mut apps: Vec<AppInfo> = openpager_desktop::apps::installed().into_iter()
+        // Same order of preference as knoend_desktop::apps::for_window: window class first.
+        let mut apps: Vec<AppInfo> = knoend_desktop::apps::installed().into_iter()
             .map(|a| AppInfo { id: a.id, name: a.name, icon: a.icon, wm_class: a.wm_class }).collect();
         apps.sort_by_key(|a| a.wm_class.is_empty());
         apps
@@ -163,12 +163,12 @@ pub fn icon_pixels(target: &Target, name: &str, apps: &[AppInfo], favicons: &Has
         Target::App { id } => {
             let _ = name;
             let app = apps.iter().find(|a| &a.id == id)?;
-            openpager_desktop::picture::render(&openpager_desktop::apps::icon_file(&app.icon)?, 32)
+            knoend_desktop::picture::render(&knoend_desktop::apps::icon_file(&app.icon)?, 32)
         }
         #[cfg(target_os = "macos")]
         Target::App { id } => {
             let _ = apps;
-            openpager_desktop::mac_apps::icon(id, name, 32)
+            knoend_desktop::mac_apps::icon(id, name, 32)
         }
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         Target::App { .. } => {
@@ -191,7 +191,7 @@ pub fn board_pixels(rgba: &[u8]) -> Vec<u8> {
 pub fn favicon_dir() -> PathBuf {
     std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from)
         .unwrap_or_else(|| std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".cache"))
-        .join("openpager/favicons")
+        .join("knoend/favicons")
 }
 
 #[cfg(test)]

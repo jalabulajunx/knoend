@@ -1,4 +1,4 @@
-{ "id": 12, "type": "openpager.approve.request", "body": {
-    "request": "c1f3", "agent": "claude-code", "session": "openpager",
+{ "id": 12, "type": "knoend.approve.request", "body": {
+    "request": "c1f3", "agent": "claude-code", "session": "knoend",
     "summary": "Run a shell command", "command": "rm -rf build/", "destructive": true,
     "timeout": 120 } }

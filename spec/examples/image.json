@@ -1,1 +1,1 @@
-{ "id": 30, "type": "openpager.image", "body": { "name": "app:firefox", "w": 32, "h": 32, "offset": 0, "total": 3072, "data": "+AD/" } }
+{ "id": 30, "type": "knoend.image", "body": { "name": "app:firefox", "w": 32, "h": 32, "offset": 0, "total": 3072, "data": "+AD/" } }

@@ -1,1 +1,1 @@
-{ "id": 9, "type": "openpager.status", "body": { "text": "Build passed", "level": "info", "ttl": 30 } }
+{ "id": 9, "type": "knoend.status", "body": { "text": "Build passed", "level": "info", "ttl": 30 } }

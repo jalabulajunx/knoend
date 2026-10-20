@@ -1,5 +1,5 @@
 # Antigravity IDE (the VS Code-based editor, 1.x; window class antigravity-ide). Keys drafted by the
-# OpenPager configure agent (openai/gpt-6-sol), standard for VS Code-based editors. Not yet tested
+# KnoEnd configure agent (openai/gpt-6-sol), standard for VS Code-based editors. Not yet tested
 # in the IDE: the draft was made while the Antigravity desktop app was in front.
 [[key]]
 icon = "save"

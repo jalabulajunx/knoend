@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/jalabulajunx/openpager/spec/schemas/board.schema.json",
-  "title": "OpenPager board definition (v0, draft)",
+  "$id": "https://github.com/jalabulajunx/knoend/spec/schemas/board.schema.json",
+  "title": "KnoEnd board definition (v0, draft)",
   "description": "What one universal ESP32-S3 image needs to drive a board: display, touch, expander, backlight, serial line. Stored as JSON in the 'board' flash partition. Pins are GPIO numbers; -1 = not connected. See spec/boards.md.",
   "type": "object",
   "required": [

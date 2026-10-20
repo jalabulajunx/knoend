@@ -1,4 +1,4 @@
-//! The browser link (`spec/browser.md`): the extension talks to `openpager` over native
+//! The browser link (`spec/browser.md`): the extension talks to `knoend` over native
 //! messaging (the browser starts this binary as its "host"), and the host relays to the running
 //! service over a Unix socket only this user can open. The service learns the active site and
 //! asks the extension to act on the page.
@@ -10,26 +10,54 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use openpager_core::focus::WebPage;
+use knoend_core::focus::WebPage;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
 /// The native messaging host's name, as the extension and the host manifests use it.
-pub const HOST_NAME: &str = "io.github.jalabulajunx.openpager";
-/// The extension's id in Chrome (fixed by the public key in its manifest) and in Firefox.
+pub const HOST_NAME: &str = "io.github.jalabulajunx.knoend";
+/// The host's name before the rename: still registered, so an extension built before it connects.
+pub const OLD_HOST_NAME: &str = "io.github.jalabulajunx.openpager";
+/// The extension's id in Chrome (fixed by the public key in its manifest, unchanged by the
+/// rename) and in Firefox (with the id from before the rename, still allowed).
 pub const CHROME_EXTENSION_ID: &str = "echibclfkpicikodohehemgjefbpakpj";
-pub const FIREFOX_EXTENSION_ID: &str = "openpager@jalabulajunx.github.io";
+pub const FIREFOX_EXTENSION_ID: &str = "knoend@jalabulajunx.github.io";
+pub const OLD_FIREFOX_EXTENSION_ID: &str = "openpager@jalabulajunx.github.io";
 
 /// Where the service listens for hosts.
 pub fn socket_path() -> PathBuf {
+    socket_in("knoend")
+}
+
+/// Where the service listened before the rename. It listens there too, so hooks and browser hosts
+/// registered before the rename (running the old program) still reach it.
+pub fn old_socket_path() -> PathBuf {
+    socket_in("openpager")
+}
+
+fn socket_in(folder: &str) -> PathBuf {
     if cfg!(target_os = "macos") {
         let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
-        return home.join("Library/Application Support/openpager/browser.sock");
+        return home.join("Library/Application Support").join(folder).join("browser.sock");
     }
     match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(dir) => PathBuf::from(dir).join("openpager/browser.sock"),
-        None => openpager_transport::pairing::config_dir().join("browser.sock"),
+        Some(dir) => PathBuf::from(dir).join(folder).join("browser.sock"),
+        None => knoend_transport::pairing::config_dir().join(if folder == "knoend" { "browser.sock" } else { "browser-old.sock" }),
     }
+}
+
+/// Binds a Unix socket only this user can open (its folder 0700, the socket 0600).
+#[cfg(unix)]
+pub fn bind_private(path: &std::path::Path) -> std::io::Result<tokio::net::UnixListener> {
+    use std::os::unix::fs::PermissionsExt;
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    }
+    let _ = std::fs::remove_file(path);
+    let listener = tokio::net::UnixListener::bind(path)?;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    Ok(listener)
 }
 
 /// Whether the browser started this binary as its native messaging host: Chrome passes the
@@ -144,25 +172,21 @@ pub enum BrowserEvent {
 /// Listens for hosts; tab changes go to `tabs`.
 #[cfg(unix)]
 pub async fn serve(browser: Arc<Browser>, tabs: mpsc::Sender<BrowserEvent>) {
-    use std::os::unix::fs::PermissionsExt;
-    let path = socket_path();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
-    }
-    let _ = std::fs::remove_file(&path);
-    let listener = match tokio::net::UnixListener::bind(&path) {
+    let listener = match bind_private(&socket_path()) {
         Ok(l) => l,
         Err(e) => {
-            println!("Browser link off: {}: {e}", path.display());
+            println!("Browser link off: {}: {e}", socket_path().display());
             return;
         }
     };
-    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    let mut number = 0u64;
+    let old = bind_private(&old_socket_path()).ok();
     loop {
-        let Ok((stream, _)) = listener.accept().await else { continue };
-        number += 1;
+        let stream = match &old {
+            Some(old) => tokio::select! { s = listener.accept() => s, s = old.accept() => s },
+            None => listener.accept().await,
+        };
+        let Ok((stream, _)) = stream else { continue };
+        let number = browser.next.fetch_add(1, Ordering::Relaxed);
         tokio::spawn(connection(number, stream, browser.clone(), tabs.clone()));
     }
 }
@@ -371,21 +395,24 @@ pub fn install() -> Result<Vec<String>, String> {
     let exe = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| e.to_string())?;
     let mut done = Vec::new();
     for (name, dir, firefox) in host_dirs() {
-        let mut manifest = json!({
-            "name": HOST_NAME,
-            "description": "OpenPager: lets the board follow and act on the active website",
-            "path": exe,
-            "type": "stdio",
-        });
-        if firefox {
-            manifest["allowed_extensions"] = json!([FIREFOX_EXTENSION_ID]);
-        } else {
-            manifest["allowed_origins"] = json!([format!("chrome-extension://{CHROME_EXTENSION_ID}/")]);
+        // Under the current name and the one from before the rename, both running this program.
+        for host in [HOST_NAME, OLD_HOST_NAME] {
+            let mut manifest = json!({
+                "name": host,
+                "description": "KnoEnd: lets the board follow and act on the active website",
+                "path": exe,
+                "type": "stdio",
+            });
+            if firefox {
+                manifest["allowed_extensions"] = json!([FIREFOX_EXTENSION_ID, OLD_FIREFOX_EXTENSION_ID]);
+            } else {
+                manifest["allowed_origins"] = json!([format!("chrome-extension://{CHROME_EXTENSION_ID}/")]);
+            }
+            std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            let path = dir.join(format!("{host}.json"));
+            std::fs::write(&path, serde_json::to_string_pretty(&manifest).unwrap() + "\n").map_err(|e| format!("{}: {e}", path.display()))?;
+            done.push(format!("{name}: {}", path.display()));
         }
-        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        let path = dir.join(format!("{HOST_NAME}.json"));
-        std::fs::write(&path, serde_json::to_string_pretty(&manifest).unwrap() + "\n").map_err(|e| format!("{}: {e}", path.display()))?;
-        done.push(format!("{name}: {}", path.display()));
     }
     if done.is_empty() {
         return Err("no Chrome, Chromium, Edge, Brave or Firefox settings folder found".into());
@@ -395,10 +422,9 @@ pub fn install() -> Result<Vec<String>, String> {
 
 /// Removes the host manifests `install` wrote.
 pub fn uninstall() -> Vec<String> {
-    host_dirs().into_iter().filter_map(|(name, dir, _)| {
-        let path = dir.join(format!("{HOST_NAME}.json"));
-        std::fs::remove_file(&path).ok().map(|_| format!("{name}: removed {}", path.display()))
-    }).collect()
+    host_dirs().into_iter().flat_map(|(name, dir, _)| [HOST_NAME, OLD_HOST_NAME].map(|host| (name, dir.join(format!("{host}.json")))))
+        .filter_map(|(name, path)| std::fs::remove_file(&path).ok().map(|_| format!("{name}: removed {}", path.display())))
+        .collect()
 }
 
 /// Whether a focused app is a web browser the extension can run in.
@@ -446,10 +472,10 @@ mod tests {
     #[test]
     fn browser_arguments_are_recognised() {
         let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(started_by_browser(&args(&["openpager", "chrome-extension://echibclfkpicikodohehemgjefbpakpj/"])));
-        assert!(started_by_browser(&args(&["openpager", "/home/u/.mozilla/native-messaging-hosts/x.json", FIREFOX_EXTENSION_ID])));
-        assert!(!started_by_browser(&args(&["openpager", "serve"])));
-        assert!(!started_by_browser(&args(&["openpager", "/tmp/x.json", "other@example.com"])));
+        assert!(started_by_browser(&args(&["knoend", "chrome-extension://echibclfkpicikodohehemgjefbpakpj/"])));
+        assert!(started_by_browser(&args(&["knoend", "/home/u/.mozilla/native-messaging-hosts/x.json", FIREFOX_EXTENSION_ID])));
+        assert!(!started_by_browser(&args(&["knoend", "serve"])));
+        assert!(!started_by_browser(&args(&["knoend", "/tmp/x.json", "other@example.com"])));
     }
 
     #[test]

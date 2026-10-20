@@ -1,4 +1,4 @@
-{ "id": 8, "type": "openpager.layout", "body": {
+{ "id": 8, "type": "knoend.layout", "body": {
     "layout": "community.amazon", "name": "Amazon", "source": "community", "reviewed": true,
     "grid": { "cols": 3, "rows": 3 },
     "keys": [

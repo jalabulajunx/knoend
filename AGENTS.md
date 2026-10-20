@@ -1,6 +1,6 @@
 # Instructions for coding agents
 
-Several people work on OpenPager, each with their own coding agent. This file and the running log
+Several people work on KnoEnd, each with their own coding agent. This file and the running log
 are how the agents share context. Read both before starting work.
 
 Claude Code reads `CLAUDE.md` rather than this file: keep a local, untracked `CLAUDE.md` whose

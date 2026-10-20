@@ -31,24 +31,24 @@
       "from": "board",
       "message": {
         "ctr": 0,
-        "mac": "160d216429cd1522b620751fb8eed44962947a41559e48eb9ade2772edab2321",
-        "packet": "{\"id\":0,\"type\":\"openpager.identity\",\"body\":{\"deviceId\":\"a0b1c2d3e4f5\",\"deviceName\":\"OpenPager\",\"deviceType\":\"board\",\"protocolVersion\":0,\"board\":{\"profile\":\"onx2432g028\",\"width\":320,\"height\":240,\"grid\":{\"cols\":3,\"rows\":3}},\"incoming\":[\"openpager.status\"],\"outgoing\":[\"openpager.key\"]}}"
+        "mac": "9d1fa94d4de452ba0b48e9f83d65efbe7fab6307df63d5a60bfc2eda0494b2e7",
+        "packet": "{\"id\":0,\"type\":\"knoend.identity\",\"body\":{\"deviceId\":\"a0b1c2d3e4f5\",\"deviceName\":\"KnoEnd\",\"deviceType\":\"board\",\"protocolVersion\":0,\"board\":{\"profile\":\"onx2432g028\",\"width\":320,\"height\":240,\"grid\":{\"cols\":3,\"rows\":3}},\"incoming\":[\"knoend.status\"],\"outgoing\":[\"knoend.key\"]}}"
       }
     },
     {
       "from": "companion",
       "message": {
         "ctr": 0,
-        "mac": "6d9b0369adb91a91ef7aa85c2b2d6c105e8d7c401ec2469251f0a163ad4fe18e",
-        "packet": "{\"id\":0,\"type\":\"openpager.status\",\"body\":{\"text\":\"Claude is waiting\",\"level\":\"attention\"}}"
+        "mac": "a147f11af587d4b80dd0b3e50441bd1b4bf524d923ec781daccfd3257e0c19b1",
+        "packet": "{\"id\":0,\"type\":\"knoend.status\",\"body\":{\"text\":\"Claude is waiting\",\"level\":\"attention\"}}"
       }
     },
     {
       "from": "board",
       "message": {
         "ctr": 1,
-        "mac": "37d1e3653d59d680b1fba3f212689a95856f030ee713d9bff925b95dd6f20ad6",
-        "packet": "{\"id\":1,\"type\":\"openpager.key\",\"body\":{\"key\":5,\"layout\":\"builtin.vscode\",\"seq\":1}}"
+        "mac": "57cf2108b3839a08d4033065e500ad533399335f620fecfd86b8cebcd1a4b24c",
+        "packet": "{\"id\":1,\"type\":\"knoend.key\",\"body\":{\"key\":5,\"layout\":\"builtin.vscode\",\"seq\":1}}"
       }
     }
   ]

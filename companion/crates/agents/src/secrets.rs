@@ -1,4 +1,4 @@
-//! API keys entered in the web app, kept in `$XDG_CONFIG_HOME/openpager/secrets.json` (mode 600).
+//! API keys entered in the web app, kept in `$XDG_CONFIG_HOME/knoend/secrets.json` (mode 600).
 //! An environment variable with the same name always wins. Keys are never logged or sent anywhere
 //! but to their own provider.
 
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 fn path() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
-        .join("openpager").join("secrets.json")
+        .join("knoend").join("secrets.json")
 }
 
 fn load() -> BTreeMap<String, String> {

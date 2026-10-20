@@ -1,12 +1,12 @@
-// OpenPager browser extension: tells openpager which site is active and carries out board keys on
-// the page (spec/browser.md). It talks only to the openpager native messaging host.
+// KnoEnd browser extension: tells knoend which site is active and carries out board keys on
+// the page (spec/browser.md). It talks only to the knoend native messaging host.
 //
 // Privacy: at install it can see which site is active, nothing on the page. Board buttons are
 // turned on per site (popup), which grants that one site; only then does it act on or describe
 // the page.
 
 const api = globalThis.browser ?? globalThis.chrome;
-const HOST = "io.github.jalabulajunx.openpager";
+const HOST = "io.github.jalabulajunx.knoend";
 const BROWSER = typeof globalThis.browser !== "undefined" && api.runtime.getURL("").startsWith("moz-") ? "firefox" : "chrome";
 
 let port = null;
@@ -29,7 +29,7 @@ function connect() {
   port.onMessage.addListener(onMessage);
   port.onDisconnect.addListener((p) => {
     const error = (p && p.error) || api.runtime.lastError;
-    hostError = error ? error.message : "openpager is not reachable";
+    hostError = error ? error.message : "knoend is not reachable";
     port = null;
     serviceRunning = false;
     retry = setTimeout(connect, 5000);
@@ -63,7 +63,7 @@ async function granted(url) {
   return isWeb(url) && api.permissions.contains({ origins: [sitePattern(url)] });
 }
 
-// ---- telling openpager which site is active ----
+// ---- telling knoend which site is active ----
 
 /** Tabs whose page is full screen (reported by watch.js on allowed sites). */
 const fullscreenTabs = new Set();
@@ -72,10 +72,10 @@ const fullscreenTabs = new Set();
 async function registerWatcher() {
   const { origins = [] } = await api.permissions.getAll();
   const matches = origins.filter((o) => /^https?:\/\//.test(o));
-  try { await api.scripting.unregisterContentScripts({ ids: ["openpager-watch"] }); } catch { /* none yet */ }
+  try { await api.scripting.unregisterContentScripts({ ids: ["knoend-watch", "openpager-watch"] }); } catch { /* none yet */ }
   if (!matches.length) return;
   try {
-    await api.scripting.registerContentScripts([{ id: "openpager-watch", js: ["watch.js"], matches, runAt: "document_idle" }]);
+    await api.scripting.registerContentScripts([{ id: "knoend-watch", js: ["watch.js"], matches, runAt: "document_idle" }]);
   } catch (e) { hostError = `watcher: ${e.message || e}`; }
 }
 registerWatcher();

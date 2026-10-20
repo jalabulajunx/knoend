@@ -1,4 +1,4 @@
-# Which ESP32-S3 touch boards can run OpenPager
+# Which ESP32-S3 touch boards can run KnoEnd
 
 As of 2026-10-18. Popular ESP32-S3 touchscreen boards, checked against what the universal image
 supports today, and what each would need. Every fact below comes from the page linked beside it;

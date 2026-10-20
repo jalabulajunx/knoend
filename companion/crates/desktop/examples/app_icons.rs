@@ -1,8 +1,8 @@
 //! Finds apps for some window classes and renders their icons at board size into one PNG:
-//! `cargo run -p openpager-desktop --example app_icons -- out.png firefox code Claude ...`
+//! `cargo run -p knoend-desktop --example app_icons -- out.png firefox code Claude ...`
 #[cfg(target_os = "linux")]
 fn main() {
-    use openpager_desktop::apps;
+    use knoend_desktop::apps;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let installed = apps::installed();
     println!("{} apps installed", installed.len());
@@ -11,7 +11,7 @@ fn main() {
         let Some(app) = apps::for_window(&installed, class, class) else { println!("{class}: no app"); continue };
         let file = apps::icon_file(&app.icon);
         println!("{class}: {} ({}) icon {:?} -> {:?}", app.name, app.id, app.icon, file);
-        if let Some(pixels) = file.as_deref().and_then(|f| openpager_desktop::picture::render(f, 32)) {
+        if let Some(pixels) = file.as_deref().and_then(|f| knoend_desktop::picture::render(f, 32)) {
             let icon = image::RgbaImage::from_raw(32, 32, pixels).unwrap();
             image::imageops::overlay(&mut sheet, &icon, 4 + 40 * i as i64, 4);
         }

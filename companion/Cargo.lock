@@ -1745,6 +1745,124 @@ dependencies = [
 ]
 
 [[package]]
+name = "knoend"
+version = "0.1.1"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "clap",
+ "futures-util",
+ "knoend-agents",
+ "knoend-core",
+ "knoend-desktop",
+ "knoend-flash",
+ "knoend-focus",
+ "knoend-input",
+ "knoend-media",
+ "knoend-transport",
+ "reqwest",
+ "rpassword",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "toml",
+]
+
+[[package]]
+name = "knoend-agents"
+version = "0.1.1"
+dependencies = [
+ "knoend-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+]
+
+[[package]]
+name = "knoend-core"
+version = "0.1.1"
+dependencies = [
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "knoend-desktop"
+version = "0.1.1"
+dependencies = [
+ "image",
+ "resvg",
+ "serde",
+ "zbus",
+]
+
+[[package]]
+name = "knoend-flash"
+version = "0.1.1"
+dependencies = [
+ "espflash",
+ "hex",
+ "serde",
+ "serde_json",
+ "serialport",
+ "sha2",
+]
+
+[[package]]
+name = "knoend-focus"
+version = "0.1.1"
+dependencies = [
+ "knoend-core",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
+ "x11rb",
+]
+
+[[package]]
+name = "knoend-input"
+version = "0.1.1"
+dependencies = [
+ "core-graphics",
+ "x11rb",
+]
+
+[[package]]
+name = "knoend-media"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "zbus",
+]
+
+[[package]]
+name = "knoend-transport"
+version = "0.1.1"
+dependencies = [
+ "futures-util",
+ "getrandom 0.4.3",
+ "hex",
+ "hmac",
+ "knoend-core",
+ "mdns-sd",
+ "serde",
+ "serde_json",
+ "serialport",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
 name = "kurbo"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2261,124 +2379,6 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "openpager"
-version = "0.1.1"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "clap",
- "futures-util",
- "openpager-agents",
- "openpager-core",
- "openpager-desktop",
- "openpager-flash",
- "openpager-focus",
- "openpager-input",
- "openpager-media",
- "openpager-transport",
- "reqwest",
- "rpassword",
- "serde",
- "serde_json",
- "tokio",
- "tokio-stream",
- "toml",
-]
-
-[[package]]
-name = "openpager-agents"
-version = "0.1.1"
-dependencies = [
- "openpager-core",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "toml",
-]
-
-[[package]]
-name = "openpager-core"
-version = "0.1.1"
-dependencies = [
- "jsonschema",
- "serde",
- "serde_json",
- "thiserror",
- "toml",
-]
-
-[[package]]
-name = "openpager-desktop"
-version = "0.1.1"
-dependencies = [
- "image",
- "resvg",
- "serde",
- "zbus",
-]
-
-[[package]]
-name = "openpager-flash"
-version = "0.1.1"
-dependencies = [
- "espflash",
- "hex",
- "serde",
- "serde_json",
- "serialport",
- "sha2",
-]
-
-[[package]]
-name = "openpager-focus"
-version = "0.1.1"
-dependencies = [
- "objc2",
- "objc2-app-kit",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-foundation",
- "openpager-core",
- "x11rb",
-]
-
-[[package]]
-name = "openpager-input"
-version = "0.1.1"
-dependencies = [
- "core-graphics",
- "x11rb",
-]
-
-[[package]]
-name = "openpager-media"
-version = "0.1.1"
-dependencies = [
- "serde",
- "zbus",
-]
-
-[[package]]
-name = "openpager-transport"
-version = "0.1.1"
-dependencies = [
- "futures-util",
- "getrandom 0.4.3",
- "hex",
- "hmac",
- "mdns-sd",
- "openpager-core",
- "serde",
- "serde_json",
- "serialport",
- "sha2",
- "thiserror",
- "tokio",
- "tokio-tungstenite",
-]
 
 [[package]]
 name = "openssl-probe"

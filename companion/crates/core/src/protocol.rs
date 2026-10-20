@@ -4,6 +4,28 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Message names travel as `knoend.<name>`. Boards and companions from before the rename (v0.1.x,
+/// "OpenPager") use `openpager.<name>`; both are accepted (spec/protocol.md section 2).
+pub const PREFIX: &str = "knoend.";
+/// The prefix from before the rename.
+pub const OLD_PREFIX: &str = "openpager.";
+
+/// A received message name in the current form: `openpager.key` -> `knoend.key`.
+pub fn current_name(kind: &str) -> String {
+    match kind.strip_prefix(OLD_PREFIX) {
+        Some(name) => format!("{PREFIX}{name}"),
+        None => kind.to_string(),
+    }
+}
+
+/// A message name for a board from before the rename: `knoend.layout` -> `openpager.layout`.
+pub fn old_name(kind: &str) -> String {
+    match kind.strip_prefix(PREFIX) {
+        Some(name) => format!("{OLD_PREFIX}{name}"),
+        None => kind.to_string(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Packet {
     pub id: u32,
@@ -113,4 +135,17 @@ pub struct StatusBody {
     pub level: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttl: Option<u32>,
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+
+    #[test]
+    fn old_and_new_message_names() {
+        assert_eq!(current_name("openpager.key"), "knoend.key");
+        assert_eq!(current_name("knoend.key"), "knoend.key");
+        assert_eq!(old_name("knoend.wifi.scan"), "openpager.wifi.scan");
+        assert_eq!(old_name("other.thing"), "other.thing");
+    }
 }

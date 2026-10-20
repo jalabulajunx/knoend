@@ -27,12 +27,12 @@ static const char *TAG = "protocol";
 
 // Only what this firmware actually handles is advertised.
 static const char *const incoming_types[] = {
-    "openpager.identity", "openpager.layout", "openpager.status", "openpager.pair", "openpager.wifi",
-    "openpager.wifi.scan", "openpager.ping", "openpager.image",
+    "identity", "layout", "status", "pair", "wifi",
+    "wifi.scan", "ping", "image",
 };
 static const char *const outgoing_types[] = {
-    "openpager.identity", "openpager.key", "openpager.page", "openpager.layout.ack", "openpager.pair.ack",
-    "openpager.wifi.ack", "openpager.wifi.networks", "openpager.ping", "openpager.error", "openpager.image.ack",
+    "identity", "key", "page", "layout.ack", "pair.ack",
+    "wifi.ack", "wifi.networks", "ping", "error", "image.ack",
 };
 static const char *const transports[] = { "ble-hid", "serial", "wifi" };
 
@@ -51,7 +51,18 @@ static char device_id[13];
 
 // Takes ownership of `body`. `re` < 0 means "not a reply". Replies go back over the transport
 // the request came on; unsolicited packets (taps, the boot identity) go to every open link.
-static void send_packet(const char *type, cJSON *body, int64_t re, transport_t to)
+// Message names travel as "<prefix>.<name>". The prefix is "knoend"; companions from before the
+// rename (v0.1.x, "OpenPager") use "openpager". Each link answers in the prefix its companion last
+// used, so old and new companions both work with this board (spec/protocol.md section 2).
+static const char *prefix_serial = "knoend";
+static const char *prefix_wifi = "knoend";
+
+void protocol_wifi_session_started(void)
+{
+    prefix_wifi = "knoend";
+}
+
+static void send_packet(const char *name, cJSON *body, int64_t re, transport_t to)
 {
     xSemaphoreTake(send_lock, portMAX_DELAY);
     cJSON *packet = cJSON_CreateObject();
@@ -59,11 +70,14 @@ static void send_packet(const char *type, cJSON *body, int64_t re, transport_t t
     if (re >= 0) {
         cJSON_AddNumberToObject(packet, "re", (double)re);
     }
-    cJSON_AddStringToObject(packet, "type", type);
+    cJSON *type = cJSON_AddStringToObject(packet, "type", "");
     cJSON_AddItemToObject(packet, "body", body);
+    char full[48];
 
     if (to & TRANSPORT_SERIAL) {
         cJSON_SetNumberValue(id, next_id_serial++);
+        snprintf(full, sizeof(full), "%s.%s", prefix_serial, name);
+        cJSON_SetValuestring(type, full);
         char *text = cJSON_PrintUnformatted(packet);
         if (text != NULL) {
             link_serial_send(text);
@@ -72,6 +86,8 @@ static void send_packet(const char *type, cJSON *body, int64_t re, transport_t t
     }
     if ((to & TRANSPORT_WIFI) && link_wifi_session_active()) {
         cJSON_SetNumberValue(id, next_id_wifi++);
+        snprintf(full, sizeof(full), "%s.%s", prefix_wifi, name);
+        cJSON_SetValuestring(type, full);
         char *text = cJSON_PrintUnformatted(packet);
         if (text != NULL) {
             link_wifi_send(text);
@@ -87,7 +103,7 @@ static void send_error(int64_t re, const char *code, const char *message, transp
     cJSON *body = cJSON_CreateObject();
     cJSON_AddStringToObject(body, "code", code);
     cJSON_AddStringToObject(body, "message", message);
-    send_packet("openpager.error", body, re, to);
+    send_packet("error", body, re, to);
 }
 
 static cJSON *string_array(const char *const *items, size_t count)
@@ -99,12 +115,25 @@ static cJSON *string_array(const char *const *items, size_t count)
     return array;
 }
 
+// Message names with the prefix of the link they are sent on.
+static cJSON *type_array(const char *const *names, size_t count, transport_t to)
+{
+    const char *prefix = (to & TRANSPORT_WIFI) && !(to & TRANSPORT_SERIAL) ? prefix_wifi : prefix_serial;
+    cJSON *array = cJSON_CreateArray();
+    char full[48];
+    for (size_t i = 0; i < count; i++) {
+        snprintf(full, sizeof(full), "%s.%s", prefix, names[i]);
+        cJSON_AddItemToArray(array, cJSON_CreateString(full));
+    }
+    return array;
+}
+
 static void send_identity(int64_t re, transport_t to)
 {
     const board_info_t *board = board_info();
     cJSON *body = cJSON_CreateObject();
     cJSON_AddStringToObject(body, "deviceId", device_id);
-    cJSON_AddStringToObject(body, "deviceName", "OpenPager");
+    cJSON_AddStringToObject(body, "deviceName", "KnoEnd");
     cJSON_AddStringToObject(body, "deviceType", "board");
     cJSON_AddNumberToObject(body, "protocolVersion", PROTOCOL_VERSION);
     cJSON_AddStringToObject(body, "firmware", esp_app_get_description()->version);
@@ -129,10 +158,10 @@ static void send_identity(int64_t re, transport_t to)
                           string_array(transports, sizeof(transports) / sizeof(transports[0])));
 
     cJSON_AddItemToObject(body, "incoming",
-                          string_array(incoming_types, sizeof(incoming_types) / sizeof(incoming_types[0])));
+                          type_array(incoming_types, sizeof(incoming_types) / sizeof(incoming_types[0]), to));
     cJSON_AddItemToObject(body, "outgoing",
-                          string_array(outgoing_types, sizeof(outgoing_types) / sizeof(outgoing_types[0])));
-    send_packet("openpager.identity", body, re, to);
+                          type_array(outgoing_types, sizeof(outgoing_types) / sizeof(outgoing_types[0]), to));
+    send_packet("identity", body, re, to);
 }
 
 void protocol_send_key(int slot, const char *layout_id, int page, uint32_t seq)
@@ -142,7 +171,7 @@ void protocol_send_key(int slot, const char *layout_id, int page, uint32_t seq)
     cJSON_AddStringToObject(body, "layout", layout_id);
     cJSON_AddNumberToObject(body, "page", page);
     cJSON_AddNumberToObject(body, "seq", seq);
-    send_packet("openpager.key", body, -1, TRANSPORT_ALL);
+    send_packet("key", body, -1, TRANSPORT_ALL);
 }
 
 void protocol_send_keystroke(int slot, const char *layout_id, int page, uint32_t seq, uint8_t modifiers, uint8_t usage)
@@ -155,7 +184,7 @@ void protocol_send_keystroke(int slot, const char *layout_id, int page, uint32_t
     cJSON *hid = cJSON_AddObjectToObject(body, "hid");
     cJSON_AddNumberToObject(hid, "modifiers", modifiers);
     cJSON_AddNumberToObject(hid, "usage", usage);
-    send_packet("openpager.key", body, -1, TRANSPORT_ALL);
+    send_packet("key", body, -1, TRANSPORT_ALL);
 }
 
 void protocol_send_page(const char *layout_id, bool next)
@@ -163,7 +192,7 @@ void protocol_send_page(const char *layout_id, bool next)
     cJSON *body = cJSON_CreateObject();
     cJSON_AddStringToObject(body, "layout", layout_id);
     cJSON_AddStringToObject(body, "to", next ? "next" : "prev");
-    send_packet("openpager.page", body, -1, TRANSPORT_ALL);
+    send_packet("page", body, -1, TRANSPORT_ALL);
 }
 
 // ---- helpers ----
@@ -292,10 +321,10 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
         ui_apply_layout(layout); // all-or-nothing: only a fully valid layout replaces the keys
     }
     free(layout);
-    send_packet("openpager.layout.ack", ack, re, from);
+    send_packet("layout.ack", ack, re, from);
 }
 
-// ---- pictures (openpager.image), sent in slices that fit a packet ----
+// ---- pictures (knoend.image), sent in slices that fit a packet ----
 
 static struct {
     char name[UI_ICON_BYTES];
@@ -312,7 +341,7 @@ static void image_ack(const char *name, const char *error, int re, transport_t t
     if (error != NULL) {
         cJSON_AddStringToObject(ack, "error", error);
     }
-    send_packet("openpager.image.ack", ack, re, transport);
+    send_packet("image.ack", ack, re, transport);
 }
 
 static void handle_image(const cJSON *body, int re, transport_t transport)
@@ -388,6 +417,7 @@ static esp_err_t store_pairing(const char *companion, const uint8_t key[KEY_BYTE
     nvs_handle_t nvs;
     pairings_t pairings = { 0 };
     size_t size = sizeof(pairings);
+    // The storage name is kept from before the rename, so pairings survive a firmware update.
     esp_err_t err = nvs_open("openpager", NVS_READWRITE, &nvs);
     if (err != ESP_OK) {
         return err;
@@ -464,7 +494,7 @@ static void handle_pair(const cJSON *body, int64_t re, transport_t transport)
     } else {
         ESP_LOGI(TAG, "paired with companion %s", companion); // never log the key
     }
-    send_packet("openpager.pair.ack", ack, re, transport);
+    send_packet("pair.ack", ack, re, transport);
 }
 
 static bool lookup_key(const char *companion, uint8_t key[KEY_BYTES])
@@ -473,7 +503,7 @@ static bool lookup_key(const char *companion, uint8_t key[KEY_BYTES])
     pairings_t pairings = { 0 };
     size_t size = sizeof(pairings);
     bool found = false;
-    if (nvs_open("openpager", NVS_READONLY, &nvs) != ESP_OK) {
+    if (nvs_open("openpager", NVS_READONLY, &nvs) != ESP_OK) { // storage name kept from before the rename
         return false;
     }
     if (nvs_get_blob(nvs, "pairings", &pairings, &size) == ESP_OK) {
@@ -506,7 +536,7 @@ static void handle_wifi(const cJSON *body, int64_t re, transport_t transport)
                                                   ? "ssid 1-32 bytes and password up to 64 are required"
                                                   : "could not store or join");
     }
-    send_packet("openpager.wifi.ack", ack, re, transport);
+    send_packet("wifi.ack", ack, re, transport);
 }
 
 static void handle_wifi_scan(int64_t re, transport_t transport)
@@ -531,7 +561,34 @@ static void handle_wifi_scan(int64_t re, transport_t transport)
         cJSON_AddStringToObject(body, "error", "scan failed");
     }
     free(networks);
-    send_packet("openpager.wifi.networks", body, re, transport);
+    send_packet("wifi.networks", body, re, transport);
+}
+
+// "knoend.layout" or "openpager.layout" -> "layout"; NULL for anything else.
+static const char *name_of(const char *type)
+{
+    if (strncmp(type, "knoend.", 7) == 0) {
+        return type + 7;
+    }
+    if (strncmp(type, "openpager.", 10) == 0) {
+        return type + 10;
+    }
+    return NULL;
+}
+
+// Whether `type` is one of ours; remembers which prefix this link's companion uses.
+static bool message_name(const char *type, transport_t transport)
+{
+    if (name_of(type) == NULL) {
+        return false;
+    }
+    const char *prefix = strncmp(type, "knoend.", 7) == 0 ? "knoend" : "openpager";
+    if (transport == TRANSPORT_SERIAL) {
+        prefix_serial = prefix;
+    } else {
+        prefix_wifi = prefix;
+    }
+    return true;
 }
 
 static void handle_line(const char *line, transport_t transport)
@@ -546,23 +603,25 @@ static void handle_line(const char *line, transport_t transport)
         send_error(-1, "bad-packet", "not valid JSON", transport);
     } else if (re < 0 || !cJSON_IsString(type) || !cJSON_IsObject(body)) {
         send_error(re, "bad-packet", "id, type and body are required", transport);
-    } else if (strcmp(type->valuestring, "openpager.identity") == 0) {
+    } else if (!message_name(type->valuestring, transport)) {
+        // Not a KnoEnd (or OpenPager) message: ignored, as the spec requires for unknown types.
+    } else if (strcmp(name_of(type->valuestring), "identity") == 0) {
         const char *name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(body, "deviceName"));
         ESP_LOGI(TAG, "companion says hello: %s", name != NULL ? name : "(no name)");
         send_identity(re, transport);
-    } else if (strcmp(type->valuestring, "openpager.ping") == 0) {
-        send_packet("openpager.ping", cJSON_CreateObject(), re, transport);
-    } else if (strcmp(type->valuestring, "openpager.layout") == 0) {
+    } else if (strcmp(name_of(type->valuestring), "ping") == 0) {
+        send_packet("ping", cJSON_CreateObject(), re, transport);
+    } else if (strcmp(name_of(type->valuestring), "layout") == 0) {
         handle_layout(body, re, transport);
-    } else if (strcmp(type->valuestring, "openpager.status") == 0) {
+    } else if (strcmp(name_of(type->valuestring), "status") == 0) {
         handle_status(body);
-    } else if (strcmp(type->valuestring, "openpager.image") == 0) {
+    } else if (strcmp(name_of(type->valuestring), "image") == 0) {
         handle_image(body, re, transport);
-    } else if (strcmp(type->valuestring, "openpager.pair") == 0) {
+    } else if (strcmp(name_of(type->valuestring), "pair") == 0) {
         handle_pair(body, re, transport);
-    } else if (strcmp(type->valuestring, "openpager.wifi") == 0) {
+    } else if (strcmp(name_of(type->valuestring), "wifi") == 0) {
         handle_wifi(body, re, transport);
-    } else if (strcmp(type->valuestring, "openpager.wifi.scan") == 0) {
+    } else if (strcmp(name_of(type->valuestring), "wifi.scan") == 0) {
         handle_wifi_scan(re, transport);
     }
     // Anything else is ignored, as the spec requires for unknown types.

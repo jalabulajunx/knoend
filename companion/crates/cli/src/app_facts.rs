@@ -3,14 +3,14 @@
 //! tell them apart. Linux: the focused window's program, and for Electron apps the name, version and
 //! description in its package. Only those facts leave the computer, never paths.
 
-use openpager_core::focus::Focus;
+use knoend_core::focus::Focus;
 use serde_json::Value;
 
 /// Facts about the app in `focus`, one per line; empty when nothing could be read.
 pub fn about(focus: &Focus) -> Vec<String> {
     #[cfg(target_os = "linux")]
     {
-        let Some(pid) = openpager_focus::window_pid(&[focus.app.as_str(), focus.instance.as_str()]) else { return Vec::new() };
+        let Some(pid) = knoend_focus::window_pid(&[focus.app.as_str(), focus.instance.as_str()]) else { return Vec::new() };
         let Ok(exe) = std::fs::read_link(format!("/proc/{pid}/exe")) else { return Vec::new() };
         let mut facts = Vec::new();
         if let Some(name) = exe.file_name().and_then(|n| n.to_str()) {
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn vscode_style_and_asar_packages_are_described() {
-        let dir = std::env::temp_dir().join(format!("openpager-facts-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("knoend-facts-{}", std::process::id()));
         let app = dir.join("ide/resources/app");
         std::fs::create_dir_all(&app).unwrap();
         std::fs::write(app.join("product.json"), r#"{"nameLong": "Antigravity IDE", "version": "1.107.0"}"#).unwrap();

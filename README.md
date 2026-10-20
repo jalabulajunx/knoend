@@ -1,8 +1,12 @@
-# OpenPager
+# KnoEnd
 
 An open-source, cross-OS shortcut keypad and pager built on inexpensive ESP32-S3 touch boards.
 
-OpenPager turns a 2.8" ESP32-S3 touchscreen board into a 3×3 keypad whose keys change with the app or
+*KnoEnd* is said "no end" (silent K, as in *know*); written `knoend` for the command and in network
+names, and Kn°End in the logo. It was called OpenPager until October 2026, and
+boards and computers from then still work with it.
+
+KnoEnd turns a 2.8" ESP32-S3 touchscreen board into a 3×3 keypad whose keys change with the app or
 website you are using. It connects to your computer by wire, Bluetooth or home Wi-Fi. Over Wi-Fi it
 becomes a pager: carry it around the house, see status from your computer on the board, and answer a
 prompt (for example, approve a coding agent's command) from another room.
@@ -64,7 +68,7 @@ action = { kind = "open", url = "/gp/your-account/order-history" }
 ### Planned features
 
 - 3×3 (or 2×3) touch grid with a status bar underneath
-- Three connections: USB-C, Bluetooth LE, home Wi-Fi (on-board web server at `openpager.local`)
+- Three connections: USB-C, Bluetooth LE, home Wi-Fi (on-board web server at `knoend-<id>.local`)
 - Per-app and per-website layouts on Linux, macOS and Windows (websites via a Chrome extension)
 - Layout libraries: built-in, community (via pull request), AI-drafted on first use, and user overrides
 - Approve or deny terminal coding agents (Claude Code, Codex and others) from the board through their
@@ -116,11 +120,11 @@ Not built yet: Windows, per-website layouts (Chrome extension), coding-agent app
 
 ## Getting started
 
-[docs/setup.md](docs/setup.md) covers both setting up a board and working on the code. In short: download `openpager` for Linux or macOS from the
-[latest release](https://github.com/jalabulajunx/openpager/releases/latest), plug in the board, and run
+[docs/setup.md](docs/setup.md) covers both setting up a board and working on the code. In short: download `knoend` for Linux or macOS from the
+[latest release](https://github.com/jalabulajunx/knoend/releases/latest), plug in the board, and run
 
 ```bash
-./openpager serve     # opens the web app; firmware comes from the same release
+./knoend serve     # opens the web app; firmware comes from the same release
 ```
 
 Problems:
@@ -134,7 +138,7 @@ firmware/             ESP-IDF project (C): one universal image
   main/               grid UI, keys, protocol, Bluetooth / Wi-Fi / serial links
   components/         board_generic (drivers from the board definition), board_api, esp_hid_gap
   boards/             catalog.json and definitions/*.json, one per board
-companion/            Rust workspace; the `openpager` binary (service + CLI)
+companion/            Rust workspace; the `knoend` binary (service + CLI)
   crates/             core, transport, focus, input, flash, agents, cli
 web/                  web app served by the service (setup wizard, assistant, dashboard)
 recipes/              keys for apps, sites and coding agents (*.toml), compiled in; see recipes/README.md
@@ -144,7 +148,7 @@ tools/                spec validator, firmware release packager, bench tools
 
 ## Prior art and credits
 
-OpenPager is an integration of existing ideas, not a new invention. Projects that got here first:
+KnoEnd is an integration of existing ideas, not a new invention. Projects that got here first:
 
 - [Logitech MX Keypad](https://www.logitech.com/) — app-aware LCD keypad (Windows/macOS)
 - [open-screen-deck](https://github.com/vcazan/open-screen-deck), [FreeTouchDeck](https://hackaday.io/project/175827-freetouchdeck),
@@ -166,7 +170,7 @@ OpenPager is an integration of existing ideas, not a new invention. Projects tha
 
 ## Trademarks
 
-Logitech, MX Keypad, Elgato and Stream Deck are trademarks of their owners. OpenPager is not affiliated
+Logitech, MX Keypad, Elgato and Stream Deck are trademarks of their owners. KnoEnd is not affiliated
 with or endorsed by them; product names are used only to describe compatibility and comparison.
 
 ## License

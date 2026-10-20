@@ -32,7 +32,7 @@
       "message": {
         "ctr": 0,
         "mac": "160d216429cd1522b620751fb8eed44962947a41559e48eb9ade2772edab2321",
-        "packet": "{\"id\":0,\"type\":\"openpager.identity\",\"body\":{\"deviceId\":\"a0b1c2d3e4f5\",\"deviceName\":\"OpenPager\",\"deviceType\":\"board\",\"protocolVersion\":0,\"board\":{\"profile\":\"onx2432g028\",\"width\":320,\"height\":240,\"grid\":{\"cols\":3,\"rows\":3}},\"incoming\":[\"openpager.status\"],\"outgoing\":[\"openpager.key\"]}}"
+        "packet": "{\"id\":0,\"type\":\"knoend.identity\",\"body\":{\"deviceId\":\"a0b1c2d3e4f5\",\"deviceName\":\"KnoEnd\",\"deviceType\":\"board\",\"protocolVersion\":0,\"board\":{\"profile\":\"onx2432g028\",\"width\":320,\"height\":240,\"grid\":{\"cols\":3,\"rows\":3}},\"incoming\":[\"knoend.status\"],\"outgoing\":[\"knoend.key\"]}}"
       }
     },
     {
@@ -40,7 +40,7 @@
       "message": {
         "ctr": 0,
         "mac": "6d9b0369adb91a91ef7aa85c2b2d6c105e8d7c401ec2469251f0a163ad4fe18e",
-        "packet": "{\"id\":0,\"type\":\"openpager.status\",\"body\":{\"text\":\"Claude is waiting\",\"level\":\"attention\"}}"
+        "packet": "{\"id\":0,\"type\":\"knoend.status\",\"body\":{\"text\":\"Claude is waiting\",\"level\":\"attention\"}}"
       }
     },
     {
@@ -48,7 +48,7 @@
       "message": {
         "ctr": 1,
         "mac": "37d1e3653d59d680b1fba3f212689a95856f030ee713d9bff925b95dd6f20ad6",
-        "packet": "{\"id\":1,\"type\":\"openpager.key\",\"body\":{\"key\":5,\"layout\":\"builtin.vscode\",\"seq\":1}}"
+        "packet": "{\"id\":1,\"type\":\"knoend.key\",\"body\":{\"key\":5,\"layout\":\"builtin.vscode\",\"seq\":1}}"
       }
     }
   ]

@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag like v0.2.0 to publish firmware (universal image + board definitions + manifest.json)
-# and the openpager service for Linux and macOS as a GitHub release. The service downloads
+# and the knoend service for Linux and macOS as a GitHub release. The service downloads
 # firmware from releases/latest, so the newest release is what users install.
 
 on:
@@ -54,7 +54,7 @@ jobs:
         working-directory: companion
       - run: |
           mkdir -p out
-          tar -C companion/target/${{ matrix.target }}/release -czf out/openpager-${{ matrix.target }}.tar.gz openpager
+          tar -C companion/target/${{ matrix.target }}/release -czf out/knoend-${{ matrix.target }}.tar.gz knoend
       - uses: actions/upload-artifact@v4
         with:
           name: service-${{ matrix.target }}
@@ -68,8 +68,8 @@ jobs:
         with:
           path: assets
       - run: |
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "OpenPager $GITHUB_REF_NAME" \
-            --notes "Firmware (universal ESP32-S3 image + board definitions) and the openpager service. Install: run \`openpager serve\` and follow the web app." \
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "KnoEnd $GITHUB_REF_NAME" \
+            --notes "Firmware (universal ESP32-S3 image + board definitions) and the knoend service. Install: run \`knoend serve\` and follow the web app." \
             assets/firmware/* assets/service-*/*
         env:
           GH_TOKEN: ${{ github.token }}

@@ -13,7 +13,7 @@
 typedef enum {
     UI_SEND_NONE,  // blank slot
     UI_SEND_HID,   // the board types modifiers + usage over the keyboard link
-    UI_SEND_EVENT, // the board sends openpager.key and the companion acts
+    UI_SEND_EVENT, // the board sends knoend.key and the companion acts
 } ui_send_t;
 
 typedef struct {
@@ -48,7 +48,7 @@ void ui_max_grid(int *cols, int *rows);
 // Replaces the keys. Safe to call from any task.
 void ui_apply_layout(const ui_layout_t *layout);
 
-// Keeps a picture sent by the companion (openpager.image) under `name` ("app:firefox"), for keys
+// Keeps a picture sent by the companion (knoend.image) under `name` ("app:firefox"), for keys
 // whose icon names it. `pixels` is w*h pixels of RGB565 (byte-swapped, as LVGL draws) + alpha, 3
 // bytes each, allocated with heap_caps_malloc; the UI owns it from here on (also on failure).
 // Safe to call from any task.

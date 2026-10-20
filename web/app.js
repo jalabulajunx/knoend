@@ -1,11 +1,11 @@
-// OpenPager web app: talks only to the local service that served it.
+// KnoEnd web app: talks only to the local service that served it.
 // Every API call carries the session token the service put in this page.
 
-const TOKEN = document.querySelector('meta[name="openpager-token"]').content;
+const TOKEN = document.querySelector('meta[name="knoend-token"]').content;
 const $ = (id) => document.getElementById(id);
 
 async function api(path, body) {
-  const options = { headers: { "x-openpager-token": TOKEN } };
+  const options = { headers: { "x-knoend-token": TOKEN } };
   if (body !== undefined) {
     options.method = "POST";
     options.headers["content-type"] = "application/json";
@@ -300,7 +300,7 @@ $("identify").addEventListener("click", async () => {
     const running = result.running;
     $("chip-summary").textContent = [
       chip ? `${chip.chip} ${chip.revision || ""}, ${chip.flash_size} flash, MAC ${chip.mac || "?"}` : `Chip not identified: ${result.chipError}`,
-      running ? `Running OpenPager ${running.firmware} (${running.board.profile}).` : "Not running OpenPager yet.",
+      running ? `Running KnoEnd ${running.firmware} (${running.board.profile}).` : "Not running KnoEnd yet.",
     ].join(" ");
     $("erase").checked = !running;
     renderCandidates(result.candidates);
@@ -379,7 +379,7 @@ function onFlash(p) {
   } else if (p.stage === "finished") {
     $("bar").style.width = "100%";
     stage.className = "note success";
-    stage.textContent = `Installed OpenPager ${p.version}. The board restarted.`;
+    stage.textContent = `Installed KnoEnd ${p.version}. The board restarted.`;
     $("to-pair").disabled = false;
   } else if (p.stage === "failed") {
     stage.className = "note error";
@@ -529,7 +529,7 @@ let aiReady = false;
 
 function setMode(mode) {
   setup.mode = mode;
-  storeSet("openpager.mode", mode);
+  storeSet("knoend.mode", mode);
   document.querySelectorAll('input[name="mode"]').forEach((i) => (i.checked = i.value === mode));
   $("ai-form").hidden = mode !== "ai";
 }
@@ -743,7 +743,7 @@ function watchTyping() {
       if (r.can_type_keys) {
         clearInterval(typingWatch);
         $("advice").hidden = false;
-        $("advice-text").textContent = "Typing is allowed now. Press a key on the board to try it; if nothing is typed, restart openpager once.";
+        $("advice-text").textContent = "Typing is allowed now. Press a key on the board to try it; if nothing is typed, restart knoend once.";
         $("advice-actions").replaceChildren();
       }
     } catch { /* service restarting; try again */ }
@@ -875,5 +875,5 @@ $("ask-form").addEventListener("submit", (e) => {
   }
   loadDrafts().catch(() => {});
   const info = await loadAi().catch(() => ({}));
-  setMode(storeGet("openpager.mode") || "ai"); // guided is the recommended default
+  setMode(storeGet("knoend.mode") || "ai"); // guided is the recommended default
 })();

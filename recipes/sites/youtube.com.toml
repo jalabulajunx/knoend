@@ -1,4 +1,4 @@
-# Built-in library for browsing YouTube. Page keys need the OpenPager extension with board buttons
+# Built-in library for browsing YouTube. Page keys need the KnoEnd extension with board buttons
 # turned on for youtube.com; a video page uses youtube-watch.toml instead.
 [pack]
 id = "builtin.youtube"

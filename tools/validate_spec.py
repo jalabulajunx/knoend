@@ -101,12 +101,17 @@ def risky_without_confirm(keys, describe):
 
 
 def check_packet(text):
+    # Packets from before the rename (spec/protocol.md section 1) are checked as their knoend.* form.
+    data = json.loads(text)
+    if isinstance(data, dict) and isinstance(data.get("type"), str) and data["type"].startswith("openpager."):
+        data["type"] = "knoend." + data["type"][len("openpager."):]
+        text = json.dumps(data, separators=(",", ":"))
     errors = [e.message for e in PACKET.iter_errors(json.loads(text))]
     if len(text.encode()) > MAX_PACKET_BYTES:
         errors.append(f"packet is {len(text.encode())} bytes, limit {MAX_PACKET_BYTES}")
     if not errors:
         packet = json.loads(text)
-        if packet["type"] == "openpager.layout":
+        if packet["type"] == "knoend.layout":
             keys = packet["body"]["keys"]
             used = slots(keys, "key")
             if len(used) != len(set(used)):

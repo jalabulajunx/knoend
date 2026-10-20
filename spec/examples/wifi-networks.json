@@ -1,1 +1,1 @@
-{ "id": 5, "re": 9, "type": "openpager.wifi.networks", "body": { "networks": [ { "ssid": "Home", "rssi": -48, "channel": 6, "secured": true }, { "ssid": "Cafe guest", "rssi": -81, "channel": 11, "secured": false } ] } }
+{ "id": 5, "re": 9, "type": "knoend.wifi.networks", "body": { "networks": [ { "ssid": "Home", "rssi": -48, "channel": 6, "secured": true }, { "ssid": "Cafe guest", "rssi": -81, "channel": 11, "secured": false } ] } }

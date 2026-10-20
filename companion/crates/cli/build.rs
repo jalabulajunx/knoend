@@ -1,4 +1,4 @@
-//! Embeds every recipe (recipes/**/*.toml) in the binary, so a released `openpager` works
+//! Embeds every recipe (recipes/**/*.toml) in the binary, so a released `knoend` works
 //! without the source tree.
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
