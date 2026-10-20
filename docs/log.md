@@ -1425,3 +1425,28 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   each step. Same ids and behaviour. Checked in the browser pane at desktop and phone width (no
   sideways scroll); one script error (a duplicate `currentPage`) caught there and fixed: check the
   script as a module (`node --input-type=module --check`), the plain check misses it.
+
+### Handoff for Tom's agents (2026-10-20)
+
+Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom has not reviewed:
+`knoend.display` / `.ack` (3.6d), `knoend.font` / `.ack` (3.6e), identity `board.display`,
+`board.fonts`, `lastStart`. Please review them in `spec/protocol.md` and say what to change.
+
+- **"The assistant" in AGENTS.md is the in-product setup assistant**, not you. A feature is done
+  when it can see, change and check it: settings go in `cli/src/settings.rs` (the web app, the
+  snapshot and its fixes read that list), read-only checks in `cli/src/checks.rs`, buttons in
+  `assistant::ACTIONS`, what the service notices via `say!`, faults via `problem!` / `raise!`
+  (the watcher, `cli/src/watch.rs`, then asks the assistant without the person asking).
+- **Terminal-aware keys (yours):** report what you detect as settings or checks where it fits, and
+  faults with `problem!`, so the assistant can explain a terminal the board does not follow.
+- **Board firmware:** a fonts partition was added (`partitions.csv`, after `board`); installs
+  write it without an erase. LVGL now allocates from PSRAM (`CONFIG_LV_MEM_CUSTOM`) and tiny_ttf is
+  on. Run `gio trash firmware/build/universal/sdkconfig` (or delete it) once if a build misses a new
+  `sdkconfig.defaults` value.
+- **Please try on the FNK:** Look, Way round (portrait), a key font, Start-up size. The rotation is
+  LVGL software rotation at run time (`board_set_turn`); touch should follow.
+- **Open:** #38 (library relations and Edit keys), #39 (Edit button on rows), #40 (Configure as a
+  conversation), #41 (several Claude questions: the board stays on question 1 when answered on the
+  computer). The display hang's cause (above). Checking the web script: use
+  `node --input-type=module --check web/app.js` (the plain check misses duplicate names).
+- The last setup-drawing fix (the cable plugs into the board's edge, not its screen) is in.
