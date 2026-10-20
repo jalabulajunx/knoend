@@ -1,6 +1,6 @@
 # What's on main
 
-As of 2026-10-20. A one-page map for anyone (person or coding agent) picking the project up.
+As of 2026-10-20 (evening). A one-page map for anyone (person or coding agent) picking the project up.
 How to set it up: [`setup.md`](setup.md). Day-by-day detail, including what was tested and how:
 [`log.md`](log.md). Working rules: [`../AGENTS.md`](../AGENTS.md). Picking up dynamic layouts or
 terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-18 log entry first;
@@ -55,7 +55,8 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | AI providers without an API key: Claude Code, Antigravity CLI found on this computer | `agents/src/cli_tool.rs` | AI settings |
 | The service describes itself to the setup assistant: every setting, read-only checks it runs, everything the service prints | `cli/src/settings.rs`, `checks.rs`, `journal.rs` | ask "make the keys bigger" |
 | The assistant listens all the time: faults (`problem!`) are put to it without being asked; its answer opens in the web app | `cli/src/watch.rs`, `consult.rs` | unplug the board for 2 minutes |
-| Board reports why it last started (`lastStart`), drops a font it crashed with, and never hangs on a lost display update | `firmware/main/protocol.c`, `fonts.c`, `board_generic.c` | serial log |
+| Board reports why it last started (`lastStart`), drops a font only after a real crash, and recovers from a lost display update (LVGL memory from PSRAM; the freeze's cause, fixed 2026-10-20) | `firmware/main/protocol.c`, `fonts.c`, `lv_mem_psram.c`, `board_generic.c` | serial log |
+| Several Claude questions (#41): a panel listing them while answered in the app, Answer here, cleared at once when answered | `cli/src/service.rs` (`show_answering`, `hosts_agent`), `agent_hooks.rs` (`settles`) | a multi-question prompt in Claude |
 | Web app redesign: drawn board with its real screen (FIG. 01), tips, an "ask about this" ° on every section, an assistant panel with a conversation and suggestions, a setup rail with a board acting out each step | `web/` | `knoend serve` |
 
 ## Built, not yet tested
@@ -64,9 +65,9 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
   ESP32-S3-Touch-LCD-2 definitions (status "unverified").
 - The 2026-10-20 additions on the FNK0104B and on macOS (display settings, fonts, the watcher's
   checks; `board_serial_log` assumes a USB-serial port).
-- The display hang seen once on the ONX (LVGL waiting in `draw_buf_flush`): guarded since
-  v0.1.1-115 (gives up after 300 ms, logs "display: an update never reported done"); the cause is
-  not found yet.
+- The display-freeze fix (LVGL memory from PSRAM, `firmware/main/lv_mem_psram.c`) on the
+  FNK0104B: same code path as the ONX, where it is tested (0 lost updates in 32 minutes); run it
+  there before turning fonts on.
 - macOS: site icons, LaunchAgent. Compiled in CI only. "Go to Claude" never appears on macOS:
   it comes from desktop notifications, which are read only on Linux.
 - The assistant's macOS buttons (open Accessibility, open Driver Extensions, install WCH's USB

@@ -8,6 +8,7 @@
 #include "esp_partition.h"
 #include "esp_rom_crc.h"
 #include "nvs.h"
+#include "esp_system.h"
 
 #define FONTS_SUBTYPE 0x41
 #define FONT_MAGIC    0x544E464B // "KFNT"
@@ -128,6 +129,16 @@ void fonts_init(void)
     if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
         size_t size = sizeof(refused);
         nvs_get_u8(nvs, "font_trying", &trying);
+        // Only a crash drops them: a freeze, a power cut, a restart or a flash can also leave the
+        // flag set, and the fonts were not at fault then (a freeze cost Sundar's fonts once).
+        const esp_reset_reason_t why = esp_reset_reason();
+        const bool crashed = why == ESP_RST_PANIC || why == ESP_RST_INT_WDT || why == ESP_RST_TASK_WDT || why == ESP_RST_WDT;
+        if (trying && !crashed) {
+            ESP_LOGI(TAG, "the last start with these fonts did not finish, but the board did not crash: kept");
+            trying = 0;
+            nvs_set_u8(nvs, "font_trying", 0);
+            nvs_commit(nvs);
+        }
         if (trying) {
             refused[0] = '\0';
             for (int slot = 0; slot < FONT_SLOTS; slot++) {

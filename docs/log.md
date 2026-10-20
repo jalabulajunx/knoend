@@ -1455,3 +1455,45 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   browser; Light or Dark is remembered per browser (localStorage) and applied before the page draws.
   Checked in the browser pane: both themes, and the choice kept across a reload. Issue #17 got a
   progress comment (items 1 and 5 done); none of the day's fixed bugs had an issue to close.
+
+## 2026-10-20 - Sundar (Claude Code, Opus 5.5) - #41, the display freeze's cause, fonts kept
+
+- Branch `sundar/issue-41`.
+- #41: while several Claude questions wait and the person is in the app Claude runs in (Claude,
+  a terminal, an editor), the board shows a panel listing them with "Answer here"; once they start
+  answering there it stays on that panel when they leave (question 1 would be stale). Settling: a
+  question answered in the app now settles at once (PostToolUse's tool_input carries `answers` and
+  `questions`, so it never equalled the question asked; confirmed from the real event).
+- The freeze, found with a serial log kept open in the background (the assistant's
+  `board_serial_log` idea, by hand): LVGL in plain malloc (since fonts) took internal RAM until the
+  SPI display driver could not send an update. Fixed by LVGL allocating from PSRAM first (compiled
+  into LVGL's own library: CMake drops function-like definitions, and LVGL links before main). My
+  earlier guard was wrong twice (300 ms was too short; then its clock never reset and it declared
+  ordinary updates lost every 2-3 s, which garbled the screen); it now times each update from its
+  send and redraws everything if it gives up.
+- Fonts: dropped only after a real crash (panic/watchdog), not after a freeze, power cut or flash;
+  choosing a refused font again resends it. The watcher no longer raises link drops during a USB
+  job and the 90 s after.
+- Board panels: empty slots beside a detail panel are not drawn; the panel takes an empty top row.
+- Tested on the ONX (Linux): firmware v0.1.1-129; 0 lost updates and 0 watchdog lines in 32 minutes
+  of use (portrait, landscape, fonts, Settings, Toggle Sidebar); fonts kept through a flash and a
+  restart; #41 panel, the panel staying when leaving Claude, Answer here, and settling on submit.
+  Not tested: the FNK0104B (same allocator path, so it needs the same fix), macOS.
+
+### For Tom's agents (2026-10-20, evening)
+
+- **Pull main before any firmware work on the FNK.** Fonts (#42) changed LVGL to plain malloc, which
+  froze the ONX within minutes (internal RAM ran out for the SPI display driver). #44 makes LVGL
+  allocate from PSRAM (`firmware/main/lv_mem_psram.c`, wired in `firmware/CMakeLists.txt` because
+  CMake drops function-like definitions). The FNK has the same path: please check it there with
+  fonts on, and watch the serial log for "display: an update never reported done" and
+  "task_wdt" lines (none is right).
+- **Debugging a board in use:** keep its serial log open in the background while the person uses
+  it (pyserial from the IDF environment, dtr/rts off; opening may restart the ONX once), so a freeze
+  leaves its watchdog lines and backtrace; decode with `xtensa-esp32s3-elf-addr2line` against the
+  ELF of the exact version on the board (rebuild that commit in a worktree if needed).
+- **Claude questions (#41)** depend on focus: `hosts_agent()` lists the apps an agent runs in
+  (Claude, terminals, editors). Your terminal-aware work could make this exact (the session's own
+  terminal) instead of by app name.
+- **A firmware build that misses a new `sdkconfig.defaults` value:** delete
+  `build/universal/sdkconfig` and build again.

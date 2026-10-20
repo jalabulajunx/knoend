@@ -175,14 +175,22 @@ C3, C6) are not supported.
   from the renderer, fonts are read from a copy in PSRAM, and a font the board did not get through
   a start with is dropped at the next start (`board.fonts.refused`; the service then does not send
   it again and says so). With firmware v0.1.1-110 itself: install the latest firmware (no erase).
-- **Board stops answering on Wi-Fi but its screen stays on; serial shows repeated
-  "task_wdt: Task watchdog got triggered ... IDLE0 ... CPU 0: taskLVGL".** The board has not
-  restarted (the number in brackets is milliseconds since it started, and keeps growing): the
-  display task is stuck, and Wi-Fi starves. Seen 2026-10-20 on the ONX after 14 minutes, on
-  firmware v0.1.1-111: LVGL waited forever for the screen to report an update done
-  (`draw_buf_flush`). Unplug and plug the board in to get it back; firmware after v0.1.1-113 gives
-  up waiting after 300 ms and logs "display: an update never reported done". A watchdog line is not
-  a crash; "Guru Meditation" or `rst:` with a panic is.
+- **Board stops answering on Wi-Fi, or freezes on a tap, with its screen still on; serial shows
+  repeated "task_wdt: Task watchdog got triggered ... IDLE0 ... CPU 0: taskLVGL".** The board has
+  not restarted (the number in brackets is milliseconds since it started): the display task is
+  spinning while it waits for the screen to report an update done (`draw_buf_flush`), and Wi-Fi
+  starves. Cause, found 2026-10-20: LVGL's memory came from plain malloc (since fonts,
+  v0.1.1-110 to -124), whose small allocations take internal RAM first; the SPI display driver then
+  could not get the internal buffer it sends each update from, the update failed silently and its
+  "done" never came. Fixed in v0.1.1-126: LVGL allocates from PSRAM first
+  (`firmware/main/lv_mem_psram.c`); a guard in `board_generic.c` gives up after 2 s and redraws
+  everything ("display: an update never reported done"). Measured on the ONX: 30 lost updates in
+  75 s before, none in 32 minutes after. Unplug and plug the board in to get a frozen one back.
+  A watchdog line is not a crash; "Guru Meditation" or `rst:` with a panic is.
+- **Several Claude questions in one prompt (#41).** Claude Code reports nothing until the last is
+  answered. While the person is in the app Claude runs in (or once they started answering there)
+  the board shows a panel listing the questions with "Answer here"; otherwise it shows the
+  questions with their answer keys. It clears as soon as Claude has every answer.
 - **"Could not get the font" or "could not reach Google Fonts".** The computer is offline or
   Google Fonts is blocked (some offices and schools); the name may also be misspelt: pick it from
   the list.

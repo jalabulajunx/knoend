@@ -408,7 +408,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let mut paging = Paging::new(board.grid, wanted.key_size);
         set_picture_theme(board.display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
         let mut asked_look = send_look(&mut sender, &board, &wanted).await;
-        fetch_fonts(&board, &wanted, &events);
+        fetch_fonts(&board, &wanted, &events, false);
         if focus.is_none() {
             show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
@@ -508,6 +508,18 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     say!("Focus: {} ({})", f.display_name(), f.instance);
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
+                    // Questions waiting while the person goes to the app the agent runs in: they are
+                    // most likely answering there, so the board says so (and back when they leave).
+                    // Once they have started answering there, the board stays on that panel when they
+                    // leave: it cannot tell which questions they answered, and question 1 would be stale.
+                    if let Some(front) = approvals.front_mut().filter(|a| a.questions.len() > 1 && !a.here && !a.elsewhere) {
+                        let elsewhere = hosts_agent(&f);
+                        if elsewhere {
+                            front.elsewhere = true;
+                            shown = None;
+                            show_answering(&mut sender, front, &f, &mut shown, &shared).await;
+                        }
+                    }
                     show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
                     draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                 }
@@ -552,7 +564,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Look(wanted) => {
                     asked_look = send_look(&mut sender, &board, &wanted).await;
-                    fetch_fonts(&board, &wanted, &events);
+                    fetch_fonts(&board, &wanted, &events, true);
                 }
                 Event::Font(slot, family, font) => match font {
                     Ok(bytes) if family.is_empty() => {
@@ -702,6 +714,15 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                     }
                 }
+                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] == ANSWERING => {
+                    if let Some(front) = approvals.front_mut().filter(|_| packet.body["key"] == u64::from(ANSWER_HERE_SLOT)) {
+                        say!("  answering on the board instead");
+                        front.here = true;
+                        front.elsewhere = false;
+                        shown = None;
+                        show_approval(&mut sender, front, &catalog, &mut shown, &shared).await;
+                    }
+                }
                 Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] == APPROVE => {
                     let key = packet.body["key"].as_u64().unwrap_or(0);
                     let decision = match approvals.front_mut() {
@@ -772,14 +793,27 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     say!("Permission request: {summary}");
                     approvals.push_back(Approval { request: request.clone(), summary, detail: crate::agent_hooks::detail(&request), destructive: crate::agent_hooks::destructive(&request),
                                                    can_remember: request["permission_suggestions"].as_array().is_some_and(|s| !s.is_empty()),
-                                                   questions: crate::agent_hooks::questions(&request), step: 0, answers: Vec::new(), ticked: Vec::new(),
+                                                   questions: crate::agent_hooks::questions(&request), step: 0, answers: Vec::new(), ticked: Vec::new(), elsewhere: false, here: false,
                                                    answer });
                     if approvals.len() == 1 {
-                        show_approval(&mut sender, approvals.front().unwrap(), &catalog, &mut shown, &shared).await;
+                        // Several questions while the person is in the app the agent runs in: they
+                        // will most likely answer there, and the board cannot follow each answer.
+                        let front = approvals.front_mut().unwrap();
+                        match effective(&focus, &tab).filter(|f| front.questions.len() > 1 && hosts_agent(f)) {
+                            Some(f) => {
+                                front.elsewhere = true;
+                                show_answering(&mut sender, front, &f, &mut shown, &shared).await;
+                            }
+                            None => show_approval(&mut sender, front, &catalog, &mut shown, &shared).await,
+                        }
                     }
                 }
                 Event::Agent(crate::agent_hooks::AgentEvent::Notification(n)) => {
                     // Answered in Claude's own window? Then the request leaves the board.
+                    if n["hook_event_name"] == "PostToolUse" && n["tool_name"] == "AskUserQuestion" {
+                        let fields: Vec<&String> = n["tool_input"].as_object().map(|o| o.keys().collect()).unwrap_or_default();
+                        say!("Agent: AskUserQuestion finished (input fields: {fields:?})");
+                    }
                     let before = approvals.len();
                     approvals.retain(|a| !crate::agent_hooks::settles(&n, &a.request));
                     if approvals.len() != before {
@@ -875,7 +909,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::LinkDown(reason) => {
-                    raise!("link-lost", "Link to board {} lost: {reason}", board.id);
+                    // Not while the board is being installed or paired over USB: it restarts then.
+                    if !board_restart_expected(&shared) {
+                        raise!("link-lost", "Link to board {} lost: {reason}", board.id);
+                    }
                     shared.emit("log", json!({"text": format!("Link to board {} lost: {reason}", board.id)}));
                     shared.update(|s| { s.link = "searching".into(); s.layout = None; }).await;
                     break;
@@ -1390,6 +1427,22 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
     }
 }
 
+/// When the last USB job (installing, pairing, changing Wi-Fi) ended: the board restarts during and
+/// after one, so its link drops then are expected, not problems.
+static USB_JOB_ENDED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+pub fn usb_job_ended() {
+    if let Ok(mut ended) = USB_JOB_ENDED.lock() {
+        *ended = Some(std::time::Instant::now());
+    }
+}
+
+/// A USB job is running, or ended less than 90 s ago.
+fn board_restart_expected(shared: &Shared) -> bool {
+    shared.serial.try_lock().is_err()
+        || USB_JOB_ENDED.lock().ok().and_then(|e| *e).is_some_and(|at| at.elapsed() < Duration::from_secs(90))
+}
+
 /// The connected board's theme, for the tones pictures are sent in.
 static PICTURE_THEME: std::sync::Mutex<crate::display::Theme> = std::sync::Mutex::new(crate::display::Theme::Dark);
 
@@ -1403,7 +1456,7 @@ fn set_picture_theme(name: &str) {
 /// shows them, and answers with its new size (spec/protocol.md 3.6d).
 /// Fetches (in the background) each font the person chose that the board does not hold, or asks
 /// for the built-in one back; the loop then sends it (`Event::Font`).
-fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &mpsc::Sender<Event>) {
+fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &mpsc::Sender<Event>, chosen_now: bool) {
     let Some(held) = board.fonts.clone() else {
         if !wanted.key_font.is_empty() || !wanted.start_font.is_empty() {
             say!("Fonts: this board's firmware ({}) has the built-in font only; update its firmware to use others", board.firmware);
@@ -1416,8 +1469,9 @@ fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &m
         if holds == family {
             continue;
         }
-        // The board dropped it after a start it did not get through: not sent again by itself.
-        if !family.is_empty() && refused.split(", ").any(|r| r == family) {
+        // The board dropped it after a start it did not get through: not sent again by itself,
+        // only when the person (or the assistant's fix) chooses fonts again.
+        if !chosen_now && !family.is_empty() && refused.split(", ").any(|r| r == family) {
             problem!("font", "The board dropped the font {family} ({slot}) after it could not start with it: it is not sent again until it is chosen again");
             continue;
         }
@@ -1531,6 +1585,20 @@ fn image_png(rgba: &[u8]) -> Option<Vec<u8>> {
 /// Layout id of a coding agent's permission request on the board.
 const APPROVE: &str = "system.approve";
 const APPROVE_SIGNATURE: &str = "approve|";
+/// The board while the person answers the agent's questions on the computer.
+const ANSWERING: &str = "system.answering";
+/// The "Answer here" key on that screen (the bottom row's middle on 3x3).
+const ANSWER_HERE_SLOT: u8 = 8;
+
+/// Whether the focused app is one an agent like Claude Code runs in: its desktop app, a terminal
+/// or an editor. While a question waits there, the person is likely answering it on the computer.
+fn hosts_agent(focus: &Focus) -> bool {
+    const HOSTS: &[&str] = &["claude", "codex", "antigravity", "terminal", "konsole", "kitty", "alacritty", "wezterm",
+                             "foot", "xterm", "urxvt", "ghostty", "tilix", "terminator", "iterm", "warp", "code", "cursor",
+                             "windsurf", "zed"];
+    let names = format!("{} {}", focus.app, focus.instance).to_lowercase();
+    HOSTS.iter().any(|h| names.contains(h))
+}
 
 /// A coding agent waiting for the person's answer.
 struct Approval {
@@ -1547,6 +1615,11 @@ struct Approval {
     step: usize,
     answers: Vec<(String, String)>,
     ticked: Vec<usize>,
+    /// The person is in the app where the agent runs, answering there: the board says so instead
+    /// of showing a question it cannot follow (Claude Code reports no answer until the last).
+    elsewhere: bool,
+    /// The person chose "Answer here": the questions stay on the board wherever they look.
+    here: bool,
     answer: tokio::sync::oneshot::Sender<crate::agent_hooks::Decision>,
 }
 
@@ -1723,6 +1796,9 @@ async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catal
         Some(q) => {
             let count = if approval.questions.len() > 1 { format!(" ({}/{})", approval.step + 1, approval.questions.len()) } else { String::new() };
             let mut detail = format!("{}{count}\n{}", q.question, if q.multi { "Tick one or more, then Done." } else { "" });
+            if approval.questions.len() > 1 {
+                detail += "\nOr answer in Claude on the computer: the board clears when Claude has every answer.";
+            }
             for (label, about) in &q.options {
                 if !about.is_empty() {
                     detail += &format!("\n{label}: {about}");
@@ -1744,6 +1820,50 @@ async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catal
         let _ = sender.send("knoend.status", json!({"text": board_text(&status, 80), "level": level})).await;
         *shown = Some(signature);
         shared.update(|s| s.layout = Some(json!({"id": APPROVE, "name": title, "summary": status}))).await;
+    }
+}
+
+/// The panel while the person answers on the computer: the questions, short, then what happens.
+/// The board's panel takes 240 characters and its built-in font is ASCII, so each question gets
+/// an equal share, cut with "...".
+fn answering_text(app: &str, questions: &[crate::agent_hooks::Question]) -> String {
+    const PANEL: usize = 240;
+    let head = format!("Answering in {app}:");
+    let tail = "Clears when Claude has every answer. Tap below to answer here instead.";
+    let room = PANEL.saturating_sub(head.len() + tail.len() + 2);
+    let each = (room / questions.len().max(1)).saturating_sub(4).max(12);
+    let ascii = |text: &str| -> String { text.chars().map(|c| if c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).collect() };
+    let mut lines = vec![head];
+    for (i, q) in questions.iter().enumerate() {
+        let text = ascii(q.question.trim());
+        let short = if text.len() > each { format!("{}...", text[..each - 3].trim_end()) } else { text };
+        lines.push(format!("{}. {short}", i + 1));
+    }
+    lines.push(tail.to_string());
+    let mut text = lines.join("\n");
+    text.truncate(PANEL);
+    text
+}
+
+/// The board while the person answers on the computer: what is happening, and "Answer here".
+async fn show_answering(sender: &mut wifi::WifiSender, approval: &Approval, focus: &Focus, shown: &mut Option<String>, shared: &Shared) {
+    let app = focus.display_name().to_string();
+    let detail = answering_text(&app, &approval.questions);
+    let keys = vec![LayoutKey { key: ANSWER_HERE_SLOT, label: "Answer here".into(), speak: Some("Answer the questions here".into()),
+                                icon: Some("reply".into()), confirm: false, send: Send::Event(true) }];
+    let title = format!("Answering in {app}");
+    let body = LayoutBody { layout: ANSWERING.into(), name: board_text(&title, 128), source: "builtin".into(), reviewed: true, keys,
+                            detail: Some(detail), grid: Some(Grid::DEFAULT), ..LayoutBody::default() };
+    // Starts like the approval screen's signature, so following focus does not replace it.
+    let signature = format!("{APPROVE_SIGNATURE}answering|{}", serde_json::to_string(&body).unwrap_or_default());
+    if shown.as_deref() == Some(signature.as_str()) {
+        return;
+    }
+    say!("  -> answering on the computer ({app}); the board waits");
+    if sender.send("knoend.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
+        let _ = sender.send("knoend.status", json!({"text": board_text(&format!("Claude: answering in {app}"), 80), "level": "info"})).await;
+        *shown = Some(signature);
+        shared.update(|s| s.layout = Some(json!({"id": ANSWERING, "name": title}))).await;
     }
 }
 
@@ -1959,7 +2079,7 @@ mod tests {
         let (answer, rx) = tokio::sync::oneshot::channel();
         (Approval { questions: crate::agent_hooks::questions(&request), destructive: crate::agent_hooks::destructive(&request),
                     request, summary: String::new(), detail: String::new(), can_remember: suggestions,
-                    step: 0, answers: Vec::new(), ticked: Vec::new(), answer }, rx)
+                    step: 0, answers: Vec::new(), ticked: Vec::new(), elsewhere: false, here: false, answer }, rx)
     }
 
     fn asking(questions: Value) -> (Approval, tokio::sync::oneshot::Receiver<Decision>) {
@@ -2064,6 +2184,27 @@ mod tests {
         assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 4, "rows": 2}}})), Grid { cols: 4, rows: 2 });
         assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 9, "rows": 2}}})), Grid::DEFAULT);
         assert_eq!(identity_grid(&json!({})), Grid::DEFAULT);
+    }
+
+    #[test]
+    fn the_answering_panel_lists_the_questions_within_240_ascii_characters() {
+        let q = |text: &str| crate::agent_hooks::Question { question: text.into(), header: String::new(), options: Vec::new(), multi: false };
+        let long = "What should the default key size be on a small 2.8 inch screen for people who find it hard to read? ".repeat(2);
+        let text = answering_text("Claude", &[q("Which way round?"), q(&long), q("Dark or paper — and why?")]);
+        assert!(text.len() <= 240 && text.is_ascii(), "{text}");
+        assert!(text.starts_with("Answering in Claude:\n1. Which way round?\n2. What should"));
+        assert!(text.contains("...\n3. Dark or paper"));
+        assert!(text.ends_with("Tap below to answer here instead."));
+    }
+
+    #[test]
+    fn agents_run_in_their_app_a_terminal_or_an_editor() {
+        let focus = |app: &str, instance: &str| Focus { os: knoend_core::focus::Os::Linux, app: app.into(), instance: instance.into(), title: String::new(), web: None };
+        assert!(hosts_agent(&focus("Claude", "com.anthropic.claude")));
+        assert!(hosts_agent(&focus("Xfce4-terminal", "xfce4-terminal")));
+        assert!(hosts_agent(&focus("Code", "code")));
+        assert!(!hosts_agent(&focus("firefox", "Navigator")));
+        assert!(!hosts_agent(&focus("okular", "okular")));
     }
 
     #[test]
