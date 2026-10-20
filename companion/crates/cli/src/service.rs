@@ -510,16 +510,14 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     shared.update(|s| s.app = Some(name)).await;
                     // Questions waiting while the person goes to the app the agent runs in: they are
                     // most likely answering there, so the board says so (and back when they leave).
-                    if let Some(front) = approvals.front_mut().filter(|a| a.questions.len() > 1 && !a.here) {
+                    // Once they have started answering there, the board stays on that panel when they
+                    // leave: it cannot tell which questions they answered, and question 1 would be stale.
+                    if let Some(front) = approvals.front_mut().filter(|a| a.questions.len() > 1 && !a.here && !a.elsewhere) {
                         let elsewhere = hosts_agent(&f);
-                        if elsewhere != front.elsewhere {
-                            front.elsewhere = elsewhere;
+                        if elsewhere {
+                            front.elsewhere = true;
                             shown = None;
-                            if elsewhere {
-                                show_answering(&mut sender, front, &f, &mut shown, &shared).await;
-                            } else {
-                                show_approval(&mut sender, front, &catalog, &mut shown, &shared).await;
-                            }
+                            show_answering(&mut sender, front, &f, &mut shown, &shared).await;
                         }
                     }
                     show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
@@ -1831,7 +1829,7 @@ async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catal
 fn answering_text(app: &str, questions: &[crate::agent_hooks::Question]) -> String {
     const PANEL: usize = 240;
     let head = format!("Answering in {app}:");
-    let tail = "Clears when Claude has every answer. Tap below to answer here.";
+    let tail = "Clears when Claude has every answer. Tap below to answer here instead.";
     let room = PANEL.saturating_sub(head.len() + tail.len() + 2);
     let each = (room / questions.len().max(1)).saturating_sub(4).max(12);
     let ascii = |text: &str| -> String { text.chars().map(|c| if c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).collect() };
@@ -2196,7 +2194,7 @@ mod tests {
         assert!(text.len() <= 240 && text.is_ascii(), "{text}");
         assert!(text.starts_with("Answering in Claude:\n1. Which way round?\n2. What should"));
         assert!(text.contains("...\n3. Dark or paper"));
-        assert!(text.ends_with("Tap below to answer here."));
+        assert!(text.ends_with("Tap below to answer here instead."));
     }
 
     #[test]
