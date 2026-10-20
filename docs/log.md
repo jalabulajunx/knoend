@@ -1479,3 +1479,21 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   of use (portrait, landscape, fonts, Settings, Toggle Sidebar); fonts kept through a flash and a
   restart; #41 panel, the panel staying when leaving Claude, Answer here, and settling on submit.
   Not tested: the FNK0104B (same allocator path, so it needs the same fix), macOS.
+
+### For Tom's agents (2026-10-20, evening)
+
+- **Pull main before any firmware work on the FNK.** Fonts (#42) changed LVGL to plain malloc, which
+  froze the ONX within minutes (internal RAM ran out for the SPI display driver). #44 makes LVGL
+  allocate from PSRAM (`firmware/main/lv_mem_psram.c`, wired in `firmware/CMakeLists.txt` because
+  CMake drops function-like definitions). The FNK has the same path: please check it there with
+  fonts on, and watch the serial log for "display: an update never reported done" and
+  "task_wdt" lines (none is right).
+- **Debugging a board in use:** keep its serial log open in the background while the person uses
+  it (pyserial from the IDF environment, dtr/rts off; opening may restart the ONX once), so a freeze
+  leaves its watchdog lines and backtrace; decode with `xtensa-esp32s3-elf-addr2line` against the
+  ELF of the exact version on the board (rebuild that commit in a worktree if needed).
+- **Claude questions (#41)** depend on focus: `hosts_agent()` lists the apps an agent runs in
+  (Claude, terminals, editors). Your terminal-aware work could make this exact (the session's own
+  terminal) instead of by app name.
+- **A firmware build that misses a new `sdkconfig.defaults` value:** delete
+  `build/universal/sdkconfig` and build again.
