@@ -65,8 +65,8 @@ impl Theme {
         for pixel in rgba.chunks_exact_mut(4) {
             let grey = (u32::from(pixel[0]) * 299 + u32::from(pixel[1]) * 587 + u32::from(pixel[2]) * 114) / 1000;
             let [r, g, b] = match self {
-                // Ink to paper: 0x2E241B at black, 0xF4ECD8 at white.
-                Theme::Sepia => [(0x2E, 0xF4), (0x24, 0xEC), (0x1B, 0xD8)].map(|(dark, light): (u32, u32)| (dark + (light - dark) * grey / 255) as u8),
+                // Ink to paper (the firmware's key colours): 0x3A2410 at black, 0xEEDDB8 at white.
+                Theme::Sepia => [(0x3A, 0xEE), (0x24, 0xDD), (0x10, 0xB8)].map(|(dark, light): (u32, u32)| (dark + (light - dark) * grey / 255) as u8),
                 _ => [grey as u8; 3],
             };
             pixel[..3].copy_from_slice(&[r, g, b]);
@@ -153,7 +153,7 @@ mod tests {
         let tone = |theme: Theme, rgba: [u8; 4]| { let mut p = rgba.to_vec(); theme.tone(&mut p); p };
         assert_eq!(tone(Theme::Dark, [255, 0, 0, 200]), vec![255, 0, 0, 200]);
         assert_eq!(tone(Theme::White, [255, 0, 0, 200]), vec![76, 76, 76, 200]);
-        assert_eq!(tone(Theme::Sepia, [255, 255, 255, 255]), vec![0xF4, 0xEC, 0xD8, 255], "white is the paper");
-        assert_eq!(tone(Theme::Sepia, [0, 0, 0, 9]), vec![0x2E, 0x24, 0x1B, 9], "black is the ink");
+        assert_eq!(tone(Theme::Sepia, [255, 255, 255, 255]), vec![0xEE, 0xDD, 0xB8, 255], "white is the paper");
+        assert_eq!(tone(Theme::Sepia, [0, 0, 0, 9]), vec![0x3A, 0x24, 0x10, 9], "black is the ink");
     }
 }

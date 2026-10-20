@@ -100,10 +100,10 @@ main { max-width: 1040px; margin: 0 auto; padding: 24px; }
 .screen.white .keys div.blank { background: #f2f2f2; border: none; }
 .screen.white .bar { color: #000; }
 /* Sepia: the firmware's colours (ui.c SEPIA). */
-.screen.sepia { background: #f4ecd8; }
-.screen.sepia .keys div { background: #f4ecd8; color: #2e241b; border: 2px solid #4a3a2a; }
-.screen.sepia .keys div.blank { background: #e9ddc2; border: none; }
-.screen.sepia .bar { color: #2e241b; }
+.screen.sepia { background: #e3cc9e; }
+.screen.sepia .keys div { background: #eeddb8; color: #3a2410; border: 2px solid #4a2f14; }
+.screen.sepia .keys div.blank { background: #d8be8a; border: none; }
+.screen.sepia .bar { color: #3a2410; }
 .note { color: var(--muted); margin: 12px 0 0; }
 /* Edit keys: the same key area, bigger, keys selectable and draggable. */
 .edit-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

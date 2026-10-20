@@ -50,11 +50,13 @@ static const theme_t WHITE = {
     .attention = 0x555555, .alert = 0x000000, .detail_text = 0x000000, .border = 2,
 };
 
+// Strong enough to read as sepia on a 16-bit panel: the first try (a pale cream, 0xF4ECD8) looked
+// like dimmed white on the ONX.
 static const theme_t SEPIA = {
-    .bg = 0xF4ECD8, .key = 0xF4ECD8, .key_blank = 0xE9DDC2, .key_border = 0x4A3A2A,
-    .pressed = 0xD8C6A2, .confirm = 0x4A3A2A, .confirm_text = 0xF4ECD8,
-    .key_text = 0x2E241B, .icon = 0x2E241B, .bar_text = 0x2E241B, .bar_text_highlighted = 0xF4ECD8,
-    .attention = 0x7A6248, .alert = 0x4A3A2A, .detail_text = 0x2E241B, .border = 2,
+    .bg = 0xE3CC9E, .key = 0xEEDDB8, .key_blank = 0xD8BE8A, .key_border = 0x4A2F14,
+    .pressed = 0xC7A66C, .confirm = 0x4A2F14, .confirm_text = 0xEEDDB8,
+    .key_text = 0x3A2410, .icon = 0x3A2410, .bar_text = 0x3A2410, .bar_text_highlighted = 0xEEDDB8,
+    .attention = 0x7A5530, .alert = 0x4A2F14, .detail_text = 0x3A2410, .border = 2,
 };
 
 static const theme_t *theme_for(display_theme_t which)
