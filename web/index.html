@@ -9,6 +9,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/style.css">
+  <script>
+    // Light or Dark chosen in this browser, before the page draws (Auto: the browser decides).
+    try { const t = localStorage.getItem("knoend-scheme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+  </script>
 </head>
 <body>
   <header class="top">
@@ -23,6 +27,11 @@
       <button role="tab" data-view="setup" aria-selected="false">Set up a board</button>
     </nav>
     <span id="link-pill" class="pill">Starting</span>
+    <div class="scheme" role="group" aria-label="Colours">
+      <button type="button" data-scheme="auto" title="Follow this browser's light or dark setting">Auto</button>
+      <button type="button" data-scheme="light">Light</button>
+      <button type="button" data-scheme="dark">Dark</button>
+    </div>
   </header>
 
   <main>
