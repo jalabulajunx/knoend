@@ -27,11 +27,14 @@ confirmed), not only in the log.
 
 ## The setup assistant should be able to do what you did
 
-**The service describes itself.** A feature is not done until the assistant can see it, change it
-and check it: settings in `settings.rs`, buttons in `assistant::ACTIONS` (with what each does),
-read-only checks in `checks.rs`, and what the service notices in its log via `say!`. The
-assistant's prompt tells it to read those lists each time instead of naming every setting, so
-problems and settings nobody planned for still reach it.
+**The service describes itself.** "The assistant" here is the in-product setup assistant, the
+onboarding AI in the web app that people ask for help, not you, the coding agent. It never reads
+this file: it sees only its prompt (`agents/src/assistant.rs`), `docs/knowledge/setup.md` and the
+snapshot the service sends it. So a feature you build is not done until that assistant can see it,
+change it and check it: settings in `settings.rs`, buttons in `assistant::ACTIONS` (with what each
+does), read-only checks in `checks.rs`, and what the service notices in its log via `say!`. Its
+prompt tells it to read those lists each time instead of naming every setting, so problems and
+settings nobody planned for still reach it.
 
 The goal is that anyone can set up their computer and a board with the in-product setup assistant
 alone, without a coding agent or a developer. So when you solve a setup problem by hand (a missing
