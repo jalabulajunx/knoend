@@ -1,6 +1,6 @@
 # What's on main
 
-As of 2026-10-18. A one-page map for anyone (person or coding agent) picking the project up.
+As of 2026-10-19. A one-page map for anyone (person or coding agent) picking the project up.
 How to set it up: [`setup.md`](setup.md). Day-by-day detail, including what was tested and how:
 [`log.md`](log.md). Working rules: [`../AGENTS.md`](../AGENTS.md). Picking up dynamic layouts or
 terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-18 log entry first.
@@ -14,12 +14,12 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | Identify and flash boards, manifest with SHA-256 per part | `companion/crates/flash`, `tools/release_firmware.py` | `knoend devices`, `knoend flash` |
 | Setup assistant grounded in the knowledge base | `companion/crates/agents/src/assistant.rs`, `docs/knowledge/setup.md` | "Ask the assistant" in the web app |
 | Key grid, status bar, confirm-tap for risky keys | `firmware/main/ui.c` | tap a key; console prints `KEY n ...` |
-| Grids 1x1 to 4x4 per layout, pages turned by swipe or the "2/3 >" tap (Freenove tested; ONX not yet) | `firmware/main/ui.c`, `core/src/layout.rs`, `cli/src/service.rs` | `spec/examples/library-pages.toml` |
+| Grids 1x1 to 4x4 per layout, pages turned by swipe or the "2/3 >" tap (Freenove and ONX tested) | `firmware/main/ui.c`, `core/src/layout.rs`, `cli/src/service.rs` | `spec/examples/library-pages.toml` |
 | Bluetooth LE keyboard ("Just Works") | `firmware/main/ble_keyboard.c` | pair "KnoEnd"; keys type |
 | Keys typed by the service when no Bluetooth host is connected | `companion/crates/input` | turn Bluetooth off; keys still type |
 | Protocol v0 over USB serial and authenticated Wi-Fi WebSocket, mDNS | `firmware/main/`, `companion/crates/transport` | `knoend pair`, then `knoend run` |
 | Layout follows the focused app (Linux X11) | `companion/crates/focus`, `cli/src/service.rs` | switch to VS Code |
-| Configure agent: drafts a library for an unsupported app (any provider) | `companion/crates/agents` | tap Configure, or `knoend draft` |
+| Configure agent: drafts a library for an unsupported app (any provider, or Claude Code / Antigravity CLI signed in on this computer, no API key) | `companion/crates/agents` | tap Configure, or `knoend draft` |
 | Shared contracts and validator | `spec/`, `tools/validate_spec.py` | `python3 tools/validate_spec.py` |
 | macOS: layout follows the front window, keys typed by the service, assistant snapshot shows USB driver and Accessibility state | `focus/src/macos.rs`, `input/src/macos.rs`, `cli/src/diagnostics.rs` | switch apps on a Mac; "Ask the assistant" |
 | USB-Serial-JTAG serial line (native-USB boards): identify, install, pair | `firmware/main/`, `companion/crates/flash` | Freenove FNK0104B on macOS |
@@ -46,7 +46,8 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 
 - GT911 touch, display start-up commands, active-high reset; the ESP32-S3-BOX-3 and Waveshare
   ESP32-S3-Touch-LCD-2 definitions (status "unverified").
-- macOS: site icons, "Go to Claude", LaunchAgent. Compiled in CI only.
+- macOS: site icons, LaunchAgent. Compiled in CI only. "Go to Claude" never appears on macOS:
+  it comes from desktop notifications, which are read only on Linux.
 - The assistant's macOS buttons (open Accessibility, open Driver Extensions, install WCH's USB
   driver after Apple's notarization check), `cli/src/macos_help.rs`: the same steps were done by
   hand on 2026-10-17; the buttons themselves have not been pressed yet.
@@ -55,7 +56,7 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 
 | Piece | Where it goes |
 | --- | --- |
-| Freenove FNK0104B definition (and native USB keyboard) | `firmware/boards/definitions/` |
+| Freenove FNK0104B native USB keyboard | `firmware/boards/definitions/` |
 | Board UI: unsupported-app card | `firmware/main/ui.c` |
 | Windows focus and typing | `companion/crates/focus`, `input` |
 | Terminal-aware keys (which CLI runs in the focused terminal) - Tom | `companion/crates/focus`, `cli/src/service.rs` |

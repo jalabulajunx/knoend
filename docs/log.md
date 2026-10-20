@@ -1278,3 +1278,41 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   not in the icon list (`fit_grid`, for apps and sites; the label shows instead), with a test.
 - Okular promoted to `recipes/apps/okular.toml` with Sundar's Linux `tested` entry. His generic
   MKVToolNix draft moved to the trash, so Configure drafts it again.
+
+## 2026-10-19 - Tom (Claude Code) - Sundar's PRs merged, KnoEnd on macOS, #30 follow-ups
+
+- Changed:
+  - #31 (what the drafting AI gets): reviewed and merged. One wording fix in `spec/browser.md` §5:
+    link paths reach the AI unchanged, ids included (`open` keys need the real path); only the page
+    kind has ids as `*`.
+  - #32 (rename to KnoEnd): main merged in (conflicts only in #31's files), tested on macOS (below),
+    merged. Local `origin` now points at `github.com/jalabulajunx/knoend`.
+  - #33 (Claude Code and Antigravity CLI as providers): main merged in, base changed to `main`, merged.
+    Fix added: on Tom's Mac Claude Code is only the VS Code extension, so no `claude` on any PATH;
+    the lookup now also checks the editor extension's bundled `resources/native-binary/claude`
+    (VS Code, Insiders, Cursor, Windsurf; newest first, after real installs), with a test. Knowledge
+    entry added under "The AI pieces".
+  - #35 (Sundar's #30 follow-ups 2 and 4): "Go to Claude" no longer takes a key on a page of fewer
+    than 4 keys (status line "Claude needs you" instead; the last key's tap is not taken over), and
+    `knoend.approve.*` removed from the spec, schema, examples and `tools/serial_probe.py`. Codex
+    (gpt-6.1-sol, xhigh) found that the launcher skipped status-only changes; fixed before merging.
+  - `docs/status.md`: grids tested on both boards, the CLI providers, "Go to Claude" is Linux-only,
+    the FNK definition no longer listed as not started (its native USB keyboard still is).
+- Tested (FNK0104B, macOS):
+  - Rename: the new service moved `~/.config/openpager` to `~/.config/knoend` and found the board on
+    the old firmware over Wi-Fi; the old `openpager` hook binary reached it through the old socket;
+    `knoend claude-hooks install` swapped all 5 hooks; KnoEnd firmware flashed (hashes verified),
+    Wi-Fi and pairing kept, both `_knoend._tcp` and `_openpager._tcp` announced; a permission
+    request declined on the board came back as "Denied on the KnoEnd board."
+  - Claude Code provider: app draft through the web app with the extension's `claude` (haiku),
+    10.2 s, 9 keys, first try; no permission request reached the board (`--restricted`).
+  - #35: with a local patch (not committed) faking a Claude desktop notification and a 1x1 test
+    library for Calculator: main showed `keys: 1=Go to Claude` (bug reproduced); #35 showed
+    `[Claude needs you] keys: 1=Clear`, and taps typed the key.
+- Decided (Tom):
+  - #30 follow-up 1 (pages on pre-#30 firmware): skipped; both boards have page support.
+  - Follow-up 3 (speak page turns): https://github.com/jalabulajunx/knoend/issues/34, after board
+    sound works on the FNK (it makes no sound yet).
+  - Follow-up 5 (long single words break mid-word): part of edit mode (#29), not fixed separately.
+  - Bug fixes are reproduced on main on the board, then checked with the fix, before merging.
+- Open: edit mode (#29) next. Not tested on macOS: Antigravity and Codex lookups (not installed).
