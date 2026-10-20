@@ -1165,3 +1165,27 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   move and change keys, set the grid (https://github.com/jalabulajunx/openpager/issues/29).
 - Open: Sundar to flash this firmware on the ONX and try a swipe and the page tap (any app with
   pages, e.g. a copy of `spec/examples/library-pages.toml` with his own `match`).
+
+## 2026-10-19 - Sundar (Claude Code) - What the site-drafting AI receives (Tom's #18 review, point 1)
+
+- Tom (spec review on #18): `spec/browser.md` §5 said the drafting AI gets the host, "never the full
+  URL", but the service sent the page path (`web.route()`) and link `href`s in the inventory kept
+  their query; paths and queries can hold document ids, user names or search terms.
+- Decided (Sundar): send the kind of page, not the path, and drop queries from link paths.
+- Changed: `configure_site` passes `web.page_kind()` (ids as `*`, no query) to the drafting agent;
+  the extension's inventory `href` is the path (plus an in-page route) without any query, also none
+  inside a `#/` route. `spec/browser.md` §3 (`href`), §4b and §5 say exactly what is sent, including
+  that non-id path segments (a user or repository name) still appear in kinds and link paths.
+- Tested: builds; `node` check of the link rule (LinkedIn search link loses `?keywords=...`, a
+  Navidrome `#/album/42/show?token=` route loses its query, other sites' links still left out).
+- Open (Tom's #18 point 2, no action): `openpager.image` has one fixed format; revisit with grids.
+
+## 2026-10-19 - Sundar (Claude Code) - Tom's grids and pages (#30) checked on the ONX
+
+- Flashed `main` at 3a329ee to the ONX (board definition unchanged; hashes verified; boot clean,
+  identity reports grid max 4x4 and `openpager.page`).
+- Sundar: ordinary 3x3 apps unchanged (Terminal, Claude, Firefox). A test library (Tom's
+  `library-pages.toml` matched to xed, as a user library) showed 2x2, then 4x4, then 2x2 pages,
+  turning as described. Test library removed afterwards (to the Trash).
+- For Tom: a long single word now breaks mid-word on two lines ("Fullscree / n" on Xfce Terminal's
+  Fullscreen key, no icon); shrink the text or break only between words.

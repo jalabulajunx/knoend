@@ -68,8 +68,8 @@ text or field values**:
 - `selector`: a CSS selector that finds exactly this element, built from stable attributes in this
   order: `id`, `data-testid` / `data-test` / `data-qa`, `aria-label`, `name`, then a short path.
 - `shortcut`: from `accesskey` or `aria-keyshortcuts`, when the page declares one.
-- `href` (links): same-site path and query only, plus an in-page route (`#/album/all`) when the
-  site keeps its pages after `#`.
+- `href` (links): same-site path only, plus an in-page route (`#/album/all`) when the site keeps
+  its pages after `#`; never a query, also not one inside the route.
 - At most 300 items; hidden and disabled controls are left out.
 - A link's or button's own short text (40 characters or less) is used as its name when it has no
   label, so names can include visible titles (a video or article title shown as a link). Field
@@ -118,7 +118,7 @@ site covers the whole site. After that, a kind of page with no keys of its own g
 that kind only (told the site-wide keys, so it does not repeat them): from the popup, or by itself
 the first time the person opens that kind of page on a site they configured with the AI. Drafted
 kinds are remembered in `sites.json`. The agent receives the
-site's host, the page path without its query, and the inventory; its draft is pinned to the site
+site's host, the kind of page (never the actual path: ids are `*`, no query), and the inventory; its draft is pinned to the site
 (`match.web`), saved as an unreviewed AI library, and rejected if any selector is not in the
 inventory.
 `element`, `focus` and `media` need the site to be granted; `open` needs only the `tabs` permission.
@@ -132,5 +132,11 @@ inventory.
   now, since browsers only accept a permission request from a click in the browser). That asks the browser for
   the site's host permission (`https://example.com/*`); only then may the extension read the
   inventory or act there. Turning a site off removes the permission.
-- The service sends the URL host to the AI drafting agent, never the full URL; the inventory goes to
-  the agent only when the person asks for a layout for that site.
+- What the AI drafting agent receives for a site: the host, the kind of page (`/document/d/*/edit`:
+  id-like segments replaced by `*`, never a query), and the inventory (controls' names and
+  selectors, same-site link paths without queries). Never the full URL, page text or what a person
+  typed. Path segments that are not id-like stay as they are, so a kind can still name a user or a
+  repository (`/jalabulajunx/openpager`). Link paths are sent unchanged, ids included (an `open`
+  key needs the real path), so links to documents carry their ids. The inventory goes to the agent
+  only when the person asks for keys for that site, or for a new kind of page on a site they asked
+  for.
