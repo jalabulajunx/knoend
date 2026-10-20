@@ -3,8 +3,9 @@
 //! computer for now, #15). The theme and turn are sent to the board (`knoend.display`,
 //! spec/protocol.md 3.6d), which keeps them; the key size stays here.
 //!
-//! Key size caps the grid: a layout page with a bigger grid is split onto pages of the capped size
-//! (`layout::pages`), so nothing is lost, only spread out. Agent screens keep their own grid.
+//! Key size is the grid every page is shown in: a layout's keys are packed into pages of that grid,
+//! in order (`layout::packed`), so a 3x3 layout fills a 4x4 page and a 4x4 one spreads over 3x3
+//! pages. Edit mode shows layouts as they were made; agent screens keep their own grid.
 
 use serde::{Deserialize, Serialize};
 
@@ -93,7 +94,7 @@ pub fn save(display: &Display) -> Result<(), String> {
     std::fs::write(&path, serde_json::to_string_pretty(display).map_err(|e| e.to_string())? + "\n").map_err(|e| e.to_string())
 }
 
-/// The grid layouts are shown in: the key size's, within what the board draws.
+/// The grid every page is shown in: the key size's, within what the board draws.
 pub fn shown_grid(board: Grid, key_size: KeySize) -> Grid {
     key_size.largest().within(board)
 }

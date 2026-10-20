@@ -923,7 +923,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     let player = knoend_media::for_focus(players, &focus.app, &focus.instance);
     let mut actions: HashMap<u8, KeyRef> = HashMap::new();
     let found = catalog.layout_for(focus).map(|library| {
-        let pages = layout::pages(&library, paging.max);
+        let pages = layout::packed(&library, paging.max);
         let page = paging.enter(&library.pack.id, pages.len());
         let built = layout::build(&library, focus.os, &pages, page);
         (library, built, pages.into_iter().nth(page).map(|p| p.keys).unwrap_or_default())
@@ -1094,8 +1094,8 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
     if show_edit(sender, paging, shown, shared).await {
         return;
     }
-    // 3x3 pages (icons and names fit), smaller on a board that cannot draw 3x3.
-    let grid = Grid::DEFAULT.within(paging.max);
+    // Pages at the person's key size (3x3 unless they chose otherwise).
+    let grid = paging.max;
     let per_page = usize::from(grid.size());
     let entries = usage.top(per_page * LAUNCHER_PAGES);
     let pages = entries.len().div_ceil(per_page);
@@ -1694,7 +1694,8 @@ fn unsupported_layout(focus: &Focus, paging: &mut Paging) -> LayoutBody {
     let mut name: String = format!("Unsupported: {}", focus.display_name());
     name.truncate(128);
     paging.enter(UNSUPPORTED, 1);
-    let grid = Grid::DEFAULT.within(paging.max);
+    // One key: a 3x3 places it in the middle, whatever the key size.
+    let grid = Grid::DEFAULT.within(paging.board);
     LayoutBody {
         layout: UNSUPPORTED.into(),
         name,

@@ -379,8 +379,12 @@ action looks like buy/submit/send/delete without it.
 grid of every page; a `[[page]]` entry overrides it for one page (one entry per page number). A key's `page` (1-8, default 1) and
 `slot` (1 to cols×rows of its page) are optional: a key with neither takes the next free slot,
 running onto the next page when one is full; a key with only `page` takes the next free slot on
-that page. At most 64 keys. On a board whose `grid` is smaller, the companion splits each page onto
-pages of the board's size, keys in slot order. The media row is the bottom row of the page shown
+that page. At most 64 keys. The library's grids and pages are how it was made, and how the web
+app's editor shows it. On the board, the companion shows every page in the person's **key size**
+(2x2, 3x3 by default, or 4x4, within the board's `grid`): the keys in order (page, then slot),
+blank slots left out, packed into as many pages of that grid as they need. So a 9-key 3x3 layout
+fills one 4x4 page, and a 16-key 4x4 layout becomes two 3x3 pages. Agent screens keep their own
+grid. The media row is the bottom row of the page shown
 (only on grids of 3 rows or more); "Go to Claude" takes its last key, except on a page of fewer than
 4 keys, where the status line says "Claude needs you" instead. AI drafts get their grid from
 their number of keys, on one page: 1 key 1x1, 2 1x2, 3-4 2x2, 5-9 3x3, 10-16 4x4.

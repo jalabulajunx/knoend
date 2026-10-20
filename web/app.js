@@ -643,9 +643,9 @@ function choice(name, value, title, sub, disabled) {
 // ---- key size (display.rs): how many keys a page may have at most ----
 
 const KEY_SIZES = [
-  ["big", "Big: up to 2x2", "Four large keys a page. Easiest to read and tap; most apps need several pages."],
-  ["medium", "Medium: up to 3x3 (recommended)", "Nine keys a page. Comfortable on a 2.8-inch screen."],
-  ["small", "Small: up to 4x4", "Sixteen keys a page. Short labels, or icons only; best for a bigger screen or a steady hand."],
+  ["big", "Big: 2x2", "Four large keys a page. Easiest to read and tap; most apps need several pages."],
+  ["medium", "Medium: 3x3 (recommended)", "Nine keys a page. Comfortable on a 2.8-inch screen."],
+  ["small", "Small: 4x4", "Sixteen keys a page. Short labels, or icons only; fewer pages to swipe."],
 ];
 
 const THEMES = [

@@ -42,6 +42,19 @@ pub fn pages(library: &Library, max: Grid) -> Vec<Page> {
     out
 }
 
+/// The library's keys packed into pages of exactly `grid`, in order (page, then slot), blank slots
+/// left out: how the board shows a layout at the person's key size (spec/protocol.md section 5).
+/// Edit mode uses `pages` instead, to show the layout as it was made.
+pub fn packed(library: &Library, grid: Grid) -> Vec<Page> {
+    let mut placed: Vec<(usize, (u8, u8))> = library.placed().into_iter().enumerate().collect();
+    placed.sort_by_key(|(_, at)| *at);
+    let mut out: Vec<Page> = placed.chunks(usize::from(grid.size()))
+        .map(|chunk| Page { grid, keys: chunk.iter().zip(1..).map(|((i, _), slot)| (*i, slot)).collect() })
+        .collect();
+    out.truncate(MAX_BOARD_PAGES);
+    out
+}
+
 /// Page `index` (0-based) of `pages` as a layout packet body.
 pub fn build(library: &Library, os: Os, pages: &[Page], index: usize) -> Result<LayoutBody, String> {
     let page = pages.get(index).ok_or("no such page")?;
@@ -116,6 +129,23 @@ mod tests {
         assert_eq!(pages(&library, Grid { cols: 1, rows: 1 }).len(), 7);
         let body = build(&library, Os::Linux, &small, 1).unwrap();
         assert_eq!((body.page, body.pages, body.keys.len()), (Some(2), Some(3), 2));
+    }
+
+    #[test]
+    fn packed_pages_fill_the_chosen_grid() {
+        let library = Library::parse(&example("library-pages.toml")).unwrap();
+        let keys = library.placed().len();
+        // 4x4: every key on as few 4x4 pages as they need, in order.
+        let small = packed(&library, Grid::LARGEST);
+        assert_eq!(small.len(), keys.div_ceil(16));
+        assert!(small.iter().all(|p| p.grid == Grid::LARGEST));
+        assert_eq!(small[0].keys.iter().map(|(_, slot)| *slot).collect::<Vec<_>>(), (1..=keys.min(16) as u8).collect::<Vec<_>>());
+        // 2x2: four a page.
+        assert_eq!(packed(&library, Grid { cols: 2, rows: 2 }).len(), keys.div_ceil(4));
+        // A 9-key 3x3 layout at 4x4: one page, seven blank slots.
+        let vscode = Library::parse(&example("library-vscode.toml")).unwrap();
+        let one = packed(&vscode, Grid::LARGEST);
+        assert_eq!((one.len(), one[0].grid), (1, Grid::LARGEST));
     }
 
     #[test]
