@@ -28,8 +28,9 @@
   --accent: var(--signal);
   --accent-text: #fff;
 }
+/* Dark: the browser's preference (Auto), unless the person chose Light; or chosen outright. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0d0e0f;
     --raise: #141617;
     --text: #ece8df;
@@ -45,6 +46,22 @@
     --bad: #ff6b4f;
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0d0e0f;
+  --raise: #141617;
+  --text: #ece8df;
+  --muted: #8d897f;
+  --faint: #57544d;
+  --line: #26292b;
+  --ink: #ece8df;
+  --ink-text: #0d0e0f;
+  --signal: #ff6a33;
+  --signal-soft: rgb(255 106 51 / .14);
+  --ok: #63d38f;
+  --warn: #e0a64a;
+  --bad: #ff6b4f;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -114,6 +131,12 @@ a { color: var(--text); text-decoration-color: var(--signal); text-underline-off
   color: var(--muted); padding: 7px 0;
 }
 .pill.ok { color: var(--text); }
+/* Auto / Light / Dark, remembered by this browser. */
+.scheme { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 999px; padding: 2px; }
+.scheme button { border: 0; background: none; color: var(--faint); font: 500 10px/1 var(--mono); letter-spacing: .08em;
+  text-transform: uppercase; padding: 6px 9px; border-radius: 999px; cursor: pointer; transition: color .2s, background .2s; }
+.scheme button:hover { color: var(--text); }
+.scheme button[aria-pressed="true"] { color: var(--text); background: var(--line); }
 .pill.warn { color: var(--warn); }
 
 /* ---- page ---- */

@@ -1450,3 +1450,8 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   computer). The display hang's cause (above). Checking the web script: use
   `node --input-type=module --check web/app.js` (the plain check misses duplicate names).
 - The last setup-drawing fix (the cable plugs into the board's edge, not its screen) is in.
+- Later: an Auto / Light / Dark switch in the web app's header (Sundar saw dark in Firefox, light in
+  Chrome: each browser reports its own preference, and Chrome on i3 reports light). Auto follows the
+  browser; Light or Dark is remembered per browser (localStorage) and applied before the page draws.
+  Checked in the browser pane: both themes, and the choice kept across a reload. Issue #17 got a
+  progress comment (items 1 and 5 done); none of the day's fixed bugs had an issue to close.

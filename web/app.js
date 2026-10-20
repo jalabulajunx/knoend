@@ -1723,6 +1723,17 @@ $("ask-form").addEventListener("submit", (e) => {
 
 // ---- start ----
 
+// ---- colours: Auto (the browser's setting), Light or Dark, remembered by this browser ----
+
+function setScheme(choice) {
+  if (choice === "light" || choice === "dark") document.documentElement.dataset.theme = choice;
+  else delete document.documentElement.dataset.theme;
+  try { if (choice === "auto") localStorage.removeItem("knoend-scheme"); else localStorage.setItem("knoend-scheme", choice); } catch {}
+  document.querySelectorAll(".scheme button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scheme === choice)));
+}
+document.querySelectorAll(".scheme button").forEach((b) => b.addEventListener("click", () => setScheme(b.dataset.scheme)));
+setScheme(document.documentElement.dataset.theme || "auto");
+
 (async function start() {
   addAskButtons();
   addTips();
