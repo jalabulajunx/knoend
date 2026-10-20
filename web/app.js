@@ -535,15 +535,28 @@ function setMode(mode) {
 }
 document.querySelectorAll('input[name="mode"]').forEach((i) => i.addEventListener("change", () => setMode(i.value)));
 
+/** AI tools on this computer, signed in with the person's own account: what the settings say. */
+const CLI_TOOLS = {
+  "claude-code": "Uses the <code>claude</code> command signed in with your own account, with its tools switched off: it only reads the request and writes the answer. Not signed in yet? Run <code>claude</code> in a terminal and type <code>/login</code>. Leave the model empty for Claude Code's own choice.",
+  antigravity: "Uses the <code>agy</code> command signed in with your Google account. It may not run commands or read your files, and works in an empty folder that is removed afterwards. Antigravity keeps these requests in its own conversation history. Not signed in yet? Run <code>agy</code> in a terminal. Leave the model empty for Antigravity's own choice.",
+};
+
 function providerFields() {
   const provider = $("ai-provider").value;
   $("ai-base-wrap").hidden = provider !== "openai-compatible";
   $("ai-base-alt-wrap").hidden = provider === "openai-compatible";
-  $("ai-key-wrap").hidden = provider === "ollama";
+  const tool = CLI_TOOLS[provider];
+  $("ai-key-wrap").hidden = provider === "ollama" || !!tool;
+  $("ai-cli-note").hidden = !tool;
+  $("ai-cli-note").innerHTML = tool || "";
+  // No API address or request options for a command on this computer.
+  $("ai-advanced").hidden = !!tool;
 }
 /** The API address: the main field for a generic server, the advanced one otherwise. */
 function baseUrl() {
-  return ($("ai-provider").value === "openai-compatible" ? $("ai-base").value : $("ai-base-alt").value).trim() || null;
+  const provider = $("ai-provider").value;
+  if (CLI_TOOLS[provider]) return null;
+  return (provider === "openai-compatible" ? $("ai-base").value : $("ai-base-alt").value).trim() || null;
 }
 $("ai-provider").addEventListener("change", () => {
   // Another provider: its own address and options.
@@ -649,7 +662,42 @@ function renderAi(info) {
   $("ai-status").textContent = info.configured ? `Current: ${info.describe}, ${keyText}.` : "Not set up yet.";
 }
 
+/**
+ * The AI tools found on this computer just now (Claude Code, Antigravity, Codex): installed ones are
+ * offered in the provider list, with whether they are signed in. Nothing is assumed in advance.
+ */
+async function loadAiTools() {
+  const line = $("ai-tools");
+  line.textContent = "Looking for AI tools on this computer...";
+  let tools = [];
+  try { ({ tools } = await api("/ai/tools")); } catch (err) { line.textContent = `Could not look for AI tools: ${err.message}`; return; }
+  const found = tools.filter((t) => t.installed);
+  for (const t of tools) {
+    const option = document.querySelector(`#ai-provider option[value="${t.provider}"]`);
+    if (option) option.hidden = !t.installed;
+  }
+  line.replaceChildren();
+  if (!found.length) {
+    line.textContent = "No AI tools found on this computer (Claude Code, Antigravity CLI or Codex CLI). With one installed and signed in, you can use your own plan without an API key. ";
+  } else {
+    line.append("Found on this computer: ");
+    found.forEach((t, i) => {
+      const state = !t.supported ? "KnoEnd cannot use it yet"
+        : t.signed_in === true ? "signed in"
+        : t.signed_in === false ? `not signed in: ${t.sign_in}`
+        : `could not check the sign-in${t.check_error ? ` (${t.check_error})` : ""}`;
+      line.append(`${i ? "; " : ""}${t.name}${t.version ? ` ${t.version.replace(/\s*\(.*\)$/, "")}` : ""} (${state})`);
+    });
+    line.append(". ");
+  }
+  const again = document.createElement("button");
+  again.type = "button"; again.className = "secondary small-button"; again.textContent = "Look again";
+  again.addEventListener("click", loadAiTools);
+  line.append(again);
+}
+
 async function loadAi() {
+  loadAiTools();
   const info = await api("/ai");
   if (info.provider) $("ai-provider").value = info.provider;
   if (info.model) $("ai-model").value = info.model;

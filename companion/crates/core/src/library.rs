@@ -17,7 +17,8 @@ pub const MAX_PAGES: u8 = 8;
 const SCHEMA: &str = include_str!("../../../../spec/schemas/library.schema.json");
 
 /// Words that make a key "risky" unless it has `confirm = true` (same list as validate_spec.py).
-const RISKY_WORDS: &[&str] = &["buy", "purchase", "pay", "checkout", "submit", "send", "delete", "remove", "erase"];
+/// Words that make a key need `confirm = true` (the drafting prompts list them too).
+pub const RISKY_WORDS: &[&str] = &["buy", "purchase", "pay", "checkout", "submit", "send", "delete", "remove", "erase"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

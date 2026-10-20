@@ -7,6 +7,7 @@
 //! validator as every other library. One retry is allowed, with the validator's errors.
 
 pub mod assistant;
+pub mod cli_tool;
 pub mod provider;
 pub mod secrets;
 pub mod site;
@@ -61,7 +62,9 @@ Rules:
   "About the app" is given, draft for the product, version and description it names, not for a
   better-known product with the same name.
 - Any key that deletes, sends, submits, closes without saving or buys something must have
-  confirm = true.
+  confirm = true. So must every key whose label, speak or action contains one of these words:
+  buy, purchase, pay, checkout, submit, send, delete, remove, erase (the library is rejected
+  otherwise).
 - Put the most used actions first.
 - Give each key the icon that best shows its action, from the icon list only; leave icon out if
   none fits."#;
@@ -117,14 +120,19 @@ pub fn grid_for(keys: usize) -> &'static str {
 }
 
 /// Sets the draft's grid from its key count, in order on one page: the model does not place keys.
-/// Keys past 16 run onto a second page.
+/// Keys past 16 run onto a second page. An icon not in the icon list is left out (icons are
+/// optional; the label shows instead), so one made-up icon name does not cost the whole draft.
 pub(crate) fn fit_grid(value: &mut toml::Table) {
     value.remove("page");
+    let icons = knoend_core::library::icon_names();
     let keys = match value.get_mut("key").and_then(toml::Value::as_array_mut) {
         Some(keys) => {
             for key in keys.iter_mut().filter_map(toml::Value::as_table_mut) {
                 key.remove("page");
                 key.remove("slot");
+                if key.get("icon").and_then(toml::Value::as_str).is_some_and(|i| !icons.contains(&i)) {
+                    key.remove("icon");
+                }
             }
             keys.len()
         }
@@ -196,6 +204,31 @@ mod tests {
     }
 
     #[test]
+    fn unknown_icons_are_left_out() {
+        let mut value: toml::Table = toml::from_str(r#"
+[pack]
+id = "x"
+[[key]]
+label = "Stats"
+icon = "bar_chart"
+[[key]]
+label = "Find"
+icon = "search"
+"#).unwrap();
+        fit_grid(&mut value);
+        let keys = value["key"].as_array().unwrap();
+        assert!(keys[0].get("icon").is_none(), "made-up icon dropped");
+        assert_eq!(keys[1]["icon"].as_str(), Some("search"));
+    }
+
+    #[test]
+    fn prompt_names_every_word_that_needs_confirm() {
+        for word in knoend_core::library::RISKY_WORDS {
+            assert!(SYSTEM_PROMPT.contains(&format!(" {word}")), "{word} missing from the drafting prompt");
+        }
+    }
+
+    #[test]
     fn prompt_never_contains_the_window_title() {
         assert!(!user_prompt(&focus(), &[]).contains("secret"));
     }
@@ -259,3 +292,26 @@ action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
         assert_eq!(slug(&f), "com-anthropic-claude");
     }
 }
+
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    /// Drafts a real app library through each AI tool on this computer:
+    /// `cargo test -p knoend-agents live_draft -- --ignored --nocapture`.
+    #[tokio::test]
+    #[ignore]
+    async fn live_draft_through_tools_on_this_computer() {
+        let focus = Focus { os: Os::Linux, app: "Gnome-calculator".into(), instance: "gnome-calculator".into(), title: String::new(), web: None };
+        for provider in [Provider::ClaudeCode, Provider::Antigravity] {
+            let config = AgentConfig { provider, ..Default::default() };
+            let started = std::time::Instant::now();
+            match draft_library(&config, &focus, &[]).await {
+                Ok(draft) => println!("{provider:?}: {} keys, {} attempt(s), {:?}\n{}", draft.library.keys.len(),
+                                      draft.attempts, started.elapsed(), draft.toml),
+                Err(e) => println!("{provider:?}: error after {:?}: {e}", started.elapsed()),
+            }
+        }
+    }
+}
+

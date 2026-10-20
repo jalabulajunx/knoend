@@ -59,6 +59,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/drafts", get(drafts))
         .route("/ai", get(ai_settings).post(save_ai_settings))
         .route("/ai/models", post(ai_models))
+        .route("/ai/tools", get(ai_tools))
         .route("/assist", post(assist))
         .route("/open", post(open_help))
         .route("/typing", get(typing))
@@ -274,7 +275,7 @@ async fn ai_settings() -> ApiResult {
     match crate::agent_config() {
         Ok(config) => Ok(Json(json!({
             "configured": agent_toml().exists(),
-            "provider": format!("{:?}", config.provider).to_lowercase(),
+            "provider": config.provider.name(),
             "model": config.model().ok(),
             "base_url": config.base_url,
             "options": config.options,
@@ -285,6 +286,11 @@ async fn ai_settings() -> ApiResult {
         }))),
         Err(e) => Ok(Json(json!({"configured": false, "error": e}))),
     }
+}
+
+/// The AI tools on this computer (Claude Code, Antigravity, Codex), looked up now.
+async fn ai_tools() -> ApiResult {
+    Ok(Json(json!({"tools": knoend_agents::cli_tool::tools_on_this_computer().await})))
 }
 
 #[derive(Deserialize)]
@@ -303,7 +309,7 @@ struct AiRequest {
 /// Saves provider + model to agent.toml and the key to the local key store, then checks them with
 /// a tiny request.
 async fn save_ai_settings(Json(request): Json<AiRequest>) -> ApiResult {
-    let allowed = ["gemini", "openai", "openrouter", "anthropic", "ollama", "openai-compatible"];
+    let allowed = ["gemini", "openai", "openrouter", "anthropic", "ollama", "openai-compatible", "claude-code", "antigravity"];
     if !allowed.contains(&request.provider.as_str()) {
         return Err(fail(StatusCode::BAD_REQUEST, "unknown provider"));
     }

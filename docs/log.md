@@ -1221,3 +1221,60 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - With both sides on KnoEnd (Sundar's machine and the ONX): the board connects over Wi-Fi, keys
   follow apps and sites, and a Claude Code question reached the board; Sundar's Decline came back as
   "Denied on the KnoEnd board." (hooks re-registered to `knoend`).
+
+## 2026-10-19 - Sundar (Claude Code, Opus 5.5) - AI tools on this computer as providers
+
+- Branch `sundar/cli-provider`, on top of the rename branch (#32).
+- Why: people with a Claude or Google plan but no API key. Two new providers in AI settings,
+  `claude-code` (`claude -p`) and `antigravity` (Antigravity's CLI, `agy -p`), behind the same
+  `provider::complete` as the others, so app drafts, site drafts and the setup assistant send the
+  same prompts and the replies go through the same checks (`agents/src/cli_tool.rs`).
+- Locked down, because site drafts carry text from web pages: every call runs in a new empty
+  folder, removed afterwards. Claude Code: `--restricted --tools "" --strict-mcp-config
+  --permission-prompts none --no-session-persistence --disable-slash-commands`, system prompt from a
+  file (`--bare` was rejected: it needs an API key). Antigravity has no switch for tools or a system
+  prompt: `--sandbox --disable-slash-commands`, our instructions first in the prompt, told not to
+  use tools. Checked with agy 1.4.2: print mode refuses running commands and reading files outside
+  its folder (cannot ask permission); it can write into its folder (the empty one). It keeps
+  these requests in its own conversation history (said in the web app).
+- Codex left out for now (not on Sundar's machine). Antigravity's desktop `agentapi` was rejected:
+  it starts conversations in the app with full agent powers and answers later.
+- Setup snapshot: `ai_tools_on_this_computer` (installed, signed in) for both; the assistant is told
+  to read it and never to ask for a key for these.
+- Tested on Arch Linux (X11): workspace tests; the real `claude` (2.1.283) and `agy` (1.4.2)
+  through `complete` (correct reply), the not-signed-in error for Claude Code (says to `/login`),
+  and a GNOME Calculator draft through each (valid, first attempt, about 17 s each).
+  Not yet: through the web app and service, a site draft, macOS.
+- Later the same day: the tools are looked up at run time, not at fixed places
+  (`cli_tool::tools_on_this_computer`, `GET /api/ai/tools`, and the setup snapshot's
+  `ai_tools_on_this_computer`). Where: this process's PATH, then the PATH each installed shell gives
+  the person (`<shell> -lic env` for `$SHELL`, zsh, bash, fish; 3 s each at most; a service started
+  by systemd or launchd has a short PATH, and on Sundar's machine only fish's PATH has
+  `~/.local/bin`), then the usual per-user folders for the OS (`~/.local/bin`, Homebrew on macOS,
+  `%APPDATA%\npm` and PATHEXT names on Windows). Signed in: `claude auth status`, `agy models`
+  (agy has no status command; it took 2 to 16 s), `codex login status`. Codex is found and shown
+  but not used yet. The web app's AI settings show what was found and offer only installed tools,
+  with a "Look again" button.
+- Tested on Arch Linux: workspace tests; `knoend serve` from this branch found Claude Code 2.1.283
+  and agy 1.4.2, both signed in, Codex not installed (2.4 s); the board connected over Wi-Fi.
+  Not tested: macOS and Windows lookups, Codex.
+- Sundar drafted MKVToolNix with Claude Code (haiku): 80 s, 2 attempts. Cause: Claude Code turns
+  on extended thinking by default (13,923 output tokens for a 1,200-character draft, 104 s when
+  timed alone; `--effort low` still 55 s). Calls now set `MAX_THINKING_TOKENS=0`, as the API
+  providers send no thinking: 5 to 8 s. The second attempt was the validator's "looks risky but has
+  no confirm": the app and site prompts now list the exact words it checks
+  (`library::RISKY_WORDS`, with a test for each prompt). Antigravity (default model) took 14 s.
+  A Haiku draft can still name a key the schema does not know ("Return"); the retry fixes it.
+- Sundar drafted Okular with Antigravity (`gemini-3.8-flash-low`): 9.1 s, first attempt, 16 keys;
+  all keys tried on the board work in Okular (including First/Last as Home/End and Back/Forward as
+  Alt+Left/Right).
+- Sites: Instagram drafted through Antigravity in Firefox (three kinds of page, 6 to 7 s each,
+  first attempt) and worked. cricinfo.com through Claude Code (haiku) in Chrome failed: the model
+  used `input[type='search']`, not in the page's list, twice. The retry now says what to do
+  (remove those keys or copy a selector from the list), and on the last try such keys are dropped
+  and the rest kept (`site::without_keys`, with a test).
+- cricinfo.com again (haiku): the site and the series-match pages drafted (the second after one
+  retry); the series page failed twice on a made-up icon ("bar_chart"). Drafts now leave out icons
+  not in the icon list (`fit_grid`, for apps and sites; the label shows instead), with a test.
+- Okular promoted to `recipes/apps/okular.toml` with Sundar's Linux `tested` entry. His generic
+  MKVToolNix draft moved to the trash, so Configure drafts it again.

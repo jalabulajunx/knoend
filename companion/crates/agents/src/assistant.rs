@@ -131,6 +131,13 @@ typed: on a Wayland session say plainly that KnoEnd does not follow apps or type
 choosing an X11 (Xorg) session at login makes everything work. Do not send them hunting for a fault.
 
 Never tell the person to edit source code, rebuild or reinstall knoend to get past a problem.
+When the provider is claude-code (Claude Code) or antigravity (Antigravity's `agy` command), the
+person's own plan is used through a tool on this computer, with no API key. Read
+ai_tools_on_this_computer, the tools found on this computer just now (provider, installed, path,
+signed_in, sign_in): if the chosen one is not installed, say to install it or pick another provider
+(only offer tools that are installed and supported); if signed_in is false, give its sign_in step,
+then say to press Save and test again. Codex can be found but KnoEnd does not use it yet; say so if
+asked. Never ask them for a key for either.
 If the AI provider refuses a request, the fix is in the web app's AI settings (model, key, API
 address, or Advanced > request options, where a value of null leaves a setting out); if a fix
 truly needs a newer knoend, say that plainly and stop there.
@@ -200,6 +207,13 @@ mod tests {
         assert!(prompt.contains("system_checks.desktop_session"));
         assert!(prompt.contains("X11 (Xorg) session at login"));
         assert!(prompt.contains("GNOME on Xorg"), "the knowledge entry is in the prompt");
+    }
+
+    #[test]
+    fn claude_code_sign_in_is_read_not_asked() {
+        let prompt = system_prompt();
+        assert!(prompt.contains("ai_tools_on_this_computer, the tools found"));
+        assert!(prompt.contains("give its sign_in step") && prompt.contains("Never ask them for a key for either"));
     }
 
     #[test]
