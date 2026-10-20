@@ -461,9 +461,13 @@ static void touch_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
 static lv_disp_t *display;
 
 // LVGL waits for the panel to report each update done before the next. On 2026-10-20 the ONX lost
-// that report after 14 min (display task spinning in draw_buf_flush, Wi-Fi starved); whatever the
-// cause, one lost report must cost a frame, not the board: after 300 ms the update counts as done.
-#define FLUSH_GIVE_UP_US (300 * 1000)
+// that report after 14 min (display task spinning in draw_buf_flush, Wi-Fi starved). A lost report
+// must cost a redraw, not the board: after 2 s the update counts as done and the whole screen is
+// drawn again. Not sooner: in portrait every update is turned in software first, and a whole new
+// layout took longer than the first limit (300 ms), which left the screen half drawn.
+#define FLUSH_GIVE_UP_US (2000 * 1000)
+static bool redraw_all;
+
 static void flush_wait(lv_disp_drv_t *drv)
 {
     static int64_t waiting_since;
@@ -478,11 +482,23 @@ static void flush_wait(lv_disp_drv_t *drv)
         waiting_since = now;
     } else if (now - waiting_since > FLUSH_GIVE_UP_US) {
         given_up++;
-        ESP_LOGW(TAG, "display: an update never reported done; carrying on (%" PRIu32 " so far)", given_up);
+        ESP_LOGW(TAG, "display: an update never reported done; drawing everything again (%" PRIu32 " so far)", given_up);
         waiting_since = 0;
+        redraw_all = true;
         lv_disp_flush_ready(drv);
     }
 }
+
+// After a lost update, everything is drawn again (called from the LVGL task, between refreshes).
+static void redraw_check(lv_timer_t *timer)
+{
+    if (redraw_all) {
+        redraw_all = false;
+        lv_obj_invalidate(lv_scr_act());
+        lv_obj_invalidate(lv_layer_top());
+    }
+}
+
 static const lv_disp_rot_t rotations[] = { LV_DISP_ROT_NONE, LV_DISP_ROT_90, LV_DISP_ROT_180, LV_DISP_ROT_270 };
 
 // The screen size for a rotation of the native panel (90 and 270 swap width and height).
@@ -523,6 +539,7 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t 
 
     ESP_RETURN_ON_FALSE(lvgl_port_lock(0), ESP_FAIL, TAG, "lvgl lock");
     display->driver->wait_cb = flush_wait;
+    lv_timer_create(redraw_check, 100, NULL);
     lv_disp_set_rotation(display, rotations[def.rotation / 90]);
     static lv_indev_drv_t touch_driver;
     lv_indev_drv_init(&touch_driver);
