@@ -83,6 +83,12 @@ pub struct Display {
     /// Quarter turns clockwise from the board's usual landscape (0-3).
     #[serde(default)]
     pub turn: u8,
+    /// Google Fonts family for key labels; empty: the built-in font.
+    #[serde(default)]
+    pub key_font: String,
+    /// Google Fonts family for the start-up name; empty: the built-in font.
+    #[serde(default)]
+    pub start_font: String,
 }
 
 impl Display {
@@ -134,7 +140,7 @@ mod tests {
         assert_eq!(shown_grid(Grid::LARGEST, KeySize::Big), Grid { cols: 2, rows: 2 });
         assert_eq!(serde_json::from_str::<Display>("{}").unwrap().key_size, KeySize::Medium);
         assert_eq!(serde_json::to_value(Display { key_size: KeySize::Big, ..Default::default() }).unwrap(),
-                   serde_json::json!({"key_size": "big", "theme": "dark", "turn": 0}));
+                   serde_json::json!({"key_size": "big", "theme": "dark", "turn": 0, "key_font": "", "start_font": ""}));
     }
 
     #[test]

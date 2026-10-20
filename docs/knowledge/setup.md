@@ -159,6 +159,18 @@ C3, C6) are not supported.
   firmware from 2026-10-20 on uses a stronger tan and brown. Install the latest firmware.
 - **Keys too small to read or hit.** Choose a bigger key size (Medium or Big), or White or Sepia
   for contrast.
+- **Fonts** (settings `key_font`, `start_font`): any Google Fonts family, by its exact name. The
+  service downloads it from Google when chosen (trimmed to the characters the board shows, as
+  TrueType; no account or key; nothing stored on the computer) and sends it to the board, which
+  keeps it in its own flash, so the start-up name shows before the computer connects. Each font
+  must be under about 470 KB after trimming (`board.fonts.capacity`). A character the font lacks
+  is drawn in Montserrat (Edu AU VIC WA NT Dots has no ° for "Kn°End"). Decorative or dotted fonts
+  are hard to read on keys at 12-20 px: suggest them for the start-up name, plain ones
+  (Atkinson Hyperlegible, Lexend) for keys. Fonts need firmware from 2026-10-20 on, flashed with
+  the new partition table (any web-app install writes it; no erase needed).
+- **"Could not get the font" or "could not reach Google Fonts".** The computer is offline or
+  Google Fonts is blocked (some offices and schools); the name may also be misspelt: pick it from
+  the list.
 
 ### Bluetooth keyboard
 

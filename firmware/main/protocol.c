@@ -8,6 +8,7 @@
 #include "board.h"
 #include "cJSON.h"
 #include "display.h"
+#include "fonts.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -29,11 +30,11 @@ static const char *TAG = "protocol";
 // Only what this firmware actually handles is advertised.
 static const char *const incoming_types[] = {
     "identity", "layout", "status", "pair", "wifi",
-    "wifi.scan", "ping", "image", "display",
+    "wifi.scan", "ping", "image", "display", "font",
 };
 static const char *const outgoing_types[] = {
     "identity", "key", "page", "layout.ack", "pair.ack",
-    "wifi.ack", "wifi.networks", "ping", "error", "image.ack", "display.ack",
+    "wifi.ack", "wifi.networks", "ping", "error", "image.ack", "display.ack", "font.ack",
 };
 static const char *const transports[] = { "ble-hid", "serial", "wifi" };
 
@@ -154,6 +155,20 @@ static void send_identity(int64_t re, transport_t to)
     cJSON *display = cJSON_AddObjectToObject(b, "display");
     cJSON_AddStringToObject(display, "theme", display_theme_name(look->theme));
     cJSON_AddNumberToObject(display, "turn", look->turn);
+    // The fonts the person chose that this board holds (spec/protocol.md 3.6e).
+    cJSON *fonts = cJSON_AddObjectToObject(b, "fonts");
+    cJSON_AddNumberToObject(fonts, "capacity", fonts_slot_capacity());
+    for (int slot = 0; slot < FONT_SLOTS; slot++) {
+        const char *font_name;
+        uint32_t crc;
+        if (fonts_data(slot, NULL, &font_name, &crc) != NULL) {
+            cJSON *held = cJSON_AddObjectToObject(fonts, fonts_slot_name(slot));
+            cJSON_AddStringToObject(held, "name", font_name);
+            cJSON_AddNumberToObject(held, "crc", crc);
+        } else {
+            cJSON_AddNullToObject(fonts, fonts_slot_name(slot));
+        }
+    }
 
     cJSON *features = cJSON_AddObjectToObject(body, "features");
     cJSON_AddBoolToObject(features, "speaker", board->has_speaker);
@@ -645,6 +660,82 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
     send_packet("display.ack", ack, re, transport);
 }
 
+static void font_ack(const char *slot, const char *name, const char *error, int64_t re, transport_t transport)
+{
+    cJSON *ack = cJSON_CreateObject();
+    cJSON_AddStringToObject(ack, "slot", slot != NULL ? slot : "");
+    if (name != NULL) {
+        cJSON_AddStringToObject(ack, "name", name);
+    }
+    cJSON_AddBoolToObject(ack, "ok", error == NULL);
+    if (error != NULL) {
+        cJSON_AddStringToObject(ack, "error", error);
+    }
+    send_packet("font.ack", ack, re, transport);
+}
+
+// A font the person chose (spec/protocol.md 3.6e): slices in order, kept in the fonts partition,
+// then used at once. {"slot", "clear": true} goes back to the built-in font.
+static void handle_font(const cJSON *body, int64_t re, transport_t transport)
+{
+    const char *slot_name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(body, "slot"));
+    font_slot_t slot;
+    if (!fonts_slot_parse(slot_name, &slot)) {
+        font_ack(slot_name, NULL, "slot must be keys or start", re, transport);
+        return;
+    }
+    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "clear"))) {
+        if (slot == FONT_SLOT_KEYS) {
+            ui_fonts_release();
+        }
+        const esp_err_t err = fonts_clear(slot);
+        font_ack(slot_name, NULL, err == ESP_OK ? NULL : esp_err_to_name(err), re, transport);
+        return;
+    }
+    const char *name = get_string(body, "name", FONT_NAME_BYTES - 1);
+    const char *data = get_string(body, "data", 4000);
+    const cJSON *crc = cJSON_GetObjectItemCaseSensitive(body, "crc");
+    int offset, total;
+    if (name == NULL || data == NULL || !cJSON_IsNumber(crc) || !get_int(body, "offset", 0, 0x7FFFFFFF, &offset) ||
+        !get_int(body, "total", 1, 0x7FFFFFFF, &total)) {
+        font_ack(slot_name, name, "name, total, offset, crc and data are required", re, transport);
+        return;
+    }
+    if ((size_t)total > fonts_slot_capacity()) {
+        font_ack(slot_name, name, "too big for the board: choose another font", re, transport);
+        return;
+    }
+    if (offset == 0) {
+        if (slot == FONT_SLOT_KEYS) {
+            ui_fonts_release(); // the keys may not use a font being replaced
+        }
+        const esp_err_t err = fonts_begin(slot, total, name);
+        if (err != ESP_OK) {
+            font_ack(slot_name, name, esp_err_to_name(err), re, transport);
+            return;
+        }
+    }
+    static uint8_t piece[3000]; // not on the network task's stack
+    size_t written = 0;
+    if (mbedtls_base64_decode(piece, sizeof(piece), &written, (const unsigned char *)data, strlen(data)) != 0) {
+        font_ack(slot_name, name, "data is not base64 or too long", re, transport);
+        return;
+    }
+    if (fonts_write(slot, offset, piece, written) != ESP_OK) {
+        font_ack(slot_name, name, "slice out of order", re, transport);
+        return;
+    }
+    if ((size_t)offset + written < (size_t)total) {
+        return; // more slices to come
+    }
+    const esp_err_t err = fonts_finish(slot, (uint32_t)crc->valuedouble);
+    if (slot == FONT_SLOT_KEYS) {
+        ui_fonts_reload();
+    }
+    ESP_LOGI(TAG, "font %s: %s %s", slot_name, name, err == ESP_OK ? "kept" : esp_err_to_name(err));
+    font_ack(slot_name, name, err == ESP_OK ? NULL : "the font arrived damaged; send it again", re, transport);
+}
+
 static void handle_line(const char *line, transport_t transport)
 {
     cJSON *packet = cJSON_Parse(line);
@@ -679,6 +770,8 @@ static void handle_line(const char *line, transport_t transport)
         handle_wifi_scan(re, transport);
     } else if (strcmp(name_of(type->valuestring), "display") == 0) {
         handle_display(body, re, transport);
+    } else if (strcmp(name_of(type->valuestring), "font") == 0) {
+        handle_font(body, re, transport);
     }
     // Anything else is ignored, as the spec requires for unknown types.
     cJSON_Delete(packet);

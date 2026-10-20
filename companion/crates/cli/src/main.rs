@@ -23,6 +23,7 @@ mod diagnostics;
 mod edit;
 mod checks;
 mod display;
+mod fonts;
 mod settings;
 mod firmware;
 mod macos_help;

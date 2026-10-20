@@ -108,6 +108,7 @@ function drawScreen(el, layout, look) {
   const rows = portrait ? Math.min(Math.ceil((shown.cols * shown.rows) / cols), 4) : shown.rows;
   const keys = document.createElement("div");
   keys.className = "keys";
+  keys.style.fontFamily = fontStack(look.key_font);
   keys.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   keys.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
   const labels = layout ? [...layout.keys].sort((a, b) => a.key - b.key).map((k) => k.label) : [];
@@ -663,6 +664,60 @@ const TURNS = [
   ["3", "Portrait, upside down", "Tall, turned a quarter anticlockwise."],
 ];
 
+// ---- fonts from Google Fonts: the list live from the service, previews loaded by the browser ----
+
+let fontFamilies = null;
+
+/** Fills the font search list from Google's catalogue (once per page). */
+async function loadFontFamilies() {
+  if (fontFamilies) return;
+  fontFamilies = [];
+  try {
+    ({ families: fontFamilies } = await api("/fonts"));
+    $("font-families").replaceChildren(...fontFamilies.map((f) => new Option(f.category ? `${f.family} (${f.category})` : f.family, f.family)));
+  } catch (err) {
+    fontFamilies = null;
+    logTo($("activity"), `Could not load the list of Google Fonts: ${err.message}`, "error");
+  }
+}
+
+/** Lets the browser draw `family` (for the previews), with the characters the board shows. */
+function previewFont(family) {
+  if (!family || document.querySelector(`link[data-font="${CSS.escape(family)}"]`)) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.dataset.font = family;
+  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}&display=swap`;
+  document.head.append(link);
+}
+
+function fontStack(family) {
+  return family ? `"${family}", Montserrat, sans-serif` : "";
+}
+
+/** The font fields and the start-up previews, from the saved choice. */
+function showFonts(d) {
+  for (const id of ["key-font", "key-font-setup"]) if ($(id) && document.activeElement !== $(id)) $(id).value = d.key_font || "";
+  for (const id of ["start-font", "start-font-setup"]) if ($(id) && document.activeElement !== $(id)) $(id).value = d.start_font || "";
+  previewFont(d.key_font);
+  previewFont(d.start_font);
+  for (const id of ["start-preview", "start-preview-setup"]) if ($(id)) $(id).style.fontFamily = fontStack(d.start_font);
+}
+
+for (const [id, field] of [["key-font", "key_font"], ["key-font-setup", "key_font"], ["start-font", "start_font"], ["start-font-setup", "start_font"]]) {
+  $(id).addEventListener("focus", loadFontFamilies);
+  $(id).addEventListener("change", (e) => {
+    const family = e.target.value.trim();
+    if (family && fontFamilies && !fontFamilies.some((f) => f.family === family)) {
+      e.target.setCustomValidity("Pick a family from the list");
+      e.target.reportValidity();
+      return;
+    }
+    e.target.setCustomValidity("");
+    saveDisplay({ [field]: family }).catch((err) => alert(`Could not change the font: ${err.message}`));
+  });
+}
+
 async function saveDisplay(change) {
   displayState = { ...displayState, ...change };
   redrawScreens();
@@ -671,6 +726,7 @@ async function saveDisplay(change) {
   $("key-size").value = saved.key_size;
   $("theme").value = saved.theme;
   $("turn").value = String(saved.turn);
+  showFonts(saved);
   redrawScreens();
   return saved;
 }
@@ -678,7 +734,8 @@ async function saveDisplay(change) {
 /** Fills the dashboard's choices; the look only when the board's firmware can change it. */
 async function loadDisplay() {
   const d = await api("/display");
-  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn };
+  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font };
+  showFonts(d);
   redrawScreens();
   $("key-size").value = d.key_size;
   $("theme").value = d.theme;
@@ -706,7 +763,8 @@ async function keySizeStep() {
   fill($("theme-setup"), "theme-choice", THEMES, current.theme);
   fill($("turn-setup"), "turn-choice", TURNS, String(current.turn || 0));
   $("theme-note").hidden = current.board_can_change_look;
-  displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0 };
+  displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0, key_font: current.key_font, start_font: current.start_font };
+  showFonts(current);
   redrawScreens();
   // Each choice applies at once: on the board, and in the preview.
   const field = { "key-size-choice": (v) => ({ key_size: v }), "theme-choice": (v) => ({ theme: v }), "turn-choice": (v) => ({ turn: Number(v) }) };

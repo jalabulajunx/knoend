@@ -43,6 +43,11 @@
               <option value="white">White: black on white</option>
               <option value="sepia">Sepia: brown on warm paper</option>
             </select></label>
+          <label class="inline">Key font
+            <input id="key-font" class="font-pick" list="font-families" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
+          <label class="inline">Start-up font
+            <input id="start-font" class="font-pick" list="font-families" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
+          <p id="start-preview" class="start-preview" aria-label="The name the board shows at start-up">Kn°End</p>
           <label class="inline">Way round
             <select id="turn">
               <option value="0">Landscape</option>
@@ -264,6 +269,12 @@
             <ul class="choices" id="theme-setup"></ul>
             <h3>Which way round will the board sit?</h3>
             <ul class="choices" id="turn-setup"></ul>
+            <h3>Fonts <span class="muted small">(optional, from Google Fonts)</span></h3>
+            <label>For the keys
+              <input id="key-font-setup" class="font-pick" list="font-families" placeholder="Built-in (Montserrat): type to search" autocomplete="off"></label>
+            <label>For the name at start-up
+              <input id="start-font-setup" class="font-pick" list="font-families" placeholder="Built-in (Montserrat): type to search" autocomplete="off"></label>
+            <p id="start-preview-setup" class="start-preview">Kn°End</p>
             <p id="theme-note" class="muted small" hidden>This board's firmware has one look, landscape only. Install the latest firmware for these; the preview shows them meanwhile.</p>
           </div>
           <div>
@@ -301,6 +312,7 @@
         </div>
         <p id="assistant-off" class="muted small" hidden>Set up an AI provider in Set up a board to use the assistant.</p>
   </aside>
+  <datalist id="font-families"></datalist>
   <script src="/app.js" type="module"></script>
 </body>
 </html>

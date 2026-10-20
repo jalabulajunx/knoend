@@ -249,3 +249,7 @@ form textarea { font-family: ui-monospace, monospace; font-size: 13px; resize: v
 @media (max-width: 640px) {
   .assistant-panel { top: auto; height: 75vh; width: 100vw; border-left: none; border-top: 1px solid var(--line); border-radius: 12px 12px 0 0; }
 }
+
+/* Fonts: the picker searches Google Fonts; the start-up name is previewed in its font. */
+.font-pick { min-width: 220px; }
+.start-preview { font-size: 40px; margin: 8px 0; line-height: 1.2; }

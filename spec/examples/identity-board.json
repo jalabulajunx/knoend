@@ -3,8 +3,10 @@
     "protocolVersion": 0, "firmware": "a1ea8a8",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
                "grid": { "cols": 4, "rows": 4 }, "statusBar": true,
-               "display": { "theme": "dark", "turn": 0 } },
+               "display": { "theme": "dark", "turn": 0 },
+               "fonts": { "capacity": 483328, "keys": null,
+                          "start": { "name": "Edu AU VIC WA NT Dots", "crc": 2271390218 } } },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
-    "incoming": ["knoend.layout", "knoend.status", "knoend.display", "knoend.ping"],
-    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.display.ack", "knoend.ping"] } }
+    "incoming": ["knoend.layout", "knoend.status", "knoend.display", "knoend.font", "knoend.ping"],
+    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.display.ack", "knoend.font.ack", "knoend.ping"] } }

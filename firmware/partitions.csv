@@ -5,3 +5,5 @@ nvs,      data, nvs,     0x9000,   0x6000,
 phy_init, data, phy,     0xf000,   0x1000,
 factory,  app,  factory, 0x10000,  0x300000,
 board,    data, 0x40,    0x310000, 0x1000,
+# Two fonts the person chose (key labels, the start-up name), sent by the companion: the rest of 4 MB.
+fonts,    data, 0x41,    0x311000, 0xEF000,

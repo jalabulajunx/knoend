@@ -37,6 +37,9 @@ pub struct BoardStatus {
     /// What the identity says about its look (`board.display`); None on firmware without
     /// `knoend.display`.
     pub display: Option<Value>,
+    /// The fonts it holds (`board.fonts`: capacity, and per slot name and CRC-32); None on firmware
+    /// without fonts.
+    pub fonts: Option<Value>,
 }
 
 /// Which page of the layout on the board is shown: the companion turns pages (spec/protocol.md
@@ -263,6 +266,9 @@ enum Event {
     Configured(Focus, Result<(PathBuf, Library), String>),
     /// The person chose another theme or turn in the web app (already saved).
     Look(crate::display::Display),
+    /// A font fetched for a slot ("keys", "start"): its family (empty: back to the built-in font)
+    /// and the TrueType bytes.
+    Font(String, String, Result<Vec<u8>, String>),
     /// The person chose another key size in the web app (already saved).
     KeySize(crate::display::KeySize),
     /// From the web app's editor, with where to send the answer.
@@ -383,6 +389,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let mut paging = Paging::new(board.grid, wanted.key_size);
         set_picture_theme(board.display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
         let mut asked_look = send_look(&mut sender, &board, &wanted).await;
+        fetch_fonts(&board, &wanted, &events);
         if focus.is_none() {
             show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
@@ -526,6 +533,41 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Look(wanted) => {
                     asked_look = send_look(&mut sender, &board, &wanted).await;
+                    fetch_fonts(&board, &wanted, &events);
+                }
+                Event::Font(slot, family, font) => match font {
+                    Ok(bytes) if family.is_empty() => {
+                        say!("Font {slot}: back to the built-in font");
+                        let _ = sender.send("knoend.font", json!({"slot": slot, "clear": true})).await;
+                        let _ = bytes;
+                    }
+                    Ok(bytes) => {
+                        say!("Font {slot}: sending {family} ({} bytes) to the board", bytes.len());
+                        send_font(&mut sender, &slot, &family, &bytes).await;
+                    }
+                    Err(e) => shared.emit("display", json!({"text": format!("Could not get the font {family}: {e}")})),
+                },
+                Event::Board(packet) if packet.kind == "knoend.font.ack" => {
+                    let slot = packet.body["slot"].as_str().unwrap_or("?").to_string();
+                    if packet.body["ok"] == true {
+                        let name = packet.body["name"].as_str().unwrap_or_default();
+                        shared.emit("display", json!({"text": if name.is_empty() { format!("The board uses its built-in font for {slot} again") }
+                                                              else { format!("The board now uses {name} for {slot}") }}));
+                        if let Some(fonts) = board.fonts.as_mut() {
+                            fonts[slot.as_str()] = if name.is_empty() { Value::Null } else { json!({"name": name}) };
+                        }
+                        let status = board.clone();
+                        shared.update(|s| s.board = Some(status)).await;
+                        // The keys again, now in the new font.
+                        shown = None;
+                        if approvals.is_empty() {
+                            if let Some(f) = effective(&focus, &tab) {
+                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
+                            }
+                        }
+                    } else {
+                        shared.emit("display", json!({"text": format!("The board could not keep the {slot} font: {}", packet.body["error"].as_str().unwrap_or("it refused it"))}));
+                    }
                 }
                 Event::Board(packet) if packet.kind == "knoend.error" && asked_look => {
                     // The board cannot show that look (older firmware): the choice goes back to
@@ -892,6 +934,7 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
         address: board.address.to_string(),
         grid: identity_grid(&identity.body),
         display: identity.body["board"].get("display").cloned(),
+        fonts: identity.body["board"].get("fonts").cloned(),
     };
     tokio::spawn(async move {
         loop {
@@ -1331,6 +1374,42 @@ fn set_picture_theme(name: &str) {
 
 /// Sends the person's theme and turn when the board shows something else; the board stores and
 /// shows them, and answers with its new size (spec/protocol.md 3.6d).
+/// Fetches (in the background) each font the person chose that the board does not hold, or asks
+/// for the built-in one back; the loop then sends it (`Event::Font`).
+fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &mpsc::Sender<Event>) {
+    let Some(held) = board.fonts.clone() else {
+        if !wanted.key_font.is_empty() || !wanted.start_font.is_empty() {
+            say!("Fonts: this board's firmware ({}) has the built-in font only; update its firmware to use others", board.firmware);
+        }
+        return;
+    };
+    for (slot, family) in [("keys", wanted.key_font.clone()), ("start", wanted.start_font.clone())] {
+        let holds = held[slot]["name"].as_str().unwrap_or_default();
+        if holds == family {
+            continue;
+        }
+        let events = events.clone();
+        tokio::spawn(async move {
+            let font = if family.is_empty() { Ok(Vec::new()) } else { crate::fonts::fetch(&family).await };
+            let _ = events.send(Event::Font(slot.to_string(), family, font)).await;
+        });
+    }
+}
+
+/// Sends a font to the board in slices that fit a packet (spec/protocol.md 3.6e).
+async fn send_font(sender: &mut wifi::WifiSender, slot: &str, family: &str, bytes: &[u8]) {
+    use base64::Engine;
+    let crc = crate::fonts::crc32(bytes);
+    for (i, chunk) in bytes.chunks(2048).enumerate() {
+        let body = json!({"slot": slot, "name": family, "total": bytes.len(), "offset": i * 2048, "crc": crc,
+                          "data": base64::engine::general_purpose::STANDARD.encode(chunk)});
+        if let Err(e) = sender.send("knoend.font", body).await {
+            say!("  could not send the font: {e}");
+            return;
+        }
+    }
+}
+
 /// True when it asked (an answer or an error follows).
 async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &crate::display::Display) -> bool {
     let identity = json!({"board": {"display": board.display}});

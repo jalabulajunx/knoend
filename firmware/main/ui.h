@@ -45,6 +45,11 @@ typedef enum { UI_STATUS_INFO, UI_STATUS_ATTENTION, UI_STATUS_ALERT } ui_status_
 // task.
 void ui_set_turn(int turn);
 
+// Stops using the person's key font (before it is replaced) / starts using what is stored now.
+// Safe to call from any task.
+void ui_fonts_release(void);
+void ui_fonts_reload(void);
+
 // Redraws everything in `theme` (a display_theme_t). Safe to call from any task.
 void ui_set_theme(display_theme_t theme);
 

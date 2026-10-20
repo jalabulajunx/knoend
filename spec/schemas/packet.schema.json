@@ -294,6 +294,38 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knoend.font"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/font"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knoend.font.ack"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/fontAck"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -398,6 +430,68 @@
                   "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
                 }
               }
+            },
+            "fonts": {
+              "description": "Fonts the person chose that the board holds; absent on firmware without fonts.",
+              "type": "object",
+              "required": [
+                "capacity"
+              ],
+              "properties": {
+                "capacity": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "keys": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "crc"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "crc": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "start": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "crc"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "crc": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
             }
           }
         },
@@ -988,6 +1082,87 @@
         "height",
         "grid"
       ]
+    },
+    "font": {
+      "type": "object",
+      "required": [
+        "slot"
+      ],
+      "properties": {
+        "slot": {
+          "enum": [
+            "keys",
+            "start"
+          ]
+        },
+        "clear": {
+          "const": true,
+          "description": "Empty the slot: the built-in font again."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "crc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "CRC-32 (IEEE) of the whole font."
+        },
+        "data": {
+          "type": "string",
+          "maxLength": 2732,
+          "description": "Base64 of at most 2048 bytes."
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "clear"
+          ]
+        },
+        {
+          "required": [
+            "name",
+            "total",
+            "offset",
+            "crc",
+            "data"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "fontAck": {
+      "type": "object",
+      "required": [
+        "slot",
+        "ok"
+      ],
+      "properties": {
+        "slot": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

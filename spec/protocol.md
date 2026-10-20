@@ -80,6 +80,8 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `knoend.wifi.networks` | B→C | Up to 20 networks, strongest first: `ssid`, `rssi` (dBm), `channel`, `secured`. The ESP32-S3 hears 2.4 GHz only |
 | `knoend.display` | C→B | How the board looks: its theme and which way it sits (section 3.6d) |
 | `knoend.display.ack` | B→C | Stored and shown; the screen's size and largest grid as it now sits |
+| `knoend.font` | C→B | A font for the key labels or the start-up name, in slices (section 3.6e) |
+| `knoend.font.ack` | B→C | Font kept and in use, or why not |
 | `knoend.ping` | both | Liveness check; answer with `knoend.ping` and `re` set |
 | `knoend.error` | both | A packet could not be handled |
 
@@ -94,7 +96,9 @@ arrives.
     "protocolVersion": 0, "firmware": "a1ea8a8",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
                "grid": { "cols": 4, "rows": 4 }, "statusBar": true,
-               "display": { "theme": "dark", "turn": 0 } },
+               "display": { "theme": "dark", "turn": 0 },
+               "fonts": { "capacity": 483328, "keys": null,
+                          "start": { "name": "Edu AU VIC WA NT Dots", "crc": 2271390218 } } },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
     "incoming": ["knoend.layout", "knoend.status", "knoend.ping"],
@@ -105,6 +109,9 @@ arrives.
   The companion splits a page with a bigger grid onto pages of this size.
 - `board.width`, `board.height` and `board.grid` are as the board sits now: turned to portrait, the
   ONX is 240x320 and its largest grid 3x4.
+- `board.fonts`: the fonts the person chose that the board holds (section 3.6e): `capacity`, the
+  largest font a slot takes in bytes, and per slot (`keys`, `start`) the font's `name` and CRC-32,
+  or null for the built-in font. Absent on firmware without fonts.
 - `board.display`: the theme and turn the board uses now (section 3.6d). Absent on firmware older
   than this message, which is always `dark`, turn 0.
 - `deviceId`: stable per device (boards: base MAC, lowercase hex, no separators).
@@ -254,6 +261,30 @@ connects.
   the layout again in a grid that fits.
 - The companion sends `knoend.display` after the identities when the person's choice differs from
   the identity's `board.display`, and when the person changes it.
+
+### 3.6e `knoend.font` / `knoend.font.ack`
+
+A font the person chose (from Google Fonts, in the web app), for one of two slots: `keys` (the key
+labels) or `start` (the name the board shows for a moment at start-up). The board keeps it in flash
+and uses it at once and after every restart, drawing it at whatever size it needs; a character the
+font lacks is drawn in the built-in font.
+
+```json
+{ "id": 30, "type": "knoend.font", "body": { "slot": "start", "name": "Edu AU VIC WA NT Dots",
+    "total": 84956, "offset": 0, "crc": 2271390218, "data": "<base64, at most 2048 bytes>" } }
+{ "id": 9, "re": 71, "type": "knoend.font.ack", "body": { "slot": "start", "name": "Edu AU VIC WA NT Dots", "ok": true } }
+{ "id": 31, "type": "knoend.font", "body": { "slot": "keys", "clear": true } }
+```
+
+- The font is TrueType (`glyf` outlines), at most `board.fonts.capacity` bytes. The companion asks
+  Google Fonts for it trimmed to the characters the board shows (printable ASCII and a few marks).
+- Slices go in order (`offset` 0 first); every slice repeats `slot`, `name`, `total` and `crc`, the
+  CRC-32 (IEEE) of the whole font. The board answers once: after the last slice (`ok` true when
+  the CRC matched and the font is in use), or at the first slice it cannot take (`ok` false and
+  `error`). Until then the slot holds no font.
+- `"clear": true` empties the slot: the built-in font again. The answer has no `name`.
+- The companion sends a font after the identities when the person's choice differs from
+  `board.fonts`, and when the person changes it.
 
 ### 3.7 `knoend.error`
 

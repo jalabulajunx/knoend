@@ -64,6 +64,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/ai/tools", get(ai_tools))
         .route("/display", get(display_settings).post(save_display))
         .route("/settings", get(settings).post(change_settings))
+        .route("/fonts", get(font_catalogue))
         .route("/assist", post(assist))
         .route("/open", post(open_help))
         .route("/typing", get(typing))
@@ -378,6 +379,8 @@ async fn display_settings(State(app): State<App>) -> ApiResult {
     let display = crate::display::load();
     let board = app_board(&app).await;
     Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn,
+                   "key_font": display.key_font, "start_font": display.start_font,
+                   "board_can_change_fonts": board.as_ref().is_some_and(|b| b.fonts.is_some()),
                    // False when the board's firmware has one look only (or no board is connected).
                    "board_can_change_look": board.is_some_and(|b| b.display.is_some())})))
 }
@@ -392,19 +395,29 @@ struct DisplayRequest {
     key_size: Option<Value>,
     theme: Option<Value>,
     turn: Option<Value>,
+    key_font: Option<Value>,
+    start_font: Option<Value>,
 }
 
 /// Saves the choice and applies it at once, through the settings list (settings.rs).
 async fn save_display(State(app): State<App>, Json(request): Json<DisplayRequest>) -> ApiResult {
     let mut changes = serde_json::Map::new();
-    for (id, value) in [("key_size", request.key_size), ("theme", request.theme), ("turn", request.turn)] {
+    for (id, value) in [("key_size", request.key_size), ("theme", request.theme), ("turn", request.turn),
+                        ("key_font", request.key_font), ("start_font", request.start_font)] {
         if let Some(value) = value {
             changes.insert(id.into(), value);
         }
     }
     crate::settings::apply(&app.shared, &changes).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
     let display = crate::display::load();
-    Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn})))
+    Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn,
+                   "key_font": display.key_font, "start_font": display.start_font})))
+}
+
+/// Google Fonts' families with Latin letters, live (fonts.rs), for the font picker.
+async fn font_catalogue() -> ApiResult {
+    let families = crate::fonts::catalogue().await.map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(json!({"families": families})))
 }
 
 /// Every setting the person can change, described (settings.rs).
@@ -540,10 +553,9 @@ async fn assist(State(app): State<App>, Json(request): Json<AssistRequest>) -> A
         if let Some(changes) = f.settings.take() {
             let known = crate::settings::all(&app.shared).await;
             let kept: serde_json::Map<String, Value> = changes.into_iter().filter(|(id, value)| {
-                known.iter().find(|s| s["id"] == id.as_str()).and_then(|s| s["choices"].as_array()
-                    .and_then(|c| c.iter().find(|c| &c["value"] == value)).map(|c| {
-                        settings_described.push(json!({"id": id, "value": value, "title": s["title"], "label": c["label"]}));
-                    })).is_some()
+                known.iter().find(|s| s["id"] == id.as_str()).and_then(|s| crate::settings::change_label(s, value).map(|label| {
+                    settings_described.push(json!({"id": id, "value": value, "title": s["title"], "label": label}));
+                })).is_some()
             }).collect();
             f.settings = (!kept.is_empty()).then_some(kept);
         }

@@ -8,6 +8,7 @@
 #include "ble_keyboard.h"
 #include "board.h"
 #include "display.h"
+#include "fonts.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
@@ -302,15 +303,23 @@ static lv_coord_t widest_piece(const char *text, uint32_t len, const lv_font_t *
 
 // The font for a key label: `preferred`, or one size smaller when a word would not fit `width`,
 // never below 12 px (smaller cannot be read on these screens). Words still too wide are cut.
+// Key label fonts, largest first: 28, 20, 14 and 12 px. The built-in Montserrat, or the font the
+// person chose for keys (fonts.c, drawn by tiny_ttf), each falling back to Montserrat of the same
+// size for a character the chosen font lacks.
+enum { FONT_28, FONT_20, FONT_14, FONT_12, LABEL_FONTS };
+static const lv_font_t *const BUILT_IN[LABEL_FONTS] = {&lv_font_montserrat_28, &lv_font_montserrat_20,
+                                                       &lv_font_montserrat_14, &lv_font_montserrat_12};
+static const int LABEL_PX[LABEL_FONTS] = {28, 20, 14, 12};
+static const lv_font_t *label_fonts[LABEL_FONTS] = {&lv_font_montserrat_28, &lv_font_montserrat_20,
+                                                    &lv_font_montserrat_14, &lv_font_montserrat_12};
+static lv_font_t *chosen[LABEL_FONTS]; // tiny_ttf fonts, when the person chose one
+
 static const lv_font_t *fitting_font(const char *text, const lv_font_t *preferred, lv_coord_t width)
 {
-    static const lv_font_t *const sizes[] = {&lv_font_montserrat_28, &lv_font_montserrat_20, &lv_font_montserrat_14,
-                                              &lv_font_montserrat_12};
-    const size_t count = sizeof(sizes) / sizeof(sizes[0]);
-    for (size_t i = 0; i < count; i++) {
-        if (sizes[i] == preferred) {
+    for (size_t i = 0; i < LABEL_FONTS; i++) {
+        if (label_fonts[i] == preferred) {
             const bool fits = widest_piece(text, strlen(text), preferred) <= width;
-            return fits || i + 1 == count ? preferred : sizes[i + 1];
+            return fits || i + 1 == LABEL_FONTS ? preferred : label_fonts[i + 1];
         }
     }
     return preferred;
@@ -417,7 +426,7 @@ static void draw_keys_locked(void)
             // keys. Icons stay 32 px: LVGL 8 draws 4-bit alpha images line by line and cannot zoom
             // them (it reads a one-line buffer as the whole image, past its end).
             const int icon_px = 32;
-            const lv_font_t *font = fitting_font(key->label, big ? &lv_font_montserrat_20 : &lv_font_montserrat_14, key_w - 8);
+            const lv_font_t *font = fitting_font(key->label, big ? label_fonts[FONT_20] : label_fonts[FONT_14], key_w - 8);
             const int line_px = lv_font_get_line_height(font);
             char shown[UI_LABEL_BYTES * 2];
             cut_long_words(key->label, font, key_w - 8, shown, sizeof(shown));
@@ -439,9 +448,9 @@ static void draw_keys_locked(void)
             lv_obj_align(key_labels[i], LV_ALIGN_CENTER, 0, block / 2 - label_h / 2);
         } else {
             lv_obj_add_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
-            const lv_font_t *font = detail || small                   ? &lv_font_montserrat_14
-                                    : big || strlen(key->label) <= 2 ? &lv_font_montserrat_28
-                                                                     : &lv_font_montserrat_20;
+            const lv_font_t *font = detail || small                   ? label_fonts[FONT_14]
+                                    : big || strlen(key->label) <= 2 ? label_fonts[FONT_28]
+                                                                     : label_fonts[FONT_20];
             const lv_font_t *fitted = fitting_font(key->label, font, key_w - 8);
             char shown[UI_LABEL_BYTES * 2];
             cut_long_words(key->label, fitted, key_w - 8, shown, sizeof(shown));
@@ -505,6 +514,98 @@ static void size_screen_locked(void)
     lv_obj_set_size(status_bar, board->width, STATUS_HEIGHT);
     lv_obj_align(status_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
+}
+
+// Back to the built-in key font; the chosen one is freed. Called with the LVGL lock held.
+static void release_key_font_locked(void)
+{
+    for (int i = 0; i < LABEL_FONTS; i++) {
+        label_fonts[i] = BUILT_IN[i];
+    }
+    draw_keys_locked(); // nothing may still point at the fonts freed below
+    for (int i = 0; i < LABEL_FONTS; i++) {
+        if (chosen[i] != NULL) {
+            lv_tiny_ttf_destroy(chosen[i]);
+            chosen[i] = NULL;
+        }
+    }
+}
+
+// The person's key font, if one is stored. Called with the LVGL lock held.
+static void load_key_font_locked(void)
+{
+    size_t len;
+    const uint8_t *data = fonts_data(FONT_SLOT_KEYS, &len, NULL, NULL);
+    if (data == NULL) {
+        return;
+    }
+    for (int i = 0; i < LABEL_FONTS; i++) {
+        chosen[i] = lv_tiny_ttf_create_data(data, len, LABEL_PX[i]);
+        if (chosen[i] == NULL) {
+            ESP_LOGW(TAG, "could not use the chosen key font at %d px", LABEL_PX[i]);
+            release_key_font_locked();
+            return;
+        }
+        chosen[i]->fallback = BUILT_IN[i];
+        label_fonts[i] = chosen[i];
+    }
+}
+
+void ui_fonts_release(void)
+{
+    if (!lvgl_port_lock(1000)) {
+        return;
+    }
+    release_key_font_locked();
+    lvgl_port_unlock();
+}
+
+void ui_fonts_reload(void)
+{
+    if (!lvgl_port_lock(1000)) {
+        return;
+    }
+    release_key_font_locked();
+    load_key_font_locked();
+    draw_keys_locked();
+    lvgl_port_unlock();
+}
+
+// The name shown for a moment at start-up, in the start-up font the person chose (else Montserrat).
+#define SPLASH_MS 1800
+static lv_obj_t *splash;
+static lv_font_t *splash_font;
+
+static void splash_done(lv_timer_t *timer)
+{
+    lv_obj_del(splash);
+    splash = NULL;
+    if (splash_font != NULL) {
+        lv_tiny_ttf_destroy(splash_font);
+        splash_font = NULL;
+    }
+    lv_timer_del(timer);
+}
+
+static void show_splash_locked(void)
+{
+    splash = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(splash);
+    lv_obj_set_size(splash, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_opa(splash, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(splash, lv_color_hex(theme->bg), 0);
+    lv_obj_t *name = lv_label_create(splash);
+    lv_label_set_text(name, "Kn\xC2\xB0" "End");
+    lv_obj_set_style_text_color(name, lv_color_hex(theme->key_text), 0);
+    size_t len;
+    const uint8_t *data = fonts_data(FONT_SLOT_START, &len, NULL, NULL);
+    splash_font = data != NULL ? lv_tiny_ttf_create_data(data, len, 64) : NULL;
+    if (splash_font != NULL) {
+        splash_font->fallback = &lv_font_montserrat_28; // the degree sign, if the font has none
+    }
+    lv_obj_set_style_text_font(name, splash_font != NULL ? splash_font : &lv_font_montserrat_28, 0);
+    lv_obj_center(name);
+    lv_timer_create(splash_done, SPLASH_MS, NULL);
 }
 
 void ui_set_turn(int turn)
@@ -618,7 +719,9 @@ void ui_start(void)
     apply_theme_locked();
     board_set_turn(display_settings()->turn);
     size_screen_locked();
+    load_key_font_locked();
     draw_keys_locked();
+    show_splash_locked();
     update_status_locked();
     lv_timer_create(status_timer, 250, NULL);
     lvgl_port_unlock();

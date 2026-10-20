@@ -21,6 +21,7 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
     let board = shared.status.read().await.board.clone();
     let shown = board.as_ref().and_then(|b| b.display.clone());
     let can_look = shown.is_some();
+    let can_font = board.as_ref().is_some_and(|b| b.fonts.is_some());
     vec![
         describe("key_size", "Key size",
                  "The grid every page of keys on the board uses. A layout's keys fill it in order; the rest go on further \
@@ -42,11 +43,42 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
                         {"value": 2, "label": "Landscape, upside down"}, {"value": 3, "label": "Portrait, upside down"}]),
                  json!(d.turn),
                  if can_look { "at once, on the board (firmware that cannot turn refuses it and says so)" } else { "after the board's firmware is updated" }),
+        font_setting("key_font", "Key font",
+                     "The font of the key labels: any Google Fonts family (its name exactly as Google Fonts writes it), or \
+                      empty for the built-in Montserrat. Plain, open fonts read best at the small sizes on keys; a \
+                      character the font lacks is drawn in Montserrat.", &d.key_font, can_font),
+        font_setting("start_font", "Start-up font",
+                     "The font of the name the board shows for a moment when it starts (Kn°End): any Google Fonts family, \
+                      or empty for the built-in Montserrat. Decorative fonts suit it.", &d.start_font, can_font),
     ]
 }
 
-/// Whether `value` is one of the setting's choices.
+/// A font setting: no fixed choices, a Google Fonts family name or empty.
+fn font_setting(id: &str, title: &str, meaning: &str, current: &str, can: bool) -> Value {
+    let mut setting = describe(id, title, meaning, Value::Null, json!(current),
+                               if can { "at once, on the board (it downloads and sends the font)" } else { "after the board's firmware is updated" });
+    setting["kind"] = json!("google_font");
+    setting["examples"] = json!(["Atkinson Hyperlegible", "Lexend", "Edu AU VIC WA NT Dots", ""]);
+    setting
+}
+
+/// How a change reads to the person ("Key size: Big: 2x2"), or None when `value` is not one the
+/// setting takes.
+pub fn change_label(setting: &Value, value: &Value) -> Option<String> {
+    if !allowed(setting, value) {
+        return None;
+    }
+    let label = setting["choices"].as_array().into_iter().flatten().find(|c| &c["value"] == value)
+        .and_then(|c| c["label"].as_str()).map(str::to_string)
+        .unwrap_or_else(|| value.as_str().filter(|f| !f.is_empty()).unwrap_or("built-in (Montserrat)").to_string());
+    Some(label)
+}
+
+/// Whether `value` is one of the setting's choices (for a font: a family name, or empty).
 fn allowed(setting: &Value, value: &Value) -> bool {
+    if setting["kind"] == "google_font" {
+        return value.as_str().is_some_and(|f| f.is_empty() || crate::fonts::valid_family(f));
+    }
     setting["choices"].as_array().into_iter().flatten().any(|c| &c["value"] == value)
 }
 
@@ -57,21 +89,20 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
     let mut done = Vec::new();
     for (id, value) in changes {
         let setting = settings.iter().find(|s| s["id"] == id.as_str()).ok_or_else(|| format!("there is no setting called {id}"))?;
-        if !allowed(setting, value) {
-            return Err(format!("{} cannot be {value}", setting["title"].as_str().unwrap_or(id)));
-        }
-        let label = setting["choices"].as_array().into_iter().flatten().find(|c| &c["value"] == value)
-            .and_then(|c| c["label"].as_str()).unwrap_or_default();
+        let label = change_label(setting, value)
+            .ok_or_else(|| format!("{} cannot be {value}", setting["title"].as_str().unwrap_or(id)))?;
         done.push(format!("{}: {label}", setting["title"].as_str().unwrap_or(id)));
     }
     let mut d = display::load();
-    let look = (d.theme, d.turn);
+    let look = (d.theme, d.turn, d.key_font.clone(), d.start_font.clone());
     let mut key_size = None;
     for (id, value) in changes {
         match id.as_str() {
             "key_size" => key_size = serde_json::from_value::<KeySize>(value.clone()).ok(),
             "theme" => d.theme = serde_json::from_value::<Theme>(value.clone()).map_err(|e| e.to_string())?,
             "turn" => d.turn = value.as_u64().and_then(|t| u8::try_from(t).ok()).ok_or("turn must be 0-3")?,
+            "key_font" => d.key_font = value.as_str().unwrap_or_default().trim().to_string(),
+            "start_font" => d.start_font = value.as_str().unwrap_or_default().trim().to_string(),
             _ => {}
         }
     }
@@ -82,7 +113,7 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
     if let Some(k) = key_size {
         shared.key_size_changed(k);
     }
-    if look != (d.theme, d.turn) {
+    if look != (d.theme, d.turn, d.key_font.clone(), d.start_font.clone()) {
         shared.look_changed(d.clone());
     }
     Ok(done)
@@ -99,5 +130,8 @@ mod tests {
         assert!(allowed(&setting, &json!(1)));
         assert!(!allowed(&setting, &json!(5)));
         assert!(!allowed(&setting, &json!("1")), "the value's type counts");
+        let font = font_setting("key_font", "Key font", "", "", true);
+        assert!(allowed(&font, &json!("Atkinson Hyperlegible")) && allowed(&font, &json!("")));
+        assert!(!allowed(&font, &json!("x&text=<script>")) && !allowed(&font, &json!(3)));
     }
 }
