@@ -354,6 +354,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     let mut attempted: HashSet<(String, String)> = HashSet::new();
     // What each slot on the board does right now (the layout plus any media row).
     let mut shown_actions: HashMap<u8, KeyRef> = HashMap::new();
+    // A paired board missing from the network for minutes is a problem worth raising (watch.rs).
+    let mut missing_since: Option<tokio::time::Instant> = None;
     loop {
         let pairings = Pairings::load();
         if pairings.boards.is_empty() {
@@ -379,10 +381,21 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             Ok(link) => link,
             Err(e) => {
                 say!("{e}; retrying in 5 s");
+                // Not while installing or pairing over USB: the board is restarting on purpose then.
+                if shared.serial.try_lock().is_err() {
+                    missing_since = None;
+                }
+                let since = *missing_since.get_or_insert_with(tokio::time::Instant::now);
+                if since.elapsed() >= Duration::from_secs(120) {
+                    problem!("board-missing", "The paired board has not been found on the network for {} minutes ({e})",
+                             since.elapsed().as_secs() / 60);
+                    missing_since = Some(tokio::time::Instant::now()); // again in two minutes if still missing
+                }
                 drain_focus(&mut inbox, &mut focus, &mut tab, &mut players, &shared).await;
                 continue;
             }
         };
+        missing_since = None;
         shared.emit("log", json!({"text": format!("Connected to board {} over Wi-Fi", board.id)}));
         let board_status = board.clone();
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
