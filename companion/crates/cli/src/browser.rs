@@ -175,7 +175,7 @@ pub async fn serve(browser: Arc<Browser>, tabs: mpsc::Sender<BrowserEvent>) {
     let listener = match bind_private(&socket_path()) {
         Ok(l) => l,
         Err(e) => {
-            say!("Browser link off: {}: {e}", socket_path().display());
+            problem!("browser", "The browser extension cannot connect: {}: {e}", socket_path().display());
             return;
         }
     };

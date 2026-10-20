@@ -46,7 +46,9 @@ driver, a permission, a wrong board, a setting), do not stop at the fix:
    (`companion/crates/cli/src/diagnostics.rs`, `system_checks`), so the assistant reads it instead
    of asking the person to run commands. Facts only: never passwords, keys or window titles.
    Print what the service notices with `say!` (not `println!`): every such line reaches the
-   assistant through the journal (`cli/src/journal.rs`). Evidence that is too slow or too big for
+   assistant through the journal (`cli/src/journal.rs`). A line that reports a fault uses
+   `problem!` (or `raise!` when the web app is sent the line anyway): the watcher
+   (`cli/src/watch.rs`) then puts it to the setup assistant without the person asking. Evidence that is too slow or too big for
    every snapshot becomes a read-only check in `cli/src/checks.rs`, which the assistant runs when
    it needs it.
 3. **Action:** every setting the person can change goes in `cli/src/settings.rs` (meaning,

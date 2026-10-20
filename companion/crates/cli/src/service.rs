@@ -40,6 +40,9 @@ pub struct BoardStatus {
     /// The fonts it holds (`board.fonts`: capacity, and per slot name and CRC-32); None on firmware
     /// without fonts.
     pub fonts: Option<Value>,
+    /// Why the board last started (identity `lastStart`): "crash", "watchdog" and "brownout" mean it
+    /// stopped on its own.
+    pub last_start: Option<String>,
 }
 
 /// Which page of the layout on the board is shown: the companion turns pages (spec/protocol.md
@@ -385,6 +388,9 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
         let mut sent_images: HashSet<String> = HashSet::new();
+        if let Some(reason) = board.last_start.as_deref().filter(|r| ["crash", "watchdog", "brownout"].contains(r)) {
+            problem!("board-crash", "The board started again after a {reason} (it stopped on its own; firmware {})", board.firmware);
+        }
         let wanted = crate::display::load();
         let mut paging = Paging::new(board.grid, wanted.key_size);
         set_picture_theme(board.display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
@@ -545,7 +551,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         say!("Font {slot}: sending {family} ({} bytes) to the board", bytes.len());
                         send_font(&mut sender, &slot, &family, &bytes).await;
                     }
-                    Err(e) => shared.emit("display", json!({"text": format!("Could not get the font {family}: {e}")})),
+                    Err(e) => {
+                        raise!("font", "Could not get the font {family}: {e}");
+                        shared.emit("display", json!({"text": format!("Could not get the font {family}: {e}")}));
+                    }
                 },
                 Event::Board(packet) if packet.kind == "knoend.font.ack" => {
                     let slot = packet.body["slot"].as_str().unwrap_or("?").to_string();
@@ -566,7 +575,9 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             }
                         }
                     } else {
-                        shared.emit("display", json!({"text": format!("The board could not keep the {slot} font: {}", packet.body["error"].as_str().unwrap_or("it refused it"))}));
+                        let reason = packet.body["error"].as_str().unwrap_or("it refused it");
+                        raise!("font", "The board could not keep the {slot} font {}: {reason}", packet.body["name"].as_str().unwrap_or_default());
+                        shared.emit("display", json!({"text": format!("The board could not keep the {slot} font: {reason}")}));
                     }
                 }
                 Event::Board(packet) if packet.kind == "knoend.error" && asked_look => {
@@ -574,7 +585,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // what it shows, and the web app says why.
                     asked_look = false;
                     let reason = packet.body["message"].as_str().unwrap_or("the board refused it").to_string();
-                    say!("  board refused the display settings: {reason}");
+                    problem!("display", "The board refused the display settings: {reason}");
                     let mut saved = crate::display::load();
                     if let Some(shown) = &board.display {
                         saved.theme = crate::display::Theme::named(shown["theme"].as_str().unwrap_or("dark"));
@@ -841,6 +852,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             if target.web.is_some() {
                                 shared.browser.notify(json!({"type": "configure-status", "ok": false, "text": format!("Could not make keys: {error}")}));
                             }
+                            raise!("configure", "Drafting keys failed for {}: {error}", target.display_name());
                             shared.emit("configure-failed", json!({"text": format!("  configure failed for {}: {error}", target.display_name()),
                                                                    "app": target.display_name(), "error": error}));
                             let mut text = format!("Could not configure {}: {error}", target.display_name());
@@ -850,6 +862,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::LinkDown(reason) => {
+                    raise!("link-lost", "Link to board {} lost: {reason}", board.id);
                     shared.emit("log", json!({"text": format!("Link to board {} lost: {reason}", board.id)}));
                     shared.update(|s| { s.link = "searching".into(); s.layout = None; }).await;
                     break;
@@ -935,6 +948,7 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
         grid: identity_grid(&identity.body),
         display: identity.body["board"].get("display").cloned(),
         fonts: identity.body["board"].get("fonts").cloned(),
+        last_start: identity.body["lastStart"].as_str().map(str::to_string),
     };
     tokio::spawn(async move {
         loop {
@@ -1391,7 +1405,7 @@ fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &m
         }
         // The board dropped it after a start it did not get through: not sent again by itself.
         if !family.is_empty() && refused.split(", ").any(|r| r == family) {
-            say!("Fonts: the board dropped {family} after it could not start with it; choose another font for {slot} (or choose it again to retry)");
+            problem!("font", "The board dropped the font {family} ({slot}) after it could not start with it: it is not sent again until it is chosen again");
             continue;
         }
         let events = events.clone();
@@ -1824,7 +1838,7 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                          sender: &mut wifi::WifiSender, shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
         "knoend.layout.ack" if packet.body["ok"] != true => say!("  board rejected layout: {}", packet.body),
-        "knoend.error" => say!("  board error: {}", packet.body),
+        "knoend.error" => problem!("board-error", "The board answered with an error: {}", packet.body),
         "knoend.key" => {
             let layout = packet.body["layout"].as_str().unwrap_or("");
             let key = packet.body["key"].as_u64().unwrap_or(0);
@@ -1841,7 +1855,10 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                 }).await.unwrap_or_else(|e| Err(e.to_string()));
                 match result {
                     Ok(()) => shared.emit("typed", json!({"text": format!("  typed key {key} on this computer (board has no Bluetooth host)")})),
-                    Err(e) => shared.emit("type-failed", json!({"text": format!("  could not type key {key}: {e}")})),
+                    Err(e) => {
+                        raise!("typing", "Could not type key {key} on this computer: {e}");
+                        shared.emit("type-failed", json!({"text": format!("  could not type key {key}: {e}")}));
+                    }
                 }
                 return None;
             }

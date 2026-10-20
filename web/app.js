@@ -164,6 +164,7 @@ function connectEvents() {
     if (event.kind === "configured") loadDrafts();
     if (event.kind === "edit") onEditEvent(d);
     if (event.kind === "edit.tap") onEditTap(d);
+    if (event.kind === "noticed") onNoticed(d);
     if (event.kind === "display") { loadDisplay().catch(() => {}); if (setup.step === 5) keySizeStep(); }
     if (d.text && event.kind !== "status") logTo($("activity"), d.text.trim(), event.kind === "configure-failed" ? "error" : "");
   };
@@ -1501,6 +1502,45 @@ async function applyFix(fix) {
   $("advice-fix-apply").disabled = true;
 }
 
+/**
+ * Shows an answer from the assistant in the floating panel: asked here, or raised by the service's
+ * watcher (`noticed`: what it noticed, shown first).
+ */
+function showAdvice(r) {
+  assistantPanel(true);
+  $("advice").hidden = false;
+  $("advice-actions").replaceChildren();
+  $("advice-fix").hidden = true;
+  const looked = (r.checked || []).map((c) => c.check.replaceAll("_", " "));
+  const noticed = r.noticed ? `KnoEnd noticed, without being asked:\n- ${r.noticed.join("\n- ")}\n\n` : "";
+  $("advice-text").textContent = noticed + (looked.length ? `(Checked: ${looked.join(", ")}.)\n` : "") + (r.answer || "");
+  $("advice-sent").textContent = r.sent ? JSON.stringify(r.sent, null, 2) : "";
+  for (const id of r.actions || []) {
+    if (!ACTIONS[id]) continue;
+    const b = document.createElement("button");
+    b.className = "secondary";
+    b.textContent = ACTIONS[id][0];
+    b.addEventListener("click", ACTIONS[id][1]);
+    $("advice-actions").append(b);
+  }
+  if (r.fix) {
+    $("advice-fix-list").replaceChildren(...describeFix(r.fix, r.settings_described || []).map((line) => { const li = document.createElement("li"); li.textContent = line; return li; }));
+    $("advice-fix-status").hidden = true;
+    const apply = $("advice-fix-apply");
+    apply.disabled = false;
+    apply.onclick = () => applyFix(r.fix);
+    $("advice-fix").hidden = false;
+  }
+}
+
+/** Something the watcher raised: shown once per raise (remembered in this browser). */
+function onNoticed(r) {
+  if (!r) return;
+  const key = JSON.stringify(r.noticed || []);
+  try { if (localStorage.getItem("knoend-noticed") === key) return; localStorage.setItem("knoend-noticed", key); } catch {}
+  showAdvice(r);
+}
+
 async function ask(question, error) {
   if (!aiReady) {
     assistantPanel(true);
@@ -1518,27 +1558,7 @@ async function ask(question, error) {
                     identify_result: setup.identified, error: error || null, setup_mode: setup.mode,
                     ai_models_available: models.slice(0, 200) };
   try {
-    const r = await api("/assist", { question, context });
-    // What it looked into before answering, so the person sees the answer rests on a check.
-    const looked = (r.checked || []).map((c) => c.check.replaceAll("_", " "));
-    $("advice-text").textContent = (looked.length ? `(Checked: ${looked.join(", ")}.)\n` : "") + r.answer;
-    $("advice-sent").textContent = JSON.stringify(r.sent, null, 2);
-    for (const id of r.actions) {
-      if (!ACTIONS[id]) continue;
-      const b = document.createElement("button");
-      b.className = "secondary";
-      b.textContent = ACTIONS[id][0];
-      b.addEventListener("click", ACTIONS[id][1]);
-      $("advice-actions").append(b);
-    }
-    if (r.fix) {
-      $("advice-fix-list").replaceChildren(...describeFix(r.fix, r.settings_described || []).map((line) => { const li = document.createElement("li"); li.textContent = line; return li; }));
-      $("advice-fix-status").hidden = true;
-      const apply = $("advice-fix-apply");
-      apply.disabled = false;
-      apply.onclick = () => applyFix(r.fix);
-      $("advice-fix").hidden = false;
-    }
+    showAdvice(await api("/assist", { question, context }));
   } catch (e) {
     $("advice-text").textContent = `The assistant could not answer: ${e.message}`;
   }
@@ -1569,6 +1589,7 @@ $("ask-form").addEventListener("submit", (e) => {
 
 (async function start() {
   connectEvents();
+  api("/assist/noticed").then((r) => onNoticed(r.noticed)).catch(() => {});
   try {
     const { status } = await api("/state");
     renderStatus(status);

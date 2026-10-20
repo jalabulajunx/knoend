@@ -109,6 +109,9 @@ arrives.
   The companion splits a page with a bigger grid onto pages of this size.
 - `board.width`, `board.height` and `board.grid` are as the board sits now: turned to portrait, the
   ONX is 240x320 and its largest grid 3x4.
+- `lastStart` (boards): why the board last started: `power-on`, `restart`, `crash`, `watchdog`,
+  `brownout` (the power dipped), `wake` or `other`. The companion raises `crash`, `watchdog` and
+  `brownout` as problems.
 - `board.fonts`: the fonts the person chose that the board holds (section 3.6e): `capacity`, the
   largest font a slot takes in bytes, and per slot (`keys`, `start`) the font's `name` and CRC-32,
   or null for the built-in font. Absent on firmware without fonts.

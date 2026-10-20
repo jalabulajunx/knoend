@@ -97,7 +97,7 @@ pub async fn serve(events: mpsc::Sender<AgentEvent>) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
     let path = socket_path();
     let Ok(listener) = crate::browser::bind_private(&path) else {
-        say!("Agent hooks off: cannot listen on {}", path.display());
+        problem!("agent-hooks", "Claude Code questions cannot reach the board: cannot listen on {}", path.display());
         return;
     };
     let old = crate::browser::bind_private(&old_socket_path()).ok();

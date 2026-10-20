@@ -360,8 +360,12 @@ devices and whether each has a port, the WCH driver state, and whether knoend ma
    changed, and to what), the checks it can run (the board on the network now, the full service
    log, the USB ports now) and the service log, which holds every line the service printed. These
    grow as KnoEnd grows; read them each time.
-9. Before sending the person back to a step, find out whether it is needed (a board that kept its
+9. A board that keeps restarting: its identity says why it last started (`lastStart`: crash,
+   watchdog, brownout), and the `board_serial_log` check reads its own serial output (the crash,
+   its cause and backtrace) while it is not connected. The service's watcher raises such problems
+   by itself and asks the assistant without the person asking ("noticed_by_the_service").
+10. Before sending the person back to a step, find out whether it is needed (a board that kept its
    pairing needs none), and after a fix, check again that it worked.
-10. Look below the port list. A board can be on the USB bus with no driver (macOS), or a permission
+11. Look below the port list. A board can be on the USB bus with no driver (macOS), or a permission
    can stop keys with every board-side step working: the companion log is the first place where
    the failing layer shows ("could not type", "no paired board", focus lines).

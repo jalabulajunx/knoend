@@ -50,6 +50,13 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
         font_setting("start_font", "Start-up font",
                      "The font of the name the board shows for a moment when it starts (Kn°End): any Google Fonts family, \
                       or empty for the built-in Montserrat. Decorative fonts suit it.", &d.start_font, can_font),
+        describe("assistant_watches", "Assistant watches in the background",
+                 "When on, problems the service notices by itself (the board dropping again and again, a step or a font \
+                  that fails, the board refusing something) are put to the setup assistant without the person asking, \
+                  and its answer opens in the web app. Uses the AI provider: at most one question per kind of problem \
+                  every 5 minutes.",
+                 json!([{"value": true, "label": "On"}, {"value": false, "label": "Off"}]),
+                 json!(d.assistant_watches), "at once"),
     ]
 }
 
@@ -103,6 +110,7 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
             "turn" => d.turn = value.as_u64().and_then(|t| u8::try_from(t).ok()).ok_or("turn must be 0-3")?,
             "key_font" => d.key_font = value.as_str().unwrap_or_default().trim().to_string(),
             "start_font" => d.start_font = value.as_str().unwrap_or_default().trim().to_string(),
+            "assistant_watches" => d.assistant_watches = value.as_bool().unwrap_or(true),
             _ => {}
         }
     }

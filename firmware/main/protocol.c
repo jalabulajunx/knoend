@@ -9,6 +9,7 @@
 #include "cJSON.h"
 #include "display.h"
 #include "fonts.h"
+#include "esp_system.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -139,6 +140,17 @@ static void send_identity(int64_t re, transport_t to)
     cJSON_AddStringToObject(body, "deviceType", "board");
     cJSON_AddNumberToObject(body, "protocolVersion", PROTOCOL_VERSION);
     cJSON_AddStringToObject(body, "firmware", esp_app_get_description()->version);
+    // Why the board last started: a crash is reported, so the companion (and its assistant) can see
+    // a board that keeps restarting without reading the serial line.
+    const esp_reset_reason_t reason = esp_reset_reason();
+    cJSON_AddStringToObject(body, "lastStart",
+                            reason == ESP_RST_POWERON ? "power-on"
+                            : reason == ESP_RST_SW ? "restart"
+                            : reason == ESP_RST_PANIC ? "crash"
+                            : reason == ESP_RST_INT_WDT || reason == ESP_RST_TASK_WDT || reason == ESP_RST_WDT ? "watchdog"
+                            : reason == ESP_RST_BROWNOUT ? "brownout"
+                            : reason == ESP_RST_DEEPSLEEP ? "wake"
+                            : "other");
 
     cJSON *b = cJSON_AddObjectToObject(body, "board");
     cJSON_AddStringToObject(b, "profile", board->id);

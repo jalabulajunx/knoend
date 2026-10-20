@@ -22,6 +22,11 @@ pub const ALL: &[(&str, &str)] = &[
       board in or changed the cable."),
     ("settings",
      "Every setting the person can change, its meaning, choices and current value (also in the snapshot)."),
+    ("board_serial_log",
+     "Reads what the board itself prints on its USB serial line for 12 s: start-up, Wi-Fi, fonts, and any crash \
+      (\"Guru Meditation\", \"panic\", a backtrace) with its cause. Only runs while the board is not connected over \
+      Wi-Fi (crashing, restarting or offline) and is plugged in by USB, because opening the port restarts some boards. \
+      The way to find out why a board keeps restarting."),
 ];
 
 pub fn describe() -> Value {
@@ -46,6 +51,48 @@ pub async fn run(id: &str, shared: &Shared) -> Value {
         "service_log" => json!({"lines": crate::journal::recent(300)}),
         "usb_now" => json!({"ports": tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default()}),
         "settings" => json!({"settings": crate::settings::all(shared).await}),
+        "board_serial_log" => board_serial_log(shared).await,
         _ => json!({"error": format!("no check called {id}")}),
+    }
+}
+
+/// The board's own serial output for a few seconds (see ALL).
+async fn board_serial_log(shared: &Shared) -> Value {
+    if shared.status.read().await.link == "connected" {
+        return json!({"skipped": "the board is connected over Wi-Fi and working; reading its serial line would restart it"});
+    }
+    let Ok(_port_free) = shared.serial.try_lock() else {
+        return json!({"skipped": "the USB port is busy (installing or pairing)"});
+    };
+    let ports = tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default();
+    let Some(port) = ports.iter().find(|p| p.bridge != "unknown").or(ports.first()).map(|p| p.name.clone()) else {
+        return json!({"skipped": "no board plugged in by USB"});
+    };
+    let read = tokio::task::spawn_blocking(move || {
+        let mut link = knoend_transport::serial::SerialLink::open(&port)?;
+        let until = std::time::Instant::now() + Duration::from_secs(12);
+        let mut lines = Vec::new();
+        while std::time::Instant::now() < until && lines.len() < 400 {
+            if let Some(line) = link.read_line(Duration::from_millis(500)) {
+                // The Wi-Fi network's name stays on the computer.
+                let line = match line.find("joining \"") {
+                    Some(at) => format!("{}joining \"<network>\"", &line[..at]),
+                    None => line,
+                };
+                lines.push(line);
+            }
+        }
+        Ok::<_, String>((port, lines))
+    }).await;
+    match read {
+        Ok(Ok((port, lines))) => {
+            say!("Assistant read the board's serial log on {port} ({} lines)", lines.len());
+            // A crash and its cause, first, then the rest (the last 150 lines).
+            let crash: Vec<&String> = lines.iter().filter(|l| ["Guru Meditation", "panic", "Backtrace", "abort()", "rst:", "assert"]
+                .iter().any(|k| l.contains(k))).collect();
+            json!({"port": port, "crash_lines": crash, "lines": lines.iter().skip(lines.len().saturating_sub(150)).collect::<Vec<_>>()})
+        }
+        Ok(Err(e)) => json!({"error": e}),
+        Err(e) => json!({"error": e.to_string()}),
     }
 }

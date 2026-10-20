@@ -539,6 +539,18 @@
             "$ref": "#/$defs/packetType"
           },
           "uniqueItems": true
+        },
+        "lastStart": {
+          "enum": [
+            "power-on",
+            "restart",
+            "crash",
+            "watchdog",
+            "brownout",
+            "wake",
+            "other"
+          ],
+          "description": "Boards: why the board last started. crash, watchdog and brownout mean it stopped on its own."
         }
       },
       "if": {

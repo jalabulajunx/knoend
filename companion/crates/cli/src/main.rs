@@ -22,6 +22,8 @@ mod browser;
 mod diagnostics;
 mod edit;
 mod checks;
+mod consult;
+mod watch;
 mod display;
 mod fonts;
 mod settings;
@@ -167,6 +169,7 @@ fn main() {
         Command::Serve { port, firmware, no_open, libraries } => tokio::runtime::Runtime::new().expect("tokio").block_on(async move {
             let shared = service::Shared::new(firmware);
             tokio::spawn(service::run(shared.clone(), libraries));
+            watch::start(shared.clone());
             web::serve(shared, port, !no_open).await
         }),
         Command::Run { libraries } => tokio::runtime::Runtime::new().expect("tokio").block_on(async move {
