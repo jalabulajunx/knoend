@@ -615,7 +615,7 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
         return;
     }
     if (theme != NULL && !display_theme_parse(cJSON_GetStringValue(theme), &wanted.theme)) {
-        send_error(re, "bad-packet", "theme must be dark or paper", transport);
+        send_error(re, "bad-packet", "theme must be dark, white or sepia", transport);
         return;
     }
     if (turn != NULL && !get_int(body, "turn", 0, 3, &wanted.turn)) {
@@ -635,7 +635,7 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
     }
     if (new_theme) {
         now->theme = wanted.theme;
-        ui_set_theme(wanted.theme == DISPLAY_THEME_PAPER);
+        ui_set_theme(wanted.theme);
         ESP_LOGI(TAG, "display: %s", display_theme_name(wanted.theme));
     }
     cJSON *ack = cJSON_CreateObject();

@@ -389,7 +389,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let mut sent_images: HashSet<String> = HashSet::new();
         let wanted = crate::display::load();
         let mut paging = Paging::new(board.grid, wanted.key_size);
-        PAPER.store(board.display.as_ref().is_some_and(|d| d["theme"] == "paper"), std::sync::atomic::Ordering::Relaxed);
+        set_picture_theme(board.display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
         send_look(&mut sender, &board, &wanted).await;
         if focus.is_none() {
             show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
@@ -667,7 +667,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // A new theme is drawn at once: pictures are sent again in its colours.
                     println!("  board display: {}", packet.body);
                     board.display = Some(json!({"theme": packet.body["theme"], "turn": packet.body["turn"]}));
-                    PAPER.store(packet.body["theme"] == "paper", std::sync::atomic::Ordering::Relaxed);
+                    set_picture_theme(packet.body["theme"].as_str().unwrap_or("dark"));
                     let status = board.clone();
                     shared.update(|s| s.board = Some(status)).await;
                     sent_images.clear();
@@ -1306,8 +1306,14 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
     }
 }
 
-/// Whether the connected board uses the Paper theme: pictures are then sent in grey.
-static PAPER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The connected board's theme, for the tones pictures are sent in.
+static PICTURE_THEME: std::sync::Mutex<crate::display::Theme> = std::sync::Mutex::new(crate::display::Theme::Dark);
+
+fn set_picture_theme(name: &str) {
+    if let Ok(mut theme) = PICTURE_THEME.lock() {
+        *theme = crate::display::Theme::named(name);
+    }
+}
 
 /// Sends the person's theme and turn when the board shows something else; the board stores them
 /// and restarts (spec/protocol.md 3.6d), and the service connects again.
@@ -1333,8 +1339,8 @@ async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &
 async fn send_image(sender: &mut wifi::WifiSender, name: &str, rgba: &[u8]) -> bool {
     use base64::Engine;
     let mut rgba = rgba.to_vec();
-    if PAPER.load(std::sync::atomic::Ordering::Relaxed) {
-        crate::display::to_grey(&mut rgba);
+    if let Ok(theme) = PICTURE_THEME.lock() {
+        theme.tone(&mut rgba);
     }
     let pixels = crate::launcher::board_pixels(&rgba);
     for (i, chunk) in pixels.chunks(2048).enumerate() {

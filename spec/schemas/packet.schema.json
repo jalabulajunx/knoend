@@ -386,9 +386,10 @@
                 "theme": {
                   "enum": [
                     "dark",
-                    "paper"
+                    "white",
+                    "sepia"
                   ],
-                  "description": "dark: light on dark keys, in colour. paper: an e-ink look, black on white."
+                  "description": "dark: light on dark keys, in colour. white, sepia: e-ink looks, dark ink on white or on warm paper."
                 },
                 "turn": {
                   "type": "integer",
@@ -936,9 +937,10 @@
         "theme": {
           "enum": [
             "dark",
-            "paper"
+            "white",
+            "sepia"
           ],
-          "description": "dark: light on dark keys, in colour. paper: an e-ink look, black on white."
+          "description": "dark: light on dark keys, in colour. white, sepia: e-ink looks, dark ink on white or on warm paper."
         },
         "turn": {
           "type": "integer",
@@ -955,9 +957,10 @@
         "theme": {
           "enum": [
             "dark",
-            "paper"
+            "white",
+            "sepia"
           ],
-          "description": "dark: light on dark keys, in colour. paper: an e-ink look, black on white."
+          "description": "dark: light on dark keys, in colour. white, sepia: e-ink looks, dark ink on white or on warm paper."
         },
         "turn": {
           "type": "integer",

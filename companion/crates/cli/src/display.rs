@@ -40,7 +40,38 @@ pub enum Theme {
     #[default]
     Dark,
     /// An e-ink look: black on white, high contrast; pictures are sent in grey.
-    Paper,
+    #[serde(alias = "paper")]
+    White,
+    /// An e-ink look on warm paper: dark brown ink; pictures are sent in sepia tones.
+    Sepia,
+}
+
+impl Theme {
+    /// The theme a board's identity or answer names (`board.display.theme`).
+    pub fn named(name: &str) -> Theme {
+        match name {
+            "white" | "paper" => Theme::White,
+            "sepia" => Theme::Sepia,
+            _ => Theme::Dark,
+        }
+    }
+
+    /// Puts pictures in this theme's tones, in place, keeping alpha: grey for White, sepia for
+    /// Sepia, as they are for Dark.
+    pub fn tone(self, rgba: &mut [u8]) {
+        if self == Theme::Dark {
+            return;
+        }
+        for pixel in rgba.chunks_exact_mut(4) {
+            let grey = (u32::from(pixel[0]) * 299 + u32::from(pixel[1]) * 587 + u32::from(pixel[2]) * 114) / 1000;
+            let [r, g, b] = match self {
+                // Ink to paper: 0x2E241B at black, 0xF4ECD8 at white.
+                Theme::Sepia => [(0x2E, 0xF4), (0x24, 0xEC), (0x1B, 0xD8)].map(|(dark, light): (u32, u32)| (dark + (light - dark) * grey / 255) as u8),
+                _ => [grey as u8; 3],
+            };
+            pixel[..3].copy_from_slice(&[r, g, b]);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,14 +97,6 @@ impl Display {
         let shown = identity["board"]["display"].as_object()?;
         Some(shown.get("theme").and_then(|t| t.as_str()) == self.look()["theme"].as_str()
              && shown.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(self.turn)))
-    }
-}
-
-/// Converts RGBA pixels to grey in place (Paper theme), keeping alpha.
-pub fn to_grey(rgba: &mut [u8]) {
-    for pixel in rgba.chunks_exact_mut(4) {
-        let grey = ((u32::from(pixel[0]) * 299 + u32::from(pixel[1]) * 587 + u32::from(pixel[2]) * 114) / 1000) as u8;
-        pixel[..3].fill(grey);
     }
 }
 
@@ -116,14 +139,21 @@ mod tests {
 
     #[test]
     fn the_look_is_compared_with_what_the_board_says() {
-        let paper = Display { theme: Theme::Paper, ..Default::default() };
-        assert_eq!(paper.look(), serde_json::json!({"theme": "paper", "turn": 0}));
+        let sepia = Display { theme: Theme::Sepia, ..Default::default() };
+        assert_eq!(sepia.look(), serde_json::json!({"theme": "sepia", "turn": 0}));
         let board = |theme: &str| serde_json::json!({"board": {"display": {"theme": theme, "turn": 0}}});
-        assert_eq!(paper.shown_by(&board("paper")), Some(true));
-        assert_eq!(paper.shown_by(&board("dark")), Some(false));
-        assert_eq!(paper.shown_by(&serde_json::json!({"board": {}})), None, "older firmware");
-        let mut pixels = vec![255, 0, 0, 200];
-        to_grey(&mut pixels);
-        assert_eq!(pixels, vec![76, 76, 76, 200]);
+        assert_eq!(sepia.shown_by(&board("sepia")), Some(true));
+        assert_eq!(sepia.shown_by(&board("dark")), Some(false));
+        assert_eq!(sepia.shown_by(&serde_json::json!({"board": {}})), None, "older firmware");
+        assert_eq!(serde_json::from_str::<Display>(r#"{"theme": "paper"}"#).unwrap().theme, Theme::White, "saved before White had its name");
+    }
+
+    #[test]
+    fn pictures_take_the_theme_tones() {
+        let tone = |theme: Theme, rgba: [u8; 4]| { let mut p = rgba.to_vec(); theme.tone(&mut p); p };
+        assert_eq!(tone(Theme::Dark, [255, 0, 0, 200]), vec![255, 0, 0, 200]);
+        assert_eq!(tone(Theme::White, [255, 0, 0, 200]), vec![76, 76, 76, 200]);
+        assert_eq!(tone(Theme::Sepia, [255, 255, 255, 255]), vec![0xF4, 0xEC, 0xD8, 255], "white is the paper");
+        assert_eq!(tone(Theme::Sepia, [0, 0, 0, 9]), vec![0x2E, 0x24, 0x1B, 9], "black is the ink");
     }
 }

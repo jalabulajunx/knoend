@@ -27,8 +27,9 @@
 #define CONFIRM_MS     3000
 #define HID_USAGE_1    0x1E // USB HID usage IDs for '1'..'9' are consecutive
 
-// The two themes (spec/protocol.md 3.6d). Dark: light text on dark keys, colour for the states.
-// Paper: an e-ink look, black on white, high contrast; states are shades of grey and borders.
+// The themes (spec/protocol.md 3.6d). Dark: light text on dark keys, colour for the states.
+// White and Sepia: e-ink looks, dark ink on white or on warm paper, high contrast; states are
+// shades of the ink and borders.
 typedef struct {
     uint32_t bg, key, key_blank, key_border, pressed, confirm, confirm_text;
     uint32_t key_text, icon, bar_text, bar_text_highlighted, attention, alert, detail_text;
@@ -42,12 +43,24 @@ static const theme_t DARK = {
     .attention = 0x5A4512, .alert = 0x6B1C1C, .detail_text = 0xFFFFFF, .border = 0,
 };
 
-static const theme_t PAPER = {
+static const theme_t WHITE = {
     .bg = 0xFFFFFF, .key = 0xFFFFFF, .key_blank = 0xF2F2F2, .key_border = 0x000000,
     .pressed = 0xBDBDBD, .confirm = 0x000000, .confirm_text = 0xFFFFFF,
     .key_text = 0x000000, .icon = 0x000000, .bar_text = 0x000000, .bar_text_highlighted = 0xFFFFFF,
     .attention = 0x555555, .alert = 0x000000, .detail_text = 0x000000, .border = 2,
 };
+
+static const theme_t SEPIA = {
+    .bg = 0xF4ECD8, .key = 0xF4ECD8, .key_blank = 0xE9DDC2, .key_border = 0x4A3A2A,
+    .pressed = 0xD8C6A2, .confirm = 0x4A3A2A, .confirm_text = 0xF4ECD8,
+    .key_text = 0x2E241B, .icon = 0x2E241B, .bar_text = 0x2E241B, .bar_text_highlighted = 0xF4ECD8,
+    .attention = 0x7A6248, .alert = 0x4A3A2A, .detail_text = 0x2E241B, .border = 2,
+};
+
+static const theme_t *theme_for(display_theme_t which)
+{
+    return which == DISPLAY_THEME_WHITE ? &WHITE : which == DISPLAY_THEME_SEPIA ? &SEPIA : &DARK;
+}
 
 static const theme_t *theme = &DARK;
 
@@ -481,13 +494,13 @@ static void apply_theme_locked(void)
     lv_obj_set_style_bg_color(pager, lv_color_hex(theme->pressed), LV_STATE_PRESSED);
 }
 
-void ui_set_theme(bool paper)
+void ui_set_theme(display_theme_t which)
 {
     if (!lvgl_port_lock(1000)) {
         ESP_LOGE(TAG, "could not take the LVGL lock to change the theme");
         return;
     }
-    theme = paper ? &PAPER : &DARK;
+    theme = theme_for(which);
     apply_theme_locked();
     draw_keys_locked();
     update_status_locked();
@@ -570,7 +583,7 @@ void ui_start(void)
     lv_obj_set_style_text_font(pager_label, &lv_font_montserrat_14, 0);
     lv_obj_center(pager_label);
 
-    theme = display_settings()->theme == DISPLAY_THEME_PAPER ? &PAPER : &DARK;
+    theme = theme_for(display_settings()->theme);
     apply_theme_locked();
     draw_keys_locked();
     update_status_locked();

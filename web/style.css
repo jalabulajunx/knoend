@@ -95,10 +95,15 @@ main { max-width: 1040px; margin: 0 auto; padding: 24px; }
 .screen.portrait { aspect-ratio: 240 / 320; max-width: 250px; }
 .screen .keys { margin: 0; padding: 0; aspect-ratio: auto; max-width: none; background: none; }
 .screen .bar { font-size: 11px; color: #c0c8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; }
-.screen.paper { background: #fff; }
-.screen.paper .keys div { background: #fff; color: #000; border: 2px solid #000; }
-.screen.paper .keys div.blank { background: #f2f2f2; border: none; }
-.screen.paper .bar { color: #000; }
+.screen.white { background: #fff; }
+.screen.white .keys div { background: #fff; color: #000; border: 2px solid #000; }
+.screen.white .keys div.blank { background: #f2f2f2; border: none; }
+.screen.white .bar { color: #000; }
+/* Sepia: the firmware's colours (ui.c SEPIA). */
+.screen.sepia { background: #f4ecd8; }
+.screen.sepia .keys div { background: #f4ecd8; color: #2e241b; border: 2px solid #4a3a2a; }
+.screen.sepia .keys div.blank { background: #e9ddc2; border: none; }
+.screen.sepia .bar { color: #2e241b; }
 .note { color: var(--muted); margin: 12px 0 0; }
 /* Edit keys: the same key area, bigger, keys selectable and draggable. */
 .edit-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

@@ -233,15 +233,16 @@ keeps both values with its pairing and Wi-Fi settings, so it starts that way bef
 connects.
 
 ```json
-{ "id": 12, "type": "knoend.display", "body": { "theme": "paper", "turn": 1 } }
-{ "id": 4, "re": 12, "type": "knoend.display.ack", "body": { "theme": "paper", "turn": 1, "restarting": true } }
+{ "id": 12, "type": "knoend.display", "body": { "theme": "sepia", "turn": 1 } }
+{ "id": 4, "re": 12, "type": "knoend.display.ack", "body": { "theme": "sepia", "turn": 1, "restarting": true } }
 ```
 
 - `theme`: `dark` (the usual: light text on dark keys, colour for pressed, confirm and the status
-  levels) or `paper` (an e-ink look: black on white, high contrast; pressed and confirm keys are
-  inverted, `attention` and `alert` are a black bar with white text, and Material icons are black).
-  Pictures the companion sends (3.6b) are drawn as sent; in `paper` the companion sends them in
-  grey.
+  levels), `white` or `sepia` (e-ink looks: dark ink on white, or on warm paper; high contrast,
+  keys outlined; pressed keys are a lighter shade of the ink, a key waiting for confirmation and
+  the `attention` and `alert` bars are filled with the ink, Material icons are in the ink colour).
+  Pictures the companion sends (3.6b) are drawn as sent; for `white` the companion sends them in
+  grey, for `sepia` in sepia tones.
 - `turn`: quarter turns clockwise from the board's usual landscape (its definition's
   `display.rotation`): 0 landscape, 1 portrait, 2 landscape upside down, 3 portrait upside down.
   Touch follows the turn.

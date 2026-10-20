@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "display.h"
+
 #define UI_KEYS        16 // the largest grid, 4x4
 #define UI_LABEL_BYTES 97 // 24 characters of UTF-8, plus NUL
 #define UI_ICON_BYTES  66 // a Material Icons name (spec/icons.txt) or a sent image ("app:firefox"), plus NUL
@@ -39,8 +41,8 @@ typedef struct {
 
 typedef enum { UI_STATUS_INFO, UI_STATUS_ATTENTION, UI_STATUS_ALERT } ui_status_level_t;
 
-// Redraws everything in the Paper (black on white) or Dark theme. Safe to call from any task.
-void ui_set_theme(bool paper);
+// Redraws everything in `theme` (a display_theme_t). Safe to call from any task.
+void ui_set_theme(display_theme_t theme);
 
 // Draws the grid with the default layout. Call once after board_init().
 void ui_start(void);

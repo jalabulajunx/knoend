@@ -98,7 +98,7 @@ let displayState = { key_size: "medium", theme: "dark", turn: 0 };
 function drawScreen(el, layout, look) {
   if (!el) return;
   const portrait = look.turn % 2 === 1;
-  el.className = `screen ${look.theme === "paper" ? "paper" : ""} ${portrait ? "portrait" : ""}`;
+  el.className = `screen ${["white", "sepia"].includes(look.theme) ? look.theme : ""} ${portrait ? "portrait" : ""}`;
   // The keys as the board shows them now (it already follows the key size); turned to portrait, the
   // same slots in at most 3 columns and 4 rows.
   const sizes = { big: { cols: 2, rows: 2 }, medium: { cols: 3, rows: 3 }, small: { cols: 4, rows: 4 } };
@@ -650,7 +650,8 @@ const KEY_SIZES = [
 
 const THEMES = [
   ["dark", "Dark, in colour", "Light text on dark keys; colour shows a pressed key, a key waiting for its second tap, and messages."],
-  ["paper", "Paper: black on white", "An e-ink look with high contrast, easy to read in daylight. App pictures turn grey."],
+  ["white", "White: black on white", "An e-ink look with high contrast, easy to read in daylight. App pictures turn grey."],
+  ["sepia", "Sepia: brown ink on warm paper", "An e-ink look, softer on the eyes than white. App pictures turn sepia."],
 ];
 
 async function saveDisplay(change) {

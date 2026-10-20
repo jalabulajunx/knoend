@@ -6,7 +6,7 @@
 
 #include "esp_err.h"
 
-typedef enum { DISPLAY_THEME_DARK, DISPLAY_THEME_PAPER } display_theme_t;
+typedef enum { DISPLAY_THEME_DARK, DISPLAY_THEME_WHITE, DISPLAY_THEME_SEPIA } display_theme_t;
 
 typedef struct {
     display_theme_t theme;
@@ -19,7 +19,7 @@ const display_settings_t *display_settings(void);
 // The same, to change in place once a new value is stored.
 display_settings_t *display_settings_mut(void);
 
-// "dark" / "paper"; false for anything else.
+// "dark" / "white" / "sepia"; false for anything else.
 const char *display_theme_name(display_theme_t theme);
 bool display_theme_parse(const char *name, display_theme_t *theme);
 

@@ -16,7 +16,7 @@ const display_settings_t *display_settings(void)
         nvs_handle_t nvs;
         if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) == ESP_OK) {
             uint8_t theme = 0, turn = 0;
-            if (nvs_get_u8(nvs, "theme", &theme) == ESP_OK && theme <= DISPLAY_THEME_PAPER) {
+            if (nvs_get_u8(nvs, "theme", &theme) == ESP_OK && theme <= DISPLAY_THEME_SEPIA) {
                 current.theme = (display_theme_t)theme;
             }
             if (nvs_get_u8(nvs, "turn", &turn) == ESP_OK && turn <= 3) {
@@ -36,15 +36,17 @@ display_settings_t *display_settings_mut(void)
 
 const char *display_theme_name(display_theme_t theme)
 {
-    return theme == DISPLAY_THEME_PAPER ? "paper" : "dark";
+    return theme == DISPLAY_THEME_WHITE ? "white" : theme == DISPLAY_THEME_SEPIA ? "sepia" : "dark";
 }
 
 bool display_theme_parse(const char *name, display_theme_t *theme)
 {
     if (name != NULL && strcmp(name, "dark") == 0) {
         *theme = DISPLAY_THEME_DARK;
-    } else if (name != NULL && strcmp(name, "paper") == 0) {
-        *theme = DISPLAY_THEME_PAPER;
+    } else if (name != NULL && strcmp(name, "white") == 0) {
+        *theme = DISPLAY_THEME_WHITE;
+    } else if (name != NULL && strcmp(name, "sepia") == 0) {
+        *theme = DISPLAY_THEME_SEPIA;
     } else {
         return false;
     }
