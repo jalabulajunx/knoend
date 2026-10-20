@@ -28,6 +28,12 @@ const display_settings_t *display_settings(void)
     return &current;
 }
 
+display_settings_t *display_settings_mut(void)
+{
+    display_settings();
+    return &current;
+}
+
 const char *display_theme_name(display_theme_t theme)
 {
     return theme == DISPLAY_THEME_PAPER ? "paper" : "dark";

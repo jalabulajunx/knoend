@@ -87,6 +87,18 @@ main { max-width: 1040px; margin: 0 auto; padding: 24px; }
   font-size: 12px; padding: 4px; line-height: 1.2;
 }
 .keys div.blank { background: #181e25; }
+/* The board's screen as it looks: keys over a status bar, in its theme and way round. */
+.screen {
+  display: grid; grid-template-rows: 1fr auto; gap: 4px; aspect-ratio: 320 / 240; max-width: 360px;
+  background: #101418; padding: 6px; border-radius: 8px; margin-top: 12px; box-sizing: border-box;
+}
+.screen.portrait { aspect-ratio: 240 / 320; max-width: 250px; }
+.screen .keys { margin: 0; padding: 0; aspect-ratio: auto; max-width: none; background: none; }
+.screen .bar { font-size: 11px; color: #c0c8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; }
+.screen.paper { background: #fff; }
+.screen.paper .keys div { background: #fff; color: #000; border: 2px solid #000; }
+.screen.paper .keys div.blank { background: #f2f2f2; border: none; }
+.screen.paper .bar { color: #000; }
 .note { color: var(--muted); margin: 12px 0 0; }
 /* Edit keys: the same key area, bigger, keys selectable and draggable. */
 .edit-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

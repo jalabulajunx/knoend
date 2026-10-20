@@ -603,8 +603,8 @@ static void restart_now(void *arg)
     esp_restart();
 }
 
-// The person's theme and turn (spec/protocol.md 3.6d): stored, answered, then a restart applies
-// them (the UI is built once, at start-up).
+// The person's theme and turn (spec/protocol.md 3.6d): stored and answered. A new theme is drawn at
+// once; a new turn needs a restart (the screen's size is set at start-up).
 static void handle_display(const cJSON *body, int64_t re, transport_t transport)
 {
     display_settings_t wanted = *display_settings();
@@ -626,19 +626,25 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
         send_error(re, "unsupported", "this firmware draws landscape only", transport);
         return;
     }
-    const display_settings_t *now = display_settings();
-    const bool changed = wanted.theme != now->theme || wanted.turn != now->turn;
-    if (changed && display_settings_store(&wanted) != ESP_OK) {
+    display_settings_t *now = display_settings_mut();
+    const bool new_theme = wanted.theme != now->theme;
+    const bool restart = wanted.turn != now->turn;
+    if ((new_theme || restart) && display_settings_store(&wanted) != ESP_OK) {
         send_error(re, "busy", "could not store the display settings", transport);
         return;
+    }
+    if (new_theme) {
+        now->theme = wanted.theme;
+        ui_set_theme(wanted.theme == DISPLAY_THEME_PAPER);
+        ESP_LOGI(TAG, "display: %s", display_theme_name(wanted.theme));
     }
     cJSON *ack = cJSON_CreateObject();
     cJSON_AddStringToObject(ack, "theme", display_theme_name(wanted.theme));
     cJSON_AddNumberToObject(ack, "turn", wanted.turn);
-    cJSON_AddBoolToObject(ack, "restarting", changed);
+    cJSON_AddBoolToObject(ack, "restarting", restart);
     send_packet("display.ack", ack, re, transport);
-    if (changed) {
-        ESP_LOGI(TAG, "display: %s, turn %d; restarting", display_theme_name(wanted.theme), wanted.turn);
+    if (restart) {
+        ESP_LOGI(TAG, "display: turn %d; restarting", wanted.turn);
         // Time for the answer to leave before the restart.
         static esp_timer_handle_t timer;
         const esp_timer_create_args_t args = { .callback = restart_now, .name = "display-restart" };

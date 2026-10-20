@@ -39,6 +39,9 @@ typedef struct {
 
 typedef enum { UI_STATUS_INFO, UI_STATUS_ATTENTION, UI_STATUS_ALERT } ui_status_level_t;
 
+// Redraws everything in the Paper (black on white) or Dark theme. Safe to call from any task.
+void ui_set_theme(bool paper);
+
 // Draws the grid with the default layout. Call once after board_init().
 void ui_start(void);
 

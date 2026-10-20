@@ -49,7 +49,7 @@
           <h2>Now</h2>
           <p class="now-app"><span class="muted">Focused app</span> <strong id="now-app">-</strong></p>
           <p class="now-layout"><span class="muted">On the keys</span> <strong id="now-layout">-</strong> <span id="now-badge" class="badge" hidden></span></p>
-          <div id="keys-preview" class="keys" aria-label="Keys on the board"></div>
+          <div id="keys-preview" class="screen" aria-label="Keys on the board"></div>
           <p id="configuring" class="note" hidden></p>
         </article>
       </div>
@@ -247,13 +247,22 @@
       </article>
 
       <article class="card step" data-step="5" hidden>
-        <h2>How big should the keys be?</h2>
-        <p>A page never has more keys than this. A layout with more is spread over pages you swipe through, so nothing is lost. You can change it any time on the dashboard.</p>
-        <ul class="choices" id="key-size-setup"></ul>
-        <h3>How should the screen look?</h3>
-        <ul class="choices" id="theme-setup"></ul>
-        <p id="theme-note" class="muted small" hidden>This board's firmware has one look only. Install the latest firmware to choose.</p>
-        <div class="actions"><button type="button" class="primary" id="key-size-save">Save</button></div>
+        <div class="grid2 look-setup">
+          <div>
+            <h2>How big should the keys be?</h2>
+            <p>A page never has more keys than this. A layout with more is spread over pages you swipe through, so nothing is lost.</p>
+            <ul class="choices" id="key-size-setup"></ul>
+            <h3>How should the screen look?</h3>
+            <ul class="choices" id="theme-setup"></ul>
+            <p id="theme-note" class="muted small" hidden>This board's firmware has one look only. Install the latest firmware to choose; the preview shows it meanwhile.</p>
+          </div>
+          <div>
+            <h3>Preview</h3>
+            <p class="muted small">Each choice shows here and on the board at once. You can change them any time on the dashboard.</p>
+            <div id="setup-preview" class="screen" aria-label="Preview of the board"></div>
+          </div>
+        </div>
+        <div class="actions"><button type="button" class="primary" id="key-size-save">Done</button></div>
         <p id="setup-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
       </article>
 

@@ -374,7 +374,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             continue;
         }
         shared.update(|s| s.link = "searching".into()).await;
-        let (board, mut sender) = match connect(&pairings, events.clone()).await {
+        let (mut board, mut sender) = match connect(&pairings, events.clone()).await {
             Ok(link) => link,
             Err(e) => {
                 println!("{e}; retrying in 5 s");
@@ -660,6 +660,23 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                                 None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             },
+                        }
+                    }
+                }
+                Event::Board(packet) if packet.kind == "knoend.display.ack" && packet.body["restarting"] != true => {
+                    // A new theme is drawn at once: pictures are sent again in its colours.
+                    println!("  board display: {}", packet.body);
+                    board.display = Some(json!({"theme": packet.body["theme"], "turn": packet.body["turn"]}));
+                    PAPER.store(packet.body["theme"] == "paper", std::sync::atomic::Ordering::Relaxed);
+                    let status = board.clone();
+                    shared.update(|s| s.board = Some(status)).await;
+                    sent_images.clear();
+                    shown = None;
+                    if approvals.is_empty() {
+                        match effective(&focus, &tab) {
+                            Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                                  &mut shown, calling.as_ref(), &shared).await,
                         }
                     }
                 }

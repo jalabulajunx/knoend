@@ -967,7 +967,7 @@
         },
         "restarting": {
           "type": "boolean",
-          "description": "True when something changed and the board restarts to apply it."
+          "description": "True when the turn changed: the board restarts to apply it. A new theme is drawn at once."
         }
       },
       "required": [

@@ -79,7 +79,7 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `knoend.wifi.scan` | C→B | Serial only: list the Wi-Fi networks the board can hear (empty body) |
 | `knoend.wifi.networks` | B→C | Up to 20 networks, strongest first: `ssid`, `rssi` (dBm), `channel`, `secured`. The ESP32-S3 hears 2.4 GHz only |
 | `knoend.display` | C→B | How the board looks: its theme and which way it sits (section 3.6d) |
-| `knoend.display.ack` | B→C | Stored; says whether the board restarts to apply it |
+| `knoend.display.ack` | B→C | Stored; says whether the board restarts to apply it (a new turn) |
 | `knoend.ping` | both | Liveness check; answer with `knoend.ping` and `re` set |
 | `knoend.error` | both | A packet could not be handled |
 
@@ -246,9 +246,10 @@ connects.
   `display.rotation`): 0 landscape, 1 portrait, 2 landscape upside down, 3 portrait upside down.
   Touch follows the turn.
 - Either field may be left out to keep its current value.
-- The board stores the values, answers, and restarts when something changed (`restarting: true`);
-  the companion then connects again and reads the new size and grid from the identity. Nothing
-  changed: `restarting: false`, no restart.
+- The board stores the values and answers. A new `theme` is drawn at once, so the person sees it
+  as they choose. A new `turn` changes the screen's size, so the board restarts for it
+  (`restarting: true`); the companion then connects again and reads the new size and grid from the
+  identity. Otherwise `restarting: false`.
 - The companion sends `knoend.display` after the identities when the person's choice differs from
   the identity's `board.display`, and when the person changes it.
 

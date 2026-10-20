@@ -80,21 +80,51 @@ function renderStatus(s) {
   badge.hidden = !layout || layout.reviewed;
   badge.textContent = "AI draft, unreviewed";
 
-  const keys = $("keys-preview");
-  keys.replaceChildren();
-  const grid = (layout && layout.grid) || { cols: 3, rows: 3 };
-  keys.style.gridTemplateColumns = `repeat(${grid.cols}, 1fr)`;
-  keys.style.gridTemplateRows = `repeat(${grid.rows}, 1fr)`;
-  for (let slot = 1; slot <= grid.cols * grid.rows; slot++) {
-    const div = document.createElement("div");
-    const key = layout && layout.keys.find((k) => k.key === slot);
-    div.textContent = key ? key.label : "";
-    if (!key) div.className = "blank";
-    keys.append(div);
-  }
+  renderStatus.layout = layout;
+  drawScreen($("keys-preview"), layout, displayState);
+  drawScreen($("setup-preview"), layout, displayState);
   const conf = $("configuring");
   conf.hidden = !s.configuring;
   conf.textContent = s.configuring ? `The AI agent is drafting keys for ${s.configuring}...` : "";
+}
+
+/** The person's display choices as last saved (or being tried in setup). */
+let displayState = { key_size: "medium", theme: "dark", turn: 0 };
+
+/**
+ * Draws the board's screen into `el`: the keys of `layout` (as the board shows them now) in the
+ * chosen theme and way round, with the status bar. Portrait reflows to the 3 columns it has.
+ */
+function drawScreen(el, layout, look) {
+  if (!el) return;
+  const portrait = look.turn % 2 === 1;
+  el.className = `screen ${look.theme === "paper" ? "paper" : ""} ${portrait ? "portrait" : ""}`;
+  // The keys as the board shows them now (it already follows the key size); turned to portrait, the
+  // same slots in at most 3 columns and 4 rows.
+  const sizes = { big: { cols: 2, rows: 2 }, medium: { cols: 3, rows: 3 }, small: { cols: 4, rows: 4 } };
+  const shown = (layout && layout.grid) || sizes[look.key_size] || sizes.medium;
+  const cols = portrait ? Math.min(shown.cols, 3) : shown.cols;
+  const rows = portrait ? Math.min(Math.ceil((shown.cols * shown.rows) / cols), 4) : shown.rows;
+  const keys = document.createElement("div");
+  keys.className = "keys";
+  keys.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  keys.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  const labels = layout ? [...layout.keys].sort((a, b) => a.key - b.key).map((k) => k.label) : [];
+  for (let i = 0; i < cols * rows; i++) {
+    const div = document.createElement("div");
+    div.textContent = labels[i] || "";
+    if (!labels[i]) div.className = "blank";
+    keys.append(div);
+  }
+  const bar = document.createElement("div");
+  bar.className = "bar";
+  bar.textContent = layout ? `${layout.name}${layout.pages > 1 ? `   ${layout.page}/${layout.pages} >` : ""}` : "No board connected";
+  el.replaceChildren(keys, bar);
+}
+
+function redrawScreens() {
+  drawScreen($("keys-preview"), renderStatus.layout, displayState);
+  drawScreen($("setup-preview"), renderStatus.layout, displayState);
 }
 
 async function loadDrafts() {
@@ -624,19 +654,25 @@ const THEMES = [
 ];
 
 async function saveDisplay(change) {
+  displayState = { ...displayState, ...change };
+  redrawScreens();
   const saved = await api("/display", change);
+  displayState = { ...displayState, ...saved };
   $("key-size").value = saved.key_size;
   $("theme").value = saved.theme;
+  redrawScreens();
   return saved;
 }
 
 /** Fills the dashboard's choices; the look only when the board's firmware can change it. */
 async function loadDisplay() {
   const d = await api("/display");
+  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn };
+  redrawScreens();
   $("key-size").value = d.key_size;
   $("theme").value = d.theme;
-  $("theme").disabled = !d.board_can_change_look;
-  $("theme").title = d.board_can_change_look ? "" : "This board's firmware has one look only; install the latest firmware to choose.";
+  // Kept and shown in the preview either way; the board takes it once its firmware can.
+  $("theme").title = d.board_can_change_look ? "" : "This board's firmware has one look only: the preview shows it, and the board takes it after a firmware update.";
   return d;
 }
 
@@ -654,23 +690,22 @@ async function keySizeStep() {
     }
   };
   fill($("key-size-setup"), "key-size-choice", KEY_SIZES, current.key_size);
-  fill($("theme-setup"), "theme-choice", THEMES, current.theme, !current.board_can_change_look);
+  // The preview shows every look; the board follows when its firmware can.
+  fill($("theme-setup"), "theme-choice", THEMES, current.theme);
   $("theme-note").hidden = current.board_can_change_look;
+  displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0 };
+  redrawScreens();
+  // Each choice applies at once: on the board, and in the preview.
+  for (const name of ["key-size-choice", "theme-choice"]) {
+    document.querySelectorAll(`input[name="${name}"]`).forEach((input) => input.addEventListener("change", () => {
+      const change = name === "key-size-choice" ? { key_size: input.value } : { theme: input.value };
+      saveDisplay(change).catch((err) => logTo($("pair-log"), `Could not apply that: ${err.message}`, "error"));
+    }));
+  }
 }
 
-$("key-size-save").addEventListener("click", async (e) => {
-  const picked = document.querySelector('input[name="key-size-choice"]:checked');
-  const look = document.querySelector('input[name="theme-choice"]:checked');
-  e.target.disabled = true;
-  try {
-    await saveDisplay({ key_size: picked ? picked.value : "medium", theme: look ? look.value : "dark" });
-    $("setup-done").hidden = false;
-  } catch (err) {
-    logTo($("pair-log"), `Could not save the key size: ${err.message}`, "error");
-  } finally {
-    e.target.disabled = false;
-  }
-});
+// Every choice is applied as it is made; Done only finishes setup.
+$("key-size-save").addEventListener("click", () => { $("setup-done").hidden = false; });
 
 $("key-size").addEventListener("change", (e) => saveDisplay({ key_size: e.target.value }).catch((err) => alert(`Could not save the key size: ${err.message}`)));
 $("theme").addEventListener("change", (e) => saveDisplay({ theme: e.target.value }).catch((err) => alert(`Could not change the look: ${err.message}`)));

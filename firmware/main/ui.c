@@ -466,6 +466,34 @@ void ui_max_grid(int *cols, int *rows)
     *rows = *rows < 1 ? 1 : *rows > GRID_MAX ? GRID_MAX : *rows;
 }
 
+// Everything the theme colours that is not redrawn with the keys and the status bar.
+static void apply_theme_locked(void)
+{
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(theme->bg), 0);
+    for (int i = 0; i < UI_KEYS; i++) {
+        lv_obj_set_style_bg_color(key_buttons[i], lv_color_hex(theme->pressed), LV_STATE_PRESSED);
+        lv_obj_set_style_border_color(key_buttons[i], lv_color_hex(theme->key_border), 0);
+    }
+    lv_obj_set_style_bg_color(detail_box, lv_color_hex(theme->key_blank), 0);
+    lv_obj_set_style_border_width(detail_box, theme->border, 0);
+    lv_obj_set_style_border_color(detail_box, lv_color_hex(theme->key_border), 0);
+    lv_obj_set_style_text_color(detail_label, lv_color_hex(theme->detail_text), 0);
+    lv_obj_set_style_bg_color(pager, lv_color_hex(theme->pressed), LV_STATE_PRESSED);
+}
+
+void ui_set_theme(bool paper)
+{
+    if (!lvgl_port_lock(1000)) {
+        ESP_LOGE(TAG, "could not take the LVGL lock to change the theme");
+        return;
+    }
+    theme = paper ? &PAPER : &DARK;
+    apply_theme_locked();
+    draw_keys_locked();
+    update_status_locked();
+    lvgl_port_unlock();
+}
+
 void ui_start(void)
 {
     default_layout(&layout);
@@ -475,9 +503,7 @@ void ui_start(void)
     }
 
     const board_info_t *board = board_info();
-    theme = display_settings()->theme == DISPLAY_THEME_PAPER ? &PAPER : &DARK;
     lv_obj_t *screen = lv_scr_act();
-    lv_obj_set_style_bg_color(screen, lv_color_hex(theme->bg), 0);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     // Keys, the status bar and the detail panel pass swipes up to the screen (LVGL's default).
     lv_obj_add_event_cb(screen, gesture_event, LV_EVENT_GESTURE, NULL);
@@ -488,10 +514,8 @@ void ui_start(void)
     // Every key the largest grid needs; draw_keys_locked places and sizes them per layout.
     for (int i = 0; i < UI_KEYS; i++) {
         lv_obj_t *button = lv_btn_create(screen);
-        lv_obj_set_style_bg_color(button, lv_color_hex(theme->pressed), LV_STATE_PRESSED);
         lv_obj_set_style_radius(button, 8, 0);
         lv_obj_set_style_shadow_width(button, 0, 0);
-        lv_obj_set_style_border_color(button, lv_color_hex(theme->key_border), 0);
         lv_obj_add_event_cb(button, key_event, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t *label = lv_label_create(button);
@@ -511,9 +535,6 @@ void ui_start(void)
     detail_box = lv_obj_create(screen);
     lv_obj_remove_style_all(detail_box);
     lv_obj_set_style_bg_opa(detail_box, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(detail_box, lv_color_hex(theme->key_blank), 0);
-    lv_obj_set_style_border_width(detail_box, theme->border, 0);
-    lv_obj_set_style_border_color(detail_box, lv_color_hex(theme->key_border), 0);
     lv_obj_set_style_radius(detail_box, 8, 0);
     lv_obj_set_style_pad_all(detail_box, 6, 0);
     lv_obj_set_scroll_dir(detail_box, LV_DIR_VER);
@@ -523,7 +544,6 @@ void ui_start(void)
     lv_obj_set_width(detail_label, lv_pct(100));
     lv_label_set_long_mode(detail_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(detail_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(detail_label, lv_color_hex(theme->detail_text), 0);
     lv_obj_align(detail_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
     status_bar = lv_obj_create(screen);
@@ -535,7 +555,6 @@ void ui_start(void)
     status_label = lv_label_create(status_bar);
     lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
     lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(status_label, lv_color_hex(theme->bar_text), 0);
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
     lv_obj_align(status_label, LV_ALIGN_LEFT_MID, GRID_GAP, 0);
 
@@ -543,16 +562,16 @@ void ui_start(void)
     lv_obj_remove_style_all(pager);
     lv_obj_set_size(pager, PAGER_WIDTH, STATUS_HEIGHT);
     lv_obj_align(pager, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_style_bg_color(pager, lv_color_hex(theme->pressed), LV_STATE_PRESSED);
     lv_obj_set_style_bg_opa(pager, LV_OPA_COVER, LV_STATE_PRESSED);
     lv_obj_add_flag(pager, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(pager, pager_event, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(pager, LV_OBJ_FLAG_HIDDEN);
     pager_label = lv_label_create(pager);
     lv_obj_set_style_text_font(pager_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(pager_label, lv_color_hex(theme->key_text), 0);
     lv_obj_center(pager_label);
 
+    theme = display_settings()->theme == DISPLAY_THEME_PAPER ? &PAPER : &DARK;
+    apply_theme_locked();
     draw_keys_locked();
     update_status_locked();
     lv_timer_create(status_timer, 250, NULL);
