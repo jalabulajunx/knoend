@@ -467,7 +467,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE
-                                        && calling.as_ref().is_some_and(|_| packet.body["key"] == paging.grid.size()) => {
+                                        && calling.as_ref().and_then(|c| c.key(paging.grid)).is_some_and(|k| packet.body["key"] == k.key) => {
                     let c = calling.take().expect("calling");
                     let names = c.names.clone();
                     let result = tokio::task::spawn_blocking(move || {
@@ -853,11 +853,15 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
         }
     }
     if let Some(calling) = calling {
-        let key = calling.key(grid);
-        body.keys.retain(|k| k.key != key.key);
-        actions.remove(&key.key);
-        body.keys.push(key);
-        body.keys.sort_by_key(|k| k.key);
+        match calling.key(grid) {
+            Some(key) => {
+                body.keys.retain(|k| k.key != key.key);
+                actions.remove(&key.key);
+                body.keys.push(key);
+                body.keys.sort_by_key(|k| k.key);
+            }
+            None => status = json!({"text": calling.status(), "level": "attention"}),
+        }
     }
     body.name = board_text(&body.name, 128);
     fit_packet(&mut body);
@@ -982,18 +986,21 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
                               icon, confirm: false, send: Send::Event(true) });
         targets.insert(slot, entry.target.clone());
     }
-    if let Some(calling) = calling {
-        let key = calling.key(grid);
+    if let Some(key) = calling.and_then(|c| c.key(grid)) {
         keys.retain(|k| k.key != key.key);
         targets.remove(&key.key);
         keys.push(key);
     }
-    let status = if keys.is_empty() { "Nothing open. Apps and sites you use will appear here." } else { "" };
+    let status = match calling {
+        Some(c) if c.key(grid).is_none() => c.status(),
+        _ if keys.is_empty() => "Nothing open. Apps and sites you use will appear here.".into(),
+        _ => String::new(),
+    };
     let paged = pages > 1;
     let mut body = LayoutBody { layout: LAUNCHER.into(), name: "Launcher".into(), source: "default".into(), reviewed: true, keys, grid: Some(grid),
                                 page: paged.then(|| page as u8 + 1), pages: paged.then(|| pages as u8), ..LayoutBody::default() };
     fit_packet(&mut body);
-    let signature = format!("launcher|{}", serde_json::to_string(&body).unwrap_or_default());
+    let signature = format!("launcher|{}|{status}", serde_json::to_string(&body).unwrap_or_default());
     if shown.as_deref() == Some(signature.as_str()) {
         return;
     }
@@ -1130,9 +1137,15 @@ impl Calling {
         Calling::named(focus, &n.app) || Calling::named(focus, &n.desktop_entry)
     }
 
-    /// The "Go to" key on the last key of `grid`.
-    fn key(&self, grid: Grid) -> LayoutKey {
-        LayoutKey { key: grid.size(), ..self.key.clone() }
+    /// The "Go to" key on the last key of `grid`, or none on a grid of fewer than four keys, where
+    /// it would take the app's own keys (on 1x1, the only one): the status line says it instead.
+    fn key(&self, grid: Grid) -> Option<LayoutKey> {
+        (grid.size() >= 4).then(|| LayoutKey { key: grid.size(), ..self.key.clone() })
+    }
+
+    /// The status line in place of the key ("Claude needs you").
+    fn status(&self) -> String {
+        board_text(&format!("{} needs you", if self.app.is_empty() { "An app" } else { &self.app }), 80)
     }
 }
 
@@ -1542,9 +1555,13 @@ mod tests {
         let terminal = Focus { app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), ..claude.clone() };
         assert!(calling.is(&claude) && Calling::matches(&claude, &n));
         assert!(!calling.is(&terminal));
-        let key = calling.key(Grid::DEFAULT);
+        let key = calling.key(Grid::DEFAULT).unwrap();
         assert_eq!((key.key, key.label.as_str(), key.icon.as_deref()), (9, "Go to Claude", Some("open_in_new")));
-        assert_eq!(calling.key(Grid { cols: 2, rows: 2 }).key, 4, "the last key of any grid");
+        assert_eq!(calling.key(Grid { cols: 2, rows: 2 }).unwrap().key, 4, "the last key of any grid");
+        for tiny in [Grid { cols: 1, rows: 1 }, Grid { cols: 2, rows: 1 }, Grid { cols: 1, rows: 3 }] {
+            assert!(calling.key(tiny).is_none(), "{tiny:?} keeps its keys");
+        }
+        assert_eq!(calling.status(), "Claude needs you");
     }
 
     #[test]

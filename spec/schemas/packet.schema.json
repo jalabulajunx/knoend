@@ -114,41 +114,6 @@
       "if": {
         "properties": {
           "type": {
-            "const": "knoend.approve.request"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "body": {
-            "$ref": "#/$defs/approveRequest"
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "knoend.approve.response"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "re"
-        ],
-        "properties": {
-          "body": {
-            "$ref": "#/$defs/approveResponse"
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "type": {
             "const": "knoend.error"
           }
         }
@@ -658,69 +623,6 @@
         "ttl": {
           "type": "integer",
           "minimum": 1
-        }
-      }
-    },
-    "approveRequest": {
-      "type": "object",
-      "required": [
-        "request",
-        "agent",
-        "summary",
-        "command",
-        "destructive",
-        "timeout"
-      ],
-      "properties": {
-        "request": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 32
-        },
-        "agent": {
-          "type": "string",
-          "pattern": "^[a-z0-9-]+$"
-        },
-        "session": {
-          "type": "string",
-          "maxLength": 32
-        },
-        "summary": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80
-        },
-        "command": {
-          "type": "string",
-          "maxLength": 1024
-        },
-        "destructive": {
-          "type": "boolean"
-        },
-        "timeout": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 3600
-        }
-      }
-    },
-    "approveResponse": {
-      "type": "object",
-      "required": [
-        "request",
-        "decision"
-      ],
-      "properties": {
-        "request": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 32
-        },
-        "decision": {
-          "enum": [
-            "allow",
-            "deny"
-          ]
         }
       }
     },

@@ -5,5 +5,5 @@
                "grid": { "cols": 4, "rows": 4 }, "statusBar": true },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
-    "incoming": ["knoend.layout", "knoend.status", "knoend.approve.request", "knoend.ping"],
-    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.approve.response", "knoend.ping"] } }
+    "incoming": ["knoend.layout", "knoend.status", "knoend.ping"],
+    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.ping"] } }

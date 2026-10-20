@@ -154,7 +154,7 @@ def main():
     reply = board.expect("knoend.error", 150)
     check("packet without body gets bad-packet", reply is not None and reply["body"].get("code") == "bad-packet")
 
-    board.send("knoend.approve.request", example("approve-request.json")["body"])
+    board.send("knoend.no-such-type", {})
     unexpected = [p for p in board.packets(1.5)]
     check("unknown/unsupported type is ignored", not unexpected,
           f"got {unexpected}" if unexpected else "")

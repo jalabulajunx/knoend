@@ -1,5 +1,5 @@
 { "id": 0, "type": "knoend.identity", "body": {
     "deviceId": "laptop-3f9c2a", "deviceName": "Workstation", "deviceType": "companion",
     "protocolVersion": 0,
-    "incoming": ["knoend.key", "knoend.layout.ack", "knoend.approve.response", "knoend.ping"],
-    "outgoing": ["knoend.layout", "knoend.status", "knoend.approve.request", "knoend.ping"] } }
+    "incoming": ["knoend.key", "knoend.layout.ack", "knoend.ping"],
+    "outgoing": ["knoend.layout", "knoend.status", "knoend.ping"] } }

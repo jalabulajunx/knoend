@@ -72,8 +72,6 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `knoend.key` | B→C | A key was tapped and its action needs the companion |
 | `knoend.page` | B→C | The person asked for the next or previous page of keys |
 | `knoend.status` | C→B | Show a message on the status bar |
-| `knoend.approve.request` | C→B | A coding agent asks permission; show it and wait for Approve/Deny |
-| `knoend.approve.response` | B→C | The person's answer |
 | `knoend.pair` | C→B | Serial only: hand the board a Wi-Fi key (section 4.1) |
 | `knoend.pair.ack` | B→C | Key stored |
 | `knoend.wifi` | C→B | Serial only: the home Wi-Fi name and password (section 4.1) |
@@ -96,8 +94,8 @@ arrives.
                "grid": { "cols": 4, "rows": 4 }, "statusBar": true },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
-    "incoming": ["knoend.layout", "knoend.status", "knoend.approve.request", "knoend.ping"],
-    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.approve.response", "knoend.ping"] } }
+    "incoming": ["knoend.layout", "knoend.status", "knoend.ping"],
+    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.ping"] } }
 ```
 
 - `board.grid`: the largest grid the board draws legibly (cols and rows 1-4), from its screen size.
@@ -179,25 +177,10 @@ Sent when the person swipes left (`next`) or right (`prev`) across the keys, or 
 `level`: `info`, `attention` (highlighted) or `alert` (highlighted + beep). `ttl` seconds; omitted
 means until replaced. An empty `text` clears the bar.
 
-### 3.6 `knoend.approve.request` / `knoend.approve.response`
+### 3.6 (removed: `knoend.approve.request` / `knoend.approve.response`)
 
-```json
-{ "id": 12, "type": "knoend.approve.request", "body": {
-    "request": "c1f3", "agent": "claude-code", "session": "knoend",
-    "summary": "Run a shell command", "command": "rm -rf build/", "destructive": true,
-    "timeout": 120 } }
-```
-
-```json
-{ "id": 40, "re": 12, "type": "knoend.approve.response", "body": { "request": "c1f3", "decision": "deny" } }
-```
-
-- The board shows `summary` and the real `command` (truncated with an ellipsis if too long, never
-  rewritten) with Approve and Deny keys. `destructive: true` makes Approve need a second tap.
-- Several requests form a queue on the board, oldest first.
-- **No answer means no:** after `timeout` seconds the board drops the request and sends nothing;
-  the companion treats silence as "fall back to the agent's own prompt", never as approval.
-- `decision`: `allow` or `deny`.
+Removed on 2026-10-19; no board or companion ever used them. Since 2026-10-18 a coding agent's
+permission request is an ordinary layout with `detail` (section 3.6a).
 
 ### 3.6a Layout extras: `icon`, `detail`
 
@@ -360,7 +343,8 @@ grid of every page; a `[[page]]` entry overrides it for one page (one entry per 
 running onto the next page when one is full; a key with only `page` takes the next free slot on
 that page. At most 64 keys. On a board whose `grid` is smaller, the companion splits each page onto
 pages of the board's size, keys in slot order. The media row is the bottom row of the page shown
-(only on grids of 3 rows or more); "Go to Claude" takes its last key. AI drafts get their grid from
+(only on grids of 3 rows or more); "Go to Claude" takes its last key, except on a page of fewer than
+4 keys, where the status line says "Claude needs you" instead. AI drafts get their grid from
 their number of keys, on one page: 1 key 1x1, 2 1x2, 3-4 2x2, 5-9 3x3, 10-16 4x4.
 
 ```toml
