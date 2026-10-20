@@ -20,6 +20,8 @@ CONFIG_SPIRAM_USE_MALLOC=y
 # LVGL 8: RGB565, byte-swapped for SPI panels.
 CONFIG_LV_COLOR_DEPTH_16=y
 CONFIG_LV_COLOR_16_SWAP=y
+# 12: a key label with a word too wide for 14 px steps down to it (main/ui.c, fitting_font).
+CONFIG_LV_FONT_MONTSERRAT_12=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_28=y

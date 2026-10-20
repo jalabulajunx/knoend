@@ -109,6 +109,10 @@ pub struct Shared {
     pub media: Option<Arc<knoend_media::Players>>,
     /// The service loop's inbox, so background jobs can put a line on the board's status bar.
     inbox: std::sync::OnceLock<mpsc::Sender<Event>>,
+    /// Edit mode (#29): the library the web app is editing, shown on the board instead of focus.
+    pub edit: std::sync::Mutex<Option<crate::edit::Edit>>,
+    /// Open web app event streams; when the last one closes (its tab closed), edit mode ends.
+    viewers: std::sync::atomic::AtomicUsize,
 }
 
 impl Shared {
@@ -119,7 +123,8 @@ impl Shared {
                           recent: std::sync::Mutex::new(std::collections::VecDeque::new()),
                           browser: Arc::new(crate::browser::Browser::default()),
                           media: knoend_media::Players::connect().ok().map(Arc::new),
-                          inbox: std::sync::OnceLock::new() })
+                          inbox: std::sync::OnceLock::new(), edit: std::sync::Mutex::new(None),
+                          viewers: std::sync::atomic::AtomicUsize::new(0) })
     }
 
     /// Publishes an event to the web app and prints it for the terminal.
@@ -140,6 +145,31 @@ impl Shared {
     pub fn board_status(&self, text: String) {
         if let Some(inbox) = self.inbox.get() {
             let _ = inbox.try_send(Event::Status(text));
+        }
+    }
+
+    /// Sends an edit-mode command to the service loop and waits for its answer.
+    pub async fn edit(&self, command: crate::edit::Command) -> Result<Value, String> {
+        let inbox = self.inbox.get().ok_or("the service is still starting")?;
+        let (answer, reply) = tokio::sync::oneshot::channel();
+        inbox.send(Event::Edit(command, Some(answer))).await.map_err(|_| "the service stopped".to_string())?;
+        reply.await.map_err(|_| "no answer from the service".to_string())?
+    }
+
+    pub fn editing(&self) -> bool {
+        self.edit.lock().is_ok_and(|e| e.is_some())
+    }
+
+    pub fn viewer_joined(&self) {
+        self.viewers.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// A web app tab closed its event stream; the last one to go ends edit mode.
+    pub fn viewer_left(&self) {
+        if self.viewers.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 && self.editing() {
+            if let Some(inbox) = self.inbox.get() {
+                let _ = inbox.try_send(Event::Edit(crate::edit::Command::Stop, None));
+            }
         }
     }
 
@@ -220,6 +250,8 @@ enum Event {
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
+    /// From the web app's editor, with where to send the answer.
+    Edit(crate::edit::Command, Option<tokio::sync::oneshot::Sender<Result<Value, String>>>),
 }
 
 pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
@@ -464,6 +496,35 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                   &mut shown, calling.as_ref(), &shared).await,
                         }
+                        if shared.editing() {
+                            shared.emit("edit", edit_state(&shared, &paging));
+                        }
+                    }
+                }
+                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE && shared.editing() => {
+                    // Edit mode: a tap selects the key in the web app; nothing runs.
+                    shared.emit("edit.tap", json!({"page": paging.page, "slot": packet.body["key"]}));
+                }
+                Event::Edit(command, answer) => {
+                    let result = edit_command(command, &mut catalog, &mut paging, &shared);
+                    if result.is_ok() {
+                        let count = catalog.len();
+                        shared.update(|s| s.libraries = count).await;
+                        // The board shows the edited library, or again what is focused.
+                        if approvals.is_empty() {
+                            match effective(&focus, &tab) {
+                                Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                                      &mut shown, calling.as_ref(), &shared).await,
+                            }
+                        }
+                    }
+                    let result = result.map(|value| value.unwrap_or_else(|| edit_state(&shared, &paging)));
+                    match answer {
+                        Some(answer) => {
+                            let _ = answer.send(result);
+                        }
+                        None => shared.emit("edit", edit_state(&shared, &paging)),
                     }
                 }
                 Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE
@@ -791,6 +852,10 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     if shown.as_deref().is_some_and(|s| s.starts_with(APPROVE_SIGNATURE)) {
         return; // a permission request is on the board; it stays until answered
     }
+    if show_edit(sender, paging, shown, shared).await {
+        shown_actions.clear();
+        return;
+    }
     let player = knoend_media::for_focus(players, &focus.app, &focus.instance);
     let mut actions: HashMap<u8, KeyRef> = HashMap::new();
     let found = catalog.layout_for(focus).map(|library| {
@@ -962,6 +1027,9 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
                        targets: &mut HashMap<u8, crate::launcher::Target>, paging: &mut Paging, shown: &mut Option<String>,
                        calling: Option<&Calling>, shared: &Shared) {
     targets.clear();
+    if show_edit(sender, paging, shown, shared).await {
+        return;
+    }
     // 3x3 pages (icons and names fit), smaller on a board that cannot draw 3x3.
     let grid = Grid::DEFAULT.within(paging.max);
     let per_page = usize::from(grid.size());
@@ -1009,6 +1077,144 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
         let _ = sender.send("knoend.status", json!({"text": status})).await;
         *shown = Some(signature);
         shared.update(|s| s.layout = Some(json!({"id": LAUNCHER, "name": "Launcher"}))).await;
+    }
+}
+
+/// Edit mode: the board shows the library being edited, whatever is focused. Every key only
+/// reports its tap (it selects the key in the web app; nothing is typed or asked twice). False when
+/// not editing.
+async fn show_edit(sender: &mut wifi::WifiSender, paging: &mut Paging, shown: &mut Option<String>, shared: &Shared) -> bool {
+    let Some((library, dirty)) = shared.edit.lock().ok().and_then(|e| e.as_ref().map(|e| (e.library.clone(), e.dirty()))) else {
+        return false;
+    };
+    let pages = layout::pages(&library, paging.max);
+    let page = paging.enter(&library.pack.id, pages.len());
+    let mut body = match layout::build(&library, knoend_core::focus::Os::current(), &pages, page) {
+        Ok(body) => body,
+        Err(e) => {
+            println!("  edited library {} cannot be shown: {e}", library.pack.id);
+            return true;
+        }
+    };
+    for key in &mut body.keys {
+        key.send = Send::Event(true);
+        key.confirm = false;
+    }
+    paging.grid = body.grid.unwrap_or_default();
+    let status = json!({"text": board_text(&format!("Editing {}{}", library.pack.name, if dirty { " (not saved)" } else { "" }), 80),
+                        "level": "attention"});
+    fit_packet(&mut body);
+    let signature = format!("edit|{}|{}", serde_json::to_string(&body).unwrap_or_default(), status);
+    if shown.as_deref() == Some(signature.as_str()) {
+        return true;
+    }
+    println!("  -> editing {} page {}: {}", library.pack.id, page + 1,
+             body.keys.iter().map(|k| format!("{}={}", k.key, k.label.replace('\n', "/"))).collect::<Vec<_>>().join(", "));
+    let summary = json!({"id": body.layout, "name": body.name, "source": body.source, "reviewed": body.reviewed, "grid": body.grid,
+                         "page": body.page, "pages": body.pages, "editing": true,
+                         "keys": body.keys.iter().map(|k| json!({"key": k.key, "label": k.label})).collect::<Vec<_>>()});
+    let body = serde_json::to_value(&body).expect("serialisable");
+    if sender.send("knoend.layout", body).await.is_ok() {
+        let _ = sender.send("knoend.status", status).await;
+        *shown = Some(signature);
+        shared.update(|s| s.layout = Some(summary)).await;
+    }
+    true
+}
+
+/// The edit session as the web app shows it, or `{"editing": false}`.
+fn edit_state(shared: &Shared, paging: &Paging) -> Value {
+    match shared.edit.lock().ok().as_ref().and_then(|e| e.as_ref()) {
+        Some(edit) => {
+            let mut state = edit.state(paging.page, paging.max);
+            state["editing"] = json!(true);
+            state
+        }
+        None => json!({"editing": false}),
+    }
+}
+
+/// Carries out an edit-mode command. `Ok(Some(answer))` is the answer itself; `Ok(None)` means
+/// "answer with the edit state", once the board shows it.
+fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &mut Paging, shared: &Shared) -> Result<Option<Value>, String> {
+    use crate::edit::{Command, Edit};
+    use knoend_core::library::Source;
+    let mut session = shared.edit.lock().map_err(|e| e.to_string())?;
+    match command {
+        Command::List => {
+            let libraries: Vec<Value> = catalog.all().map(|(path, l)| {
+                let kind = if !l.matches.agent.is_empty() { "agent" } else if !l.matches.web.is_empty() { "site" } else { "app" };
+                json!({"id": l.pack.id, "name": l.pack.name, "source": l.pack.source, "kind": kind, "keys": l.keys.len(),
+                       "overrides": l.pack.overrides, "own": l.pack.source == Source::User && path.is_file()})
+            }).collect();
+            let edit = session.as_ref().map(|e| {
+                let mut state = e.state(paging.page, paging.max);
+                state["editing"] = json!(true);
+                state
+            }).unwrap_or_else(|| json!({"editing": false}));
+            Ok(Some(json!({"libraries": libraries, "shown": paging.layout, "icons": knoend_core::library::icon_names(), "edit": edit})))
+        }
+        Command::Start(id) => {
+            let id = id.unwrap_or_else(|| paging.layout.clone());
+            let (path, library) = catalog.by_id(&id).ok_or_else(|| format!("{id} has no keys to edit here; pick one from the list"))?;
+            // The person's own version, when there is one, is what they edit.
+            let (path, library) = catalog.all().find(|(_, l)| l.pack.overrides.as_deref() == Some(id.as_str())).unwrap_or((path, library));
+            println!("Edit mode: {}", library.pack.id);
+            *session = Some(Edit::start(library, path));
+            Ok(None)
+        }
+        Command::Change(json) => {
+            let edit = session.as_mut().ok_or("edit mode is off")?;
+            let library = crate::edit::check(json, paging.max)?;
+            if library.pack.id != edit.library.pack.id {
+                return Err("the library's id cannot change while editing".into());
+            }
+            // Every shortcut must be one the board can type.
+            let pages = layout::pages(&library, paging.max);
+            for page in 0..pages.len() {
+                layout::build(&library, knoend_core::focus::Os::current(), &pages, page)?;
+            }
+            edit.library = library;
+            Ok(None)
+        }
+        Command::Page(page) => {
+            session.as_ref().ok_or("edit mode is off")?;
+            paging.page = page; // show_edit keeps it within the pages there are
+            Ok(None)
+        }
+        Command::Save => {
+            let edit = session.as_mut().ok_or("edit mode is off")?;
+            let before = edit.library.pack.id.clone();
+            let (path, library) = edit.save(&config_dir().join("libraries"))?;
+            println!("  saved {} to {}", library.pack.id, path.display());
+            if paging.layout == before {
+                paging.layout = library.pack.id.clone(); // a draft saved as the person's own stays on its page
+            }
+            catalog.add(path, library);
+            Ok(None)
+        }
+        Command::Revert => {
+            let edit = session.as_mut().ok_or("edit mode is off")?;
+            edit.library = edit.saved.clone();
+            Ok(None)
+        }
+        Command::Remove => {
+            let edit = session.as_ref().ok_or("edit mode is off")?;
+            let path = edit.path.clone().ok_or("there is no version of your own to remove")?;
+            std::fs::remove_file(&path).map_err(|e| format!("could not remove {}: {e}", path.display()))?;
+            println!("  removed {} ({})", edit.library.pack.id, path.display());
+            catalog.remove(&edit.library.pack.id);
+            // Back to the recipe or draft it was layered on; nothing left to edit ends edit mode.
+            let under = edit.library.pack.overrides.as_deref().and_then(|id| catalog.by_id(id)).map(|(p, l)| Edit::start(l, p));
+            *session = under;
+            Ok(None)
+        }
+        Command::Stop => {
+            if session.take().is_some() {
+                println!("Edit mode off");
+            }
+            Ok(None)
+        }
     }
 }
 
