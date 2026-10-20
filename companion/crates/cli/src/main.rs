@@ -327,7 +327,7 @@ pub async fn configure_site(shared: &service::Shared, focus: &Focus, scope: knoe
         knoend_core::focus::Os::Macos => "macOS",
         knoend_core::focus::Os::Windows => "Windows",
     };
-    let draft = knoend_agents::site::draft_site_library(&config, &web.host, &web.route(), os, &scope, &items).await?;
+    let draft = knoend_agents::site::draft_site_library(&config, &web.host, &web.page_kind(), os, &scope, &items).await?;
     println!("  drafted keys for {site}{} by {} from {} controls in {:.1} s ({} attempt{}), {} keys",
              match &scope { knoend_agents::site::Scope::Page { kind, .. } => format!(" (page {kind})"), _ => String::new() },
              config.describe(), items.len(), started.elapsed().as_secs_f32(), draft.attempts,
