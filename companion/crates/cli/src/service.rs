@@ -1000,7 +1000,7 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
     let mut body = LayoutBody { layout: LAUNCHER.into(), name: "Launcher".into(), source: "default".into(), reviewed: true, keys, grid: Some(grid),
                                 page: paged.then(|| page as u8 + 1), pages: paged.then(|| pages as u8), ..LayoutBody::default() };
     fit_packet(&mut body);
-    let signature = format!("launcher|{}", serde_json::to_string(&body).unwrap_or_default());
+    let signature = format!("launcher|{}|{status}", serde_json::to_string(&body).unwrap_or_default());
     if shown.as_deref() == Some(signature.as_str()) {
         return;
     }
