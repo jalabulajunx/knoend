@@ -39,6 +39,8 @@ function show(view) {
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.view === view));
   if (view === "setup" && setup.step === 1) scanPorts();
   if (view === "edit") loadEdit();
+  showTip();
+  if (!$("assistant").hidden) renderSuggestions();
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.view === "setup" && setup.task !== "setup") { setTask("setup"); step(1); }
@@ -616,6 +618,8 @@ $("change-wifi").addEventListener("click", () => {
 
 function step(n) {
   setup.step = n;
+  const flow = document.querySelector(".setup-flow");
+  if (flow) flow.dataset.step = n;
   document.querySelectorAll(".step").forEach((s) => (s.hidden = Number(s.dataset.step) !== n));
   document.querySelectorAll(".steps li").forEach((li) => {
     const i = Number(li.dataset.step);
@@ -1523,6 +1527,8 @@ async function applyFix(fix) {
 function showAdvice(r) {
   assistantPanel(true);
   $("advice").hidden = false;
+  $("advice-text").classList.remove("thinking");
+  if (r.noticed) { keepInThread(); $("advice-q").textContent = "Noticed by KnoEnd"; $("advice-q").hidden = false; }
   $("advice-actions").replaceChildren();
   $("advice-fix").hidden = true;
   const looked = (r.checked || []).map((c) => c.check.replaceAll("_", " "));
@@ -1562,21 +1568,137 @@ async function ask(question, error) {
     return;
   }
   assistantPanel(true);
+  keepInThread();
   const box = $("advice");
   box.hidden = false;
-  $("advice-text").textContent = "Thinking...";
+  const shown = question.trim() || (error ? `Something went wrong: ${error}` : "What should I do next?");
+  $("advice-q").textContent = shown;
+  $("advice-q").hidden = false;
+  $("advice-text").textContent = "Looking";
+  $("advice-text").classList.add("thinking");
   $("advice-actions").replaceChildren();
   $("advice-fix").hidden = true;
-  const page = [...document.querySelectorAll("main .view")].find((v) => !v.hidden)?.id.replace("view-", "") || null;
+  $("ask-input").value = "";
+  const page = currentView();
   const context = { page, wizard_task: setup.task, wizard_step: setup.step, port: setup.port, chosen_board: setup.board,
                     identify_result: setup.identified, error: error || null, setup_mode: setup.mode,
                     ai_models_available: models.slice(0, 200) };
   try {
     showAdvice(await api("/assist", { question, context }));
   } catch (e) {
+    $("advice-text").classList.remove("thinking");
     $("advice-text").textContent = `The assistant could not answer: ${e.message}`;
   }
 }
+
+function currentView() {
+  return [...document.querySelectorAll("main .view")].find((v) => !v.hidden)?.id.replace("view-", "") || null;
+}
+
+/** The answer on show goes into the conversation above, as text, before the next one. */
+function keepInThread() {
+  if ($("advice").hidden || !$("advice-text").textContent || $("advice-text").classList.contains("thinking")) return;
+  const li = document.createElement("li");
+  li.className = "exchange";
+  const q = document.createElement("p");
+  q.className = "q";
+  q.textContent = $("advice-q").textContent;
+  const a = document.createElement("p");
+  a.className = "advice";
+  a.textContent = $("advice-text").textContent;
+  li.append(q, a);
+  $("thread").append(li);
+  while ($("thread").children.length > 12) $("thread").firstElementChild.remove();
+}
+
+// ---- help across the app: suggested questions, an "ask about this" on every section, tips ----
+
+/** Questions worth asking on each page, given what is going on. */
+function suggestionsFor(page) {
+  const s = renderStatus.last || {};
+  const out = [];
+  if (s.link && s.link !== "connected") out.push(s.link === "no-pairing" ? "How do I set up my board?" : "Why can't KnoEnd find my board?");
+  if (page === "dashboard") out.push("Why don't my keys change with the app?", "Make the keys easier to read", "Is my board healthy?", "Suggest a font for the keys");
+  if (page === "edit") out.push("How do I add another page of keys?", "What does Primary mean in a shortcut?", "Which version of these keys is the board using?");
+  if (page === "setup") out.push("What should I do next?", "My board is not found over USB", "Which board do I have?");
+  return out.slice(0, 4);
+}
+
+function renderSuggestions() {
+  const box = $("ask-suggestions");
+  box.replaceChildren(...suggestionsFor(currentView()).map((q) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.textContent = q;
+    b.addEventListener("click", () => ask(q));
+    return b;
+  }));
+}
+
+/** A small ° on every section title: ask the assistant about that part of the page. */
+function addAskButtons() {
+  for (const h2 of document.querySelectorAll("main .card h2")) {
+    if (h2.querySelector(".ask-about")) continue;
+    const title = [...h2.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join(" ").trim();
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ask-about";
+    b.title = `Ask the assistant about ${title}`;
+    b.setAttribute("aria-label", `Ask the assistant about ${title}`);
+    b.textContent = "°";
+    b.addEventListener("click", () => ask(`About "${title}" on the ${currentView()} page: explain what I am looking at, and tell me if anything there should change.`));
+    h2.append(b);
+  }
+}
+
+const TIPS = {
+  dashboard: [
+    "Open an app without keys of its own, then tap Configure on the board: the AI drafts keys for it in seconds.",
+    "Swipe the board sideways, or tap the page number on its status bar, for more keys.",
+    "The ° in Kn°End lights up while the board is connected.",
+    "When Claude asks a question, the board shows it with the answers on its keys.",
+    "Something odd? The assistant watches in the background and tells you what it noticed.",
+  ],
+  edit: [
+    "Tap a key on the board to select it here.",
+    "Drag a key onto another place to move it; nothing changes on the board's real keys until you Save.",
+    "Press Record and then the keys, instead of typing a shortcut.",
+  ],
+  setup: [
+    "Guided by AI: when a step fails, the assistant reads what happened and tells you the next step.",
+    "Installing without erasing keeps the board's Wi-Fi and pairing.",
+    "The board hears 2.4 GHz Wi-Fi only.",
+  ],
+};
+let tipIndex = 0;
+
+function showTip() {
+  const page = currentView();
+  const tips = TIPS[page] || [];
+  const el = document.querySelector(`#view-${page} .tip`);
+  if (!el || !tips.length) return;
+  el.querySelector(".tip-text").textContent = tips[tipIndex % tips.length];
+}
+
+function addTips() {
+  for (const page of Object.keys(TIPS)) {
+    const view = $(`view-${page}`);
+    if (!view || view.querySelector(".tip")) continue;
+    const tip = document.createElement("p");
+    tip.className = "tip";
+    tip.innerHTML = `<span class="tip-label">Tip</span><span class="tip-text"></span>`;
+    const next = document.createElement("button");
+    next.type = "button";
+    next.className = "tip-next";
+    next.textContent = "Next";
+    next.addEventListener("click", () => { tipIndex++; showTip(); });
+    tip.append(next);
+    view.prepend(tip);
+  }
+  showTip();
+}
+setInterval(() => { tipIndex++; showTip(); }, 20000);
 
 /** In guided mode, every failure goes to the assistant with what was happening. */
 function autoAssist(error) {
@@ -1588,7 +1710,7 @@ function assistantPanel(open) {
   $("assistant").hidden = !open;
   $("assistant-open").hidden = open;
   $("assistant-open").setAttribute("aria-expanded", String(open));
-  if (open) $("ask-input").focus();
+  if (open) { renderSuggestions(); $("ask-input").focus(); }
 }
 $("assistant-open").addEventListener("click", () => assistantPanel(true));
 $("assistant-close").addEventListener("click", () => assistantPanel(false));
@@ -1602,6 +1724,8 @@ $("ask-form").addEventListener("submit", (e) => {
 // ---- start ----
 
 (async function start() {
+  addAskButtons();
+  addTips();
   connectEvents();
   api("/assist/noticed").then((r) => onNoticed(r.noticed)).catch(() => {});
   try {

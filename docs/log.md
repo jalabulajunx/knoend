@@ -1400,3 +1400,28 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   `find_boards_on_network` and answered from its result (18 s). Haiku once wrote a made-up tool call
   with an invented result: the prompt now forbids it, and such a reply is turned into a real check.
   Not tested: macOS, the FNK, other providers with the checks loop.
+
+## 2026-10-20 - Sundar (Claude Code, Opus 5.5) - Fonts, the always-listening assistant, the web app's new look
+
+- Branch `sundar/board-display` (continued; spec changes need Tom's review).
+- Fonts from Google Fonts (`knoend.font`, 3.6e; a fonts partition; tiny_ttf from PSRAM; kerning
+  tables hidden after WDXL Lubrifont SC's GPOS crashed the board at every start; fonts dropped after
+  a start the board did not get through, `board.fonts.refused`). Start-up size is a setting
+  (`startSize`), previewed on the board. Identity `lastStart` (crash, watchdog, brownout...).
+- The assistant listens all the time: `problem!`/`raise!` mark faults, `watch.rs` gathers them and
+  asks the assistant without being asked; answers open the floating assistant or wait for the web
+  app; the board's status bar points to it. Check `board_serial_log` reads the board's own serial
+  output while it is not connected. Tested: with the board hung, the watcher raised "board missing
+  for 2 minutes", the assistant ran find_boards_on_network and board_serial_log and found the display
+  task stuck (it misread it as a restart loop; knowledge corrected). Cause: LVGL waited forever in
+  `draw_buf_flush` for an SPI transfer report; firmware v0.1.1-115 gives up after 300 ms and logs it.
+  Root cause still open (suspects: run-time rotation, flash writes during a transfer, LV_MEM_CUSTOM).
+- Web app redesign ("a field manual for a small instrument"): Instrument Sans and JetBrains Mono,
+  warm graphite or paper, hairline numbered sections, one signal orange; the ° in Kn°End is the
+  connection light, a figure-eight draws itself ("no end"); the dashboard opens on FIG. 01, a drawn
+  board with the real screen in its theme, way round and font; tips on every page; a ° "ask about
+  this" on every section; the assistant panel keeps a conversation, suggests questions per page,
+  shows what it checked; setup has an intro (what you need), a step rail, and a board that acts out
+  each step. Same ids and behaviour. Checked in the browser pane at desktop and phone width (no
+  sideways scroll); one script error (a duplicate `currentPage`) caught there and fixed: check the
+  script as a module (`node --input-type=module --check`), the plain check misses it.
