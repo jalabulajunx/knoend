@@ -282,6 +282,15 @@ devices and whether each has a port, the WCH driver state, and whether knoend ma
   address wrong (pick from the list, which comes from the provider); 429 rate limit or credit; 5xx
   provider trouble; a connection error (address, internet, or Ollama not running). Follow that
   before anything else.
+- **"Claude Code is not installed" although the person uses it** (macOS, 2026-10-19). Claude Code
+  can live only inside an editor extension (VS Code, Cursor, Windsurf): no `claude` command on any
+  PATH, not even the login shell's. The extension carries its own copy in
+  `~/.vscode/extensions/anthropic.claude-code-<version>-<os>/resources/native-binary/claude`. Since
+  2026-10-19 the lookup also checks there (newest extension first, after any installed `claude`), and
+  the AI tools list (`GET /api/ai/tools`, the setup snapshot) shows the path it found. Confirmed on
+  Tom's Mac: Claude Code 2.1.304 from the VS Code extension drafted an app in 10 s through the
+  service. If it is still not found: AI settings > "Look again"; otherwise install the command
+  (claude.com/claude-code) or pick another provider.
 - **Very slow drafts with a local model.** Ollama on a CPU-only machine runs at a few tokens per
   second (about 2 minutes per draft on our test laptop); use a hosted provider for a responsive
   setup, or a machine with a supported GPU.
