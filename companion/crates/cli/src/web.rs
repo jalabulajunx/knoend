@@ -526,6 +526,13 @@ async fn assist(State(app): State<App>, Json(request): Json<AssistRequest>) -> A
         advice = knoend_agents::assistant::advise(&config, &request.question, &snapshot, &earlier).await
             .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
     }
+    if advice.answer.trim().is_empty() {
+        // Rounds used up without a real answer (a model that kept writing made-up calls).
+        advice.answer = format!("The assistant did not give a usable answer this time{}. Ask again, or choose another model in AI \
+                                 settings.", if checked.is_empty() { String::new() } else {
+                                     format!(" (it checked: {})", checked.iter().filter_map(|c| c["check"].as_str()).collect::<Vec<_>>().join(", "))
+                                 });
+    }
     // A settings change is offered only with values its setting takes, labelled for the person.
     let mut fix = advice.fix.clone();
     let mut settings_described = Vec::new();

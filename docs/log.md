@@ -1356,3 +1356,47 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   layouts bigger than the board are refused; a cut word is measured with its dots.
 - Open: Sundar to flash the ONX and check long labels and a few layouts. Later: editing agent
   screens, moving keys across pages, adding pages, editing non-shortcut actions.
+
+## 2026-10-20 - Sundar (Claude Code, Opus 5.5) - Board display settings; the service describes itself to the setup assistant
+
+- Branch `sundar/board-display` (not merged; spec change needs Tom's review).
+- Merged on main before this (Tom): #33, #35, #36, #37. Flashed #37's firmware to the ONX through
+  the web app from a local release (`release_firmware.py` + `serve --firmware <folder>`); a stale
+  `build/universal/sdkconfig` lacked #37's Montserrat 12 (trash it so `sdkconfig.defaults` apply).
+  Sundar then did a full erase and set up from scratch: flash, pair, Wi-Fi all worked; Bluetooth
+  never came up because the laptop's Bluetooth radio was soft-blocked (rfkill), already in the
+  knowledge file.
+- Issues filed: #38 (Edit keys lists drafts a recipe replaced; library files do not say how they
+  relate; with the Claude case: a user version saved on an old draft brought back "Focus Input" =
+  Esc without confirm), #39 (Edit button on dashboard rows), #40 (Configure as a conversation),
+  #41 (several Claude questions in one prompt: the board stays on question 1 while answered on the
+  computer).
+- Changed:
+  - Key size (Big 2x2, Medium 3x3 default, Small 4x4) is the grid every page uses: keys packed in
+    order (`layout::packed`); edit mode shows layouts as made; agent screens and Configure keep
+    theirs. Stored in `~/.config/knoend/display.json`.
+  - Spec (needs Tom's review): `knoend.display` / `knoend.display.ack` (3.6d), `board.display` in the
+    identity. Themes `dark`, `white`, `sepia` and `turn` 0-3, kept in NVS, shown at once without a
+    restart; the ack gives the new width, height and grid. Firmware: palettes in `ui.c`, runtime LVGL
+    rotation (`board_set_turn`, sw_rotate always on), `display.c`. Pictures sent in grey (White) or
+    sepia tones (Sepia).
+  - Setup step 5 "Keys and look" with a live preview (web draws the board's screen in its theme and
+    way round); the same choices on the dashboard. A refused look (older firmware) goes back and the
+    web app says why.
+  - The service describes itself to the setup assistant (Sundar's point, 2026-10-17 and today):
+    `settings.rs` (every changeable setting with meaning, choices, current value; a fix may set any,
+    checked against its choices), `checks.rs` (read-only checks the assistant asks for in its JSON
+    and the service runs, up to 2 rounds: board on the network now, the full service log, USB now,
+    settings), `journal.rs` + `say!` (every line the service prints reaches the assistant), buttons
+    listed from `assistant::ACTIONS` with what each does. AGENTS.md says a feature is done when the
+    setup assistant can see, change and check it.
+  - Setup: an install that kept settings waits for the board to come back and skips pairing; the
+    Wi-Fi step waits 10 s and retries once ("no knoend.wifi.ack within 3s" right after a flash).
+- Tested on the ONX (Linux): key size Big/Medium/Small live; Dark, White, Sepia live (first sepia
+  too pale on the 16-bit panel, replaced); portrait live (Sundar: worked). Not yet on the board: the
+  stronger sepia (`v0.1.1-106`). The setup assistant (claude-code/haiku) through `/api/assist`: "keys
+  too small" -> fix `key_size: big` (7.5 s); the post-flash Wi-Fi timeout -> read the snapshot, said
+  the board is paired and connected, nothing to redo; a network question -> ran
+  `find_boards_on_network` and answered from its result (18 s). Haiku once wrote a made-up tool call
+  with an invented result: the prompt now forbids it, and such a reply is turned into a real check.
+  Not tested: macOS, the FNK, other providers with the checks loop.

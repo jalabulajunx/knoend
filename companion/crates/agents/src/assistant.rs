@@ -160,6 +160,9 @@ changes until they press Apply. Include it only when the evidence points to that
   have.
 Never put keys or passwords in a fix.
 
+You have no tools and cannot call functions. The only way to run a check is the "checks" field of
+your JSON reply; never write a function call, and never write a check's result you have not been
+given: the person must be able to trust that what you say you checked was checked.
 "checks": when the snapshot does not settle what is wrong, ask the service to run checks from the
 snapshot's "checks_available" (each says what it finds out; all are read-only and touch no board).
 Reply then with "checks" and a short "answer" saying what you are checking; you get the results and
@@ -177,7 +180,11 @@ typed: on a Wayland session say plainly that KnoEnd does not follow apps or type
 (X11 and macOS only), that the board, Bluetooth typing and Claude questions still work, and that
 choosing an X11 (Xorg) session at login makes everything work. Do not send them hunting for a fault.
 
-Resolve, not only explain. Use the checks to find out instead of asking the person, offer the
+Resolve, not only explain. If the snapshot or a check can settle a question, settle it before you
+answer: never write that you "can check" something later, and never ask the person to retry a step
+whose outcome a check can show. service_status.link "connected" with a service_status.board means the
+board is paired with this computer and on the network right now. Use the checks to find out instead
+of asking the person, offer the
 button or fix that makes the change, and afterwards check again (a check, or ask them to press the
 step) to confirm it worked. Before sending the person back to a step, find out whether it is needed:
 a board flashed without erasing keeps its pairing and Wi-Fi, so if it comes back on the network
@@ -207,7 +214,25 @@ What the project knows:
             rounds = CHECK_ROUNDS)
 }
 
+/// Check ids in a made-up function call ("<invoke name=...>", "<parameter ...>find_boards...</...>"):
+/// some models write one instead of the JSON asked for, and then invent its result.
+fn invented_calls(reply: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    for piece in reply.split(['<', '>', '"']) {
+        let piece = piece.trim();
+        if plain_name(piece, 40) && piece.contains('_') && !piece.contains(['/', ':', '.', '@']) && !ids.iter().any(|i| i == piece) {
+            ids.push(piece.to_string());
+        }
+    }
+    ids
+}
+
 fn parse(reply: &str) -> Advice {
+    // A made-up call: its "result" is invented, so the answer is dropped and the named checks (the
+    // service keeps only real ones) are run; the model is asked again with what they find.
+    if reply.contains("<invoke") || reply.contains("<function_calls") {
+        return Advice { answer: String::new(), actions: Vec::new(), checks: invented_calls(reply), raw: reply.to_string(), fix: None };
+    }
     let start = reply.find('{');
     let end = reply.rfind('}');
     if let (Some(start), Some(end)) = (start, end) {
@@ -332,12 +357,22 @@ mod tests {
         assert!(prompt.contains("read them each time rather"), "the lists grow; the prompt says to read them");
         assert!(prompt.contains("- \"install_erase\": erase the board first"), "buttons are listed with what they do");
         assert!(prompt.contains("paired_with_this_computer"), "a flash that kept settings needs no pairing again");
+        assert!(prompt.contains("never write that you \"can check\" something later"));
         let advice = parse(r#"{"answer": "Bigger keys.", "fix": {"settings": {"key_size": "big", "bad name": 1, "deep": {"x": 1}}},
                               "checks": ["find_boards_on_network", "rm -rf /"]}"#);
         let settings = advice.fix.expect("fix").settings.expect("settings");
         assert_eq!(settings.len(), 1);
         assert_eq!(settings["key_size"], "big");
         assert_eq!(advice.checks, vec!["find_boards_on_network"]);
+    }
+
+    #[test]
+    fn an_invented_function_call_becomes_a_real_check() {
+        let reply = "I will check.\n<function_calls>\n<invoke name=\"call_service\">\n<parameter name=\"request\">find_boards_on_network</parameter>\n</invoke>\n</function_calls>\nYour board is on the network.";
+        let advice = parse(reply);
+        assert!(advice.answer.is_empty(), "the invented result is not shown");
+        assert!(advice.checks.contains(&"find_boards_on_network".to_string()));
+        assert!(system_prompt().contains("You have no tools and cannot call functions"));
     }
 
     #[test]
