@@ -654,6 +654,13 @@ const THEMES = [
   ["sepia", "Sepia: brown ink on warm paper", "An e-ink look, softer on the eyes than white. App pictures turn sepia."],
 ];
 
+const TURNS = [
+  ["0", "Landscape", "Wide, as the board comes."],
+  ["1", "Portrait", "Tall: the board turned a quarter clockwise. Three keys across at most."],
+  ["2", "Landscape, upside down", "Wide, turned half way round: for a cable that has to come out of the other side."],
+  ["3", "Portrait, upside down", "Tall, turned a quarter anticlockwise."],
+];
+
 async function saveDisplay(change) {
   displayState = { ...displayState, ...change };
   redrawScreens();
@@ -661,6 +668,7 @@ async function saveDisplay(change) {
   displayState = { ...displayState, ...saved };
   $("key-size").value = saved.key_size;
   $("theme").value = saved.theme;
+  $("turn").value = String(saved.turn);
   redrawScreens();
   return saved;
 }
@@ -672,6 +680,7 @@ async function loadDisplay() {
   redrawScreens();
   $("key-size").value = d.key_size;
   $("theme").value = d.theme;
+  $("turn").value = String(d.turn);
   // Kept and shown in the preview either way; the board takes it once its firmware can.
   $("theme").title = d.board_can_change_look ? "" : "This board's firmware has one look only: the preview shows it, and the board takes it after a firmware update.";
   return d;
@@ -693,13 +702,15 @@ async function keySizeStep() {
   fill($("key-size-setup"), "key-size-choice", KEY_SIZES, current.key_size);
   // The preview shows every look; the board follows when its firmware can.
   fill($("theme-setup"), "theme-choice", THEMES, current.theme);
+  fill($("turn-setup"), "turn-choice", TURNS, String(current.turn || 0));
   $("theme-note").hidden = current.board_can_change_look;
   displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0 };
   redrawScreens();
   // Each choice applies at once: on the board, and in the preview.
-  for (const name of ["key-size-choice", "theme-choice"]) {
+  const field = { "key-size-choice": (v) => ({ key_size: v }), "theme-choice": (v) => ({ theme: v }), "turn-choice": (v) => ({ turn: Number(v) }) };
+  for (const name of Object.keys(field)) {
     document.querySelectorAll(`input[name="${name}"]`).forEach((input) => input.addEventListener("change", () => {
-      const change = name === "key-size-choice" ? { key_size: input.value } : { theme: input.value };
+      const change = field[name](input.value);
       saveDisplay(change).catch((err) => logTo($("pair-log"), `Could not apply that: ${err.message}`, "error"));
     }));
   }
@@ -710,6 +721,7 @@ $("key-size-save").addEventListener("click", () => { $("setup-done").hidden = fa
 
 $("key-size").addEventListener("change", (e) => saveDisplay({ key_size: e.target.value }).catch((err) => alert(`Could not save the key size: ${err.message}`)));
 $("theme").addEventListener("change", (e) => saveDisplay({ theme: e.target.value }).catch((err) => alert(`Could not change the look: ${err.message}`)));
+$("turn").addEventListener("change", (e) => saveDisplay({ turn: Number(e.target.value) }).catch((err) => alert(`Could not turn the screen: ${err.message}`)));
 loadDisplay().catch(() => {});
 
 /** What the last port scan saw, so watching only redraws (and asks the assistant) on a change. */

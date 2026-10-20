@@ -455,6 +455,28 @@ static void touch_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
     data->state = LV_INDEV_STATE_PR;
 }
 
+static lv_disp_t *display;
+static const lv_disp_rot_t rotations[] = { LV_DISP_ROT_NONE, LV_DISP_ROT_90, LV_DISP_ROT_180, LV_DISP_ROT_270 };
+
+// The screen size for a rotation of the native panel (90 and 270 swap width and height).
+static void set_size(int rotation)
+{
+    const bool swap = rotation == 90 || rotation == 270;
+    info.width = swap ? def.height : def.width;
+    info.height = swap ? def.width : def.height;
+}
+
+void board_set_turn(int turn)
+{
+    if (display == NULL || turn < 0 || turn > 3) {
+        return;
+    }
+    const int rotation = (def.rotation + 90 * turn) % 360;
+    lv_disp_set_rotation(display, rotations[rotation / 90]);
+    set_size(rotation);
+    ESP_LOGI(TAG, "turned %d (rotation %d): %dx%d", turn, rotation, info.width, info.height);
+}
+
 static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t panel)
 {
     const lvgl_port_cfg_t port = ESP_LVGL_PORT_INIT_CONFIG();
@@ -466,13 +488,13 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t 
         // lvgl_port_add_disp() re-applies swap/mirror from this config when it registers the display,
         // overwriting what display_init() set: give it the definition's values.
         .rotation = { .swap_xy = def.swap_xy, .mirror_x = def.mirror_x, .mirror_y = def.mirror_y },
-        .flags = { .buff_spiram = true, .sw_rotate = def.rotation != 0 },
+        // Always: the person may turn the screen later (board_set_turn).
+        .flags = { .buff_spiram = true, .sw_rotate = true },
     };
-    lv_disp_t *display = lvgl_port_add_disp(&display_config);
+    display = lvgl_port_add_disp(&display_config);
     ESP_RETURN_ON_FALSE(display != NULL, ESP_FAIL, TAG, "lvgl display");
 
     ESP_RETURN_ON_FALSE(lvgl_port_lock(0), ESP_FAIL, TAG, "lvgl lock");
-    static const lv_disp_rot_t rotations[] = { LV_DISP_ROT_NONE, LV_DISP_ROT_90, LV_DISP_ROT_180, LV_DISP_ROT_270 };
     lv_disp_set_rotation(display, rotations[def.rotation / 90]);
     static lv_indev_drv_t touch_driver;
     lv_indev_drv_init(&touch_driver);
@@ -497,13 +519,11 @@ esp_err_t board_init(void)
         ESP_LOGE(TAG, "no usable board definition (%s); running without a display", esp_err_to_name(err));
         return err;
     }
-    const bool landscape_swap = def.rotation == 90 || def.rotation == 270;
     info = (board_info_t){
         .id = def.id, .name = def.name,
-        .width = landscape_swap ? def.height : def.width,
-        .height = landscape_swap ? def.width : def.height,
         .has_speaker = def.speaker, .has_native_usb = def.native_usb,
     };
+    set_size(def.rotation);
     ESP_LOGI(TAG, "definition %s: %s display, %s touch", def.id, def.display_driver, def.touch_driver);
 
     esp_lcd_panel_io_handle_t io = NULL;

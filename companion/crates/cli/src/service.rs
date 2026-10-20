@@ -663,10 +663,16 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                 }
-                Event::Board(packet) if packet.kind == "knoend.display.ack" && packet.body["restarting"] != true => {
-                    // A new theme is drawn at once: pictures are sent again in its colours.
+                Event::Board(packet) if packet.kind == "knoend.display.ack" => {
+                    // A new theme or turn is shown at once: pictures are sent again in the theme's
+                    // colours, and the layout in a grid that fits the screen as it now sits.
                     println!("  board display: {}", packet.body);
                     board.display = Some(json!({"theme": packet.body["theme"], "turn": packet.body["turn"]}));
+                    if packet.body["grid"].is_object() {
+                        board.grid = identity_grid(&json!({"board": {"grid": packet.body["grid"]}}));
+                    }
+                    paging.board = board.grid;
+                    paging.max = crate::display::shown_grid(board.grid, crate::display::load().key_size);
                     set_picture_theme(packet.body["theme"].as_str().unwrap_or("dark"));
                     let status = board.clone();
                     shared.update(|s| s.board = Some(status)).await;
@@ -1315,8 +1321,8 @@ fn set_picture_theme(name: &str) {
     }
 }
 
-/// Sends the person's theme and turn when the board shows something else; the board stores them
-/// and restarts (spec/protocol.md 3.6d), and the service connects again.
+/// Sends the person's theme and turn when the board shows something else; the board stores and
+/// shows them, and answers with its new size (spec/protocol.md 3.6d).
 async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &crate::display::Display) {
     let identity = json!({"board": {"display": board.display}});
     match wanted.shown_by(&identity) {
@@ -1718,7 +1724,6 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                          sender: &mut wifi::WifiSender, shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
         "knoend.layout.ack" if packet.body["ok"] != true => println!("  board rejected layout: {}", packet.body),
-        "knoend.display.ack" => println!("  board display: {}", packet.body),
         "knoend.error" => println!("  board error: {}", packet.body),
         "knoend.key" => {
             let layout = packet.body["layout"].as_str().unwrap_or("");

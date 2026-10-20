@@ -968,15 +968,25 @@
           "maximum": 3,
           "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
         },
-        "restarting": {
-          "type": "boolean",
-          "description": "True when the turn changed: the board restarts to apply it. A new theme is drawn at once."
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "grid": {
+          "description": "The largest grid the board draws as it now sits.",
+          "$ref": "#/$defs/grid"
         }
       },
       "required": [
         "theme",
         "turn",
-        "restarting"
+        "width",
+        "height",
+        "grid"
       ]
     }
   }

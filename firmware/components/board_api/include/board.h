@@ -17,8 +17,8 @@ extern "C" {
 typedef struct {
     const char *id;     // profile id, e.g. "onx2432g028"; used in the identity packet
     const char *name;   // human-readable board name
-    uint16_t width;     // landscape screen width in pixels
-    uint16_t height;    // landscape screen height in pixels
+    uint16_t width;     // screen width in pixels, as the board sits now
+    uint16_t height;    // screen height in pixels, as the board sits now
     bool has_speaker;
     bool has_native_usb; // true when the USB-C port can enumerate as a USB keyboard
 } board_info_t;
@@ -41,6 +41,10 @@ const board_info_t *board_info(void);
 
 // 0 = off, 100 = full.
 void board_set_backlight(uint8_t percent);
+
+// Turns the screen `turn` quarter turns clockwise from the board's usual landscape (0-3); touch
+// follows. board_info() then gives the new width and height. Call with the LVGL lock held.
+void board_set_turn(int turn);
 
 #ifdef __cplusplus
 }

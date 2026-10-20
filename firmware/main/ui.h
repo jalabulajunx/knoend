@@ -41,6 +41,10 @@ typedef struct {
 
 typedef enum { UI_STATUS_INFO, UI_STATUS_ATTENTION, UI_STATUS_ALERT } ui_status_level_t;
 
+// Turns the screen (0-3 quarter turns from the usual landscape) and redraws. Safe to call from any
+// task.
+void ui_set_turn(int turn);
+
 // Redraws everything in `theme` (a display_theme_t). Safe to call from any task.
 void ui_set_theme(display_theme_t theme);
 

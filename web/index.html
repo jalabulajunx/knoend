@@ -43,6 +43,13 @@
               <option value="white">White: black on white</option>
               <option value="sepia">Sepia: brown on warm paper</option>
             </select></label>
+          <label class="inline">Way round
+            <select id="turn">
+              <option value="0">Landscape</option>
+              <option value="1">Portrait</option>
+              <option value="2">Landscape, upside down</option>
+              <option value="3">Portrait, upside down</option>
+            </select></label>
           <p class="actions left"><button type="button" id="change-wifi" class="secondary small-button">Change Wi-Fi</button>
             <span class="muted small">New router, new password or another place: over the USB cable, keeps pairing and settings.</span></p>
         </article>
@@ -255,7 +262,9 @@
             <ul class="choices" id="key-size-setup"></ul>
             <h3>How should the screen look?</h3>
             <ul class="choices" id="theme-setup"></ul>
-            <p id="theme-note" class="muted small" hidden>This board's firmware has one look only. Install the latest firmware to choose; the preview shows it meanwhile.</p>
+            <h3>Which way round will the board sit?</h3>
+            <ul class="choices" id="turn-setup"></ul>
+            <p id="theme-note" class="muted small" hidden>This board's firmware has one look, landscape only. Install the latest firmware for these; the preview shows them meanwhile.</p>
           </div>
           <div>
             <h3>Preview</h3>

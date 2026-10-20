@@ -8,8 +8,6 @@
 #include "board.h"
 #include "cJSON.h"
 #include "display.h"
-#include "esp_system.h"
-#include "esp_timer.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -598,13 +596,8 @@ static bool message_name(const char *type, transport_t transport)
     return true;
 }
 
-static void restart_now(void *arg)
-{
-    esp_restart();
-}
-
-// The person's theme and turn (spec/protocol.md 3.6d): stored and answered. A new theme is drawn at
-// once; a new turn needs a restart (the screen's size is set at start-up).
+// The person's theme and turn (spec/protocol.md 3.6d): stored, drawn at once and answered with the
+// screen's new size and largest grid.
 static void handle_display(const cJSON *body, int64_t re, transport_t transport)
 {
     display_settings_t wanted = *display_settings();
@@ -622,14 +615,10 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
         send_error(re, "bad-packet", "turn must be 0-3", transport);
         return;
     }
-    if (wanted.turn != 0) {
-        send_error(re, "unsupported", "this firmware draws landscape only", transport);
-        return;
-    }
     display_settings_t *now = display_settings_mut();
     const bool new_theme = wanted.theme != now->theme;
-    const bool restart = wanted.turn != now->turn;
-    if ((new_theme || restart) && display_settings_store(&wanted) != ESP_OK) {
+    const bool new_turn = wanted.turn != now->turn;
+    if ((new_theme || new_turn) && display_settings_store(&wanted) != ESP_OK) {
         send_error(re, "busy", "could not store the display settings", transport);
         return;
     }
@@ -638,20 +627,22 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
         ui_set_theme(wanted.theme);
         ESP_LOGI(TAG, "display: %s", display_theme_name(wanted.theme));
     }
+    if (new_turn) {
+        now->turn = wanted.turn;
+        ui_set_turn(wanted.turn);
+    }
+    const board_info_t *board = board_info();
+    int cols, rows;
+    ui_max_grid(&cols, &rows);
     cJSON *ack = cJSON_CreateObject();
     cJSON_AddStringToObject(ack, "theme", display_theme_name(wanted.theme));
     cJSON_AddNumberToObject(ack, "turn", wanted.turn);
-    cJSON_AddBoolToObject(ack, "restarting", restart);
+    cJSON_AddNumberToObject(ack, "width", board->width);
+    cJSON_AddNumberToObject(ack, "height", board->height);
+    cJSON *grid = cJSON_AddObjectToObject(ack, "grid");
+    cJSON_AddNumberToObject(grid, "cols", cols);
+    cJSON_AddNumberToObject(grid, "rows", rows);
     send_packet("display.ack", ack, re, transport);
-    if (restart) {
-        ESP_LOGI(TAG, "display: turn %d; restarting", wanted.turn);
-        // Time for the answer to leave before the restart.
-        static esp_timer_handle_t timer;
-        const esp_timer_create_args_t args = { .callback = restart_now, .name = "display-restart" };
-        if (timer == NULL && esp_timer_create(&args, &timer) == ESP_OK) {
-            esp_timer_start_once(timer, 500 * 1000);
-        }
-    }
 }
 
 static void handle_line(const char *line, transport_t transport)

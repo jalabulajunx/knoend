@@ -494,6 +494,40 @@ static void apply_theme_locked(void)
     lv_obj_set_style_bg_color(pager, lv_color_hex(theme->pressed), LV_STATE_PRESSED);
 }
 
+// The key area and the status bar for the screen's size as the board sits now.
+static void size_screen_locked(void)
+{
+    const board_info_t *board = board_info();
+    grid_w = board->width;
+    grid_h = board->height - STATUS_HEIGHT;
+    lv_obj_set_size(status_bar, board->width, STATUS_HEIGHT);
+    lv_obj_align(status_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
+}
+
+void ui_set_turn(int turn)
+{
+    if (!lvgl_port_lock(1000)) {
+        ESP_LOGE(TAG, "could not take the LVGL lock to turn the screen");
+        return;
+    }
+    board_set_turn(turn);
+    size_screen_locked();
+    // The layout on the board may not fit the new shape: until the companion sends one that does,
+    // its keys are drawn within the largest grid that fits.
+    int cols, rows;
+    ui_max_grid(&cols, &rows);
+    if (layout.cols > cols || layout.rows > rows) {
+        ui_layout_t fitted = layout;
+        fitted.cols = layout.cols > cols ? cols : layout.cols;
+        fitted.rows = layout.rows > rows ? rows : layout.rows;
+        layout = fitted;
+    }
+    draw_keys_locked();
+    update_status_locked();
+    lvgl_port_unlock();
+}
+
 void ui_set_theme(display_theme_t which)
 {
     if (!lvgl_port_lock(1000)) {
@@ -515,14 +549,11 @@ void ui_start(void)
         return;
     }
 
-    const board_info_t *board = board_info();
     lv_obj_t *screen = lv_scr_act();
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     // Keys, the status bar and the detail panel pass swipes up to the screen (LVGL's default).
     lv_obj_add_event_cb(screen, gesture_event, LV_EVENT_GESTURE, NULL);
 
-    grid_w = board->width;
-    grid_h = board->height - STATUS_HEIGHT;
 
     // Every key the largest grid needs; draw_keys_locked places and sizes them per layout.
     for (int i = 0; i < UI_KEYS; i++) {
@@ -561,12 +592,10 @@ void ui_start(void)
 
     status_bar = lv_obj_create(screen);
     lv_obj_remove_style_all(status_bar);
-    lv_obj_set_size(status_bar, board->width, STATUS_HEIGHT);
-    lv_obj_align(status_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+
     lv_obj_set_style_bg_opa(status_bar, LV_OPA_COVER, 0);
 
     status_label = lv_label_create(status_bar);
-    lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
     lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
     lv_obj_align(status_label, LV_ALIGN_LEFT_MID, GRID_GAP, 0);
@@ -585,6 +614,8 @@ void ui_start(void)
 
     theme = theme_for(display_settings()->theme);
     apply_theme_locked();
+    board_set_turn(display_settings()->turn);
+    size_screen_locked();
     draw_keys_locked();
     update_status_locked();
     lv_timer_create(status_timer, 250, NULL);
