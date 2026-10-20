@@ -408,7 +408,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let mut paging = Paging::new(board.grid, wanted.key_size);
         set_picture_theme(board.display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
         let mut asked_look = send_look(&mut sender, &board, &wanted).await;
-        fetch_fonts(&board, &wanted, &events);
+        fetch_fonts(&board, &wanted, &events, false);
         if focus.is_none() {
             show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
@@ -566,7 +566,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Look(wanted) => {
                     asked_look = send_look(&mut sender, &board, &wanted).await;
-                    fetch_fonts(&board, &wanted, &events);
+                    fetch_fonts(&board, &wanted, &events, true);
                 }
                 Event::Font(slot, family, font) => match font {
                     Ok(bytes) if family.is_empty() => {
@@ -1454,7 +1454,7 @@ fn set_picture_theme(name: &str) {
 /// shows them, and answers with its new size (spec/protocol.md 3.6d).
 /// Fetches (in the background) each font the person chose that the board does not hold, or asks
 /// for the built-in one back; the loop then sends it (`Event::Font`).
-fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &mpsc::Sender<Event>) {
+fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &mpsc::Sender<Event>, chosen_now: bool) {
     let Some(held) = board.fonts.clone() else {
         if !wanted.key_font.is_empty() || !wanted.start_font.is_empty() {
             say!("Fonts: this board's firmware ({}) has the built-in font only; update its firmware to use others", board.firmware);
@@ -1467,8 +1467,9 @@ fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &m
         if holds == family {
             continue;
         }
-        // The board dropped it after a start it did not get through: not sent again by itself.
-        if !family.is_empty() && refused.split(", ").any(|r| r == family) {
+        // The board dropped it after a start it did not get through: not sent again by itself,
+        // only when the person (or the assistant's fix) chooses fonts again.
+        if !chosen_now && !family.is_empty() && refused.split(", ").any(|r| r == family) {
             problem!("font", "The board dropped the font {family} ({slot}) after it could not start with it: it is not sent again until it is chosen again");
             continue;
         }
