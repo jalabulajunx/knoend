@@ -106,8 +106,6 @@ pub struct Shared {
     pub firmware_source: String,
     /// Types keystrokes for a board that cannot (no Bluetooth host); connected on first use.
     typist: Arc<std::sync::Mutex<Option<knoend_input::Typist>>>,
-    /// The last log lines, for the setup assistant's snapshot.
-    recent: std::sync::Mutex<std::collections::VecDeque<String>>,
     /// The browser extension link (`spec/browser.md`).
     pub browser: Arc<crate::browser::Browser>,
     /// Media players (MPRIS on Linux); None where there are none to read.
@@ -125,7 +123,6 @@ impl Shared {
         let (events, _) = broadcast::channel(256);
         Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())), firmware_source,
                           typist: Arc::new(std::sync::Mutex::new(None)),
-                          recent: std::sync::Mutex::new(std::collections::VecDeque::new()),
                           browser: Arc::new(crate::browser::Browser::default()),
                           media: knoend_media::Players::connect().ok().map(Arc::new),
                           inbox: std::sync::OnceLock::new(), edit: std::sync::Mutex::new(None),
@@ -135,13 +132,7 @@ impl Shared {
     /// Publishes an event to the web app and prints it for the terminal.
     pub fn emit(&self, kind: &str, data: Value) {
         if let Some(text) = data.get("text").and_then(Value::as_str) {
-            println!("{text}");
-            if let Ok(mut recent) = self.recent.lock() {
-                recent.push_back(text.trim().to_string());
-                while recent.len() > 40 {
-                    recent.pop_front();
-                }
-            }
+            say!("{text}");
         }
         let _ = self.events.send(json!({"kind": kind, "data": data}));
     }
@@ -205,8 +196,9 @@ impl Shared {
         }
     }
 
+    /// The last lines the service said (journal.rs).
     pub fn recent(&self) -> Vec<String> {
-        self.recent.lock().map(|r| r.iter().cloned().collect()).unwrap_or_default()
+        crate::journal::recent(60)
     }
 
     async fn update(&self, change: impl FnOnce(&mut Status)) {
@@ -285,11 +277,11 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     dirs.extend(extra_libraries);
     let (mut catalog, rejected) = Catalog::load(&dirs);
     for problem in load_builtin(&mut catalog) {
-        println!("  skipped {problem}");
+        say!("  skipped {problem}");
     }
-    println!("Libraries: {} loaded from {:?}", catalog.len(), dirs);
+    say!("Libraries: {} loaded from {:?}", catalog.len(), dirs);
     for r in &rejected {
-        println!("  skipped {}: {}", r.path.display(), r.reason);
+        say!("  skipped {}: {}", r.path.display(), r.reason);
     }
     let count = catalog.len();
     shared.update(|s| s.libraries = count).await;
@@ -377,7 +369,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let (mut board, mut sender) = match connect(&pairings, events.clone()).await {
             Ok(link) => link,
             Err(e) => {
-                println!("{e}; retrying in 5 s");
+                say!("{e}; retrying in 5 s");
                 drain_focus(&mut inbox, &mut focus, &mut tab, &mut players, &shared).await;
                 continue;
             }
@@ -423,7 +415,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             let local = last_hook.is_some_and(|h| h.max(at) - h.min(at) <= HOOK_GRACE * 3);
                             let in_front = effective(&focus, &tab).is_some_and(|f| Calling::matches(&f, &n));
                             if !local && !in_front && approvals.is_empty() {
-                                println!("  {} notification with no local session behind it (cloud?): Go to key on the board", n.app);
+                                say!("  {} notification with no local session behind it (cloud?): Go to key on the board", n.app);
                                 calling = Some(Calling::new(&n, &catalog));
                             }
                         }
@@ -439,7 +431,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     let before = approvals.len();
                     approvals.retain(|a| !a.answer.is_closed());
                     if approvals.len() != before {
-                        println!("  permission request answered elsewhere; withdrawn from the board");
+                        say!("  permission request answered elsewhere; withdrawn from the board");
                         shown = None;
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
@@ -487,7 +479,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         calling = None;
                     }
                     usage.focused(crate::launcher::usage_key(&f, &apps));
-                    println!("Focus: {} ({})", f.display_name(), f.instance);
+                    say!("Focus: {} ({})", f.display_name(), f.instance);
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
                     show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
@@ -495,7 +487,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Focus(None) => {
                     // Nothing in front: the launcher.
-                    println!("Focus: nothing (launcher)");
+                    say!("Focus: nothing (launcher)");
                     tab = shared.browser.focus_changed("", "");
                     focus = None;
                     usage.focused(None);
@@ -513,11 +505,11 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     favicons.insert(host, pixels);
                 }
                 Event::Board(packet) if packet.kind == "knoend.key" && paging.stale(&packet) => {
-                    println!("  tap on page {} of {}, which is no longer shown; ignored", packet.body["page"], paging.layout);
+                    say!("  tap on page {} of {}, which is no longer shown; ignored", packet.body["page"], paging.layout);
                 }
                 Event::Page(to) => {
                     if approvals.is_empty() && paging.turn(&to) {
-                        println!("  page {}/{} of {}", paging.page + 1, paging.pages, paging.layout);
+                        say!("  page {}/{} of {}", paging.page + 1, paging.pages, paging.layout);
                         match effective(&focus, &tab) {
                             Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
                             None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
@@ -540,7 +532,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // what it shows, and the web app says why.
                     asked_look = false;
                     let reason = packet.body["message"].as_str().unwrap_or("the board refused it").to_string();
-                    println!("  board refused the display settings: {reason}");
+                    say!("  board refused the display settings: {reason}");
                     let mut saved = crate::display::load();
                     if let Some(shown) = &board.display {
                         saved.theme = crate::display::Theme::named(shown["theme"].as_str().unwrap_or("dark"));
@@ -552,7 +544,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::KeySize(key_size) => {
                     paging.max = crate::display::shown_grid(paging.board, key_size);
-                    println!("Key size: {key_size:?}, pages up to {}x{}", paging.max.cols, paging.max.rows);
+                    say!("Key size: {key_size:?}, pages up to {}x{}", paging.max.cols, paging.max.rows);
                     // Shown again at the new size.
                     shown = None;
                     if approvals.is_empty() {
@@ -596,8 +588,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         knoend_focus::bring_to_front(&names)
                     }).await.unwrap_or_else(|e| Err(e.to_string()));
                     match result {
-                        Ok(()) => println!("  brought {} to the front", c.app),
-                        Err(e) => println!("  could not bring {} to the front: {e}", c.app),
+                        Ok(()) => say!("  brought {} to the front", c.app),
+                        Err(e) => say!("  could not bring {} to the front: {e}", c.app),
                     }
                     match effective(&focus, &tab) {
                         Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
@@ -636,7 +628,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     let browser_focused = focus.as_ref().is_some_and(|f| crate::browser::is_browser(&f.app, &f.instance));
                     if changed && browser_focused {
                         let f = effective(&focus, &tab).expect("focus");
-                        println!("Site: {}", f.display_name());
+                        say!("Site: {}", f.display_name());
                         usage.focused(crate::launcher::usage_key(&f, &apps));
                         let name = f.display_name().to_string();
                         shared.update(|s| s.app = Some(name)).await;
@@ -665,7 +657,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     };
                     // Only a tap that answers takes the request off the queue.
                     if let Some((decision, front)) = decision.and_then(|d| approvals.pop_front().map(|f| (d, f))) {
-                        println!("  answered on the board: {decision:?} ({})", front.summary);
+                        say!("  answered on the board: {decision:?} ({})", front.summary);
                         let _ = front.answer.send(decision);
                         shown = None;
                         match approvals.front() {
@@ -682,7 +674,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     asked_look = false;
                     // A new theme or turn is shown at once: pictures are sent again in the theme's
                     // colours, and the layout in a grid that fits the screen as it now sits.
-                    println!("  board display: {}", packet.body);
+                    say!("  board display: {}", packet.body);
                     board.display = Some(json!({"theme": packet.body["theme"], "turn": packet.body["turn"]}));
                     if packet.body["grid"].is_object() {
                         board.grid = identity_grid(&json!({"board": {"grid": packet.body["grid"]}}));
@@ -711,7 +703,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Agent(crate::agent_hooks::AgentEvent::Permission { request, answer }) => {
                     let summary = crate::agent_hooks::summary(&request);
-                    println!("Permission request: {summary}");
+                    say!("Permission request: {summary}");
                     approvals.push_back(Approval { request: request.clone(), summary, detail: crate::agent_hooks::detail(&request), destructive: crate::agent_hooks::destructive(&request),
                                                    can_remember: request["permission_suggestions"].as_array().is_some_and(|s| !s.is_empty()),
                                                    questions: crate::agent_hooks::questions(&request), step: 0, answers: Vec::new(), ticked: Vec::new(),
@@ -725,7 +717,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     let before = approvals.len();
                     approvals.retain(|a| !crate::agent_hooks::settles(&n, &a.request));
                     if approvals.len() != before {
-                        println!("  permission request settled in the app; withdrawn from the board");
+                        say!("  permission request settled in the app; withdrawn from the board");
                         shown = None;
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
@@ -743,7 +735,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // Permission prompts arrive as PermissionRequest already.
                     if !matches!(kind, "permission_prompt" | "auth_success" | "elicitation_complete" | "elicitation_response") {
                         let message = n["message"].as_str().unwrap_or("needs your attention");
-                        println!("Agent notification ({kind}): {message}");
+                        say!("Agent notification ({kind}): {message}");
                         let text = board_text(&format!("Claude: {message}"), 80);
                         if approvals.is_empty() {
                             let _ = sender.send("knoend.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
@@ -751,7 +743,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::Notified(n) => {
-                    println!("Notification from {}: {}", n.app, n.summary);
+                    say!("Notification from {}: {}", n.app, n.summary);
                     if n.from_any(&["claude"]) {
                         unexplained = Some((n.clone(), std::time::Instant::now()));
                     }
@@ -859,7 +851,7 @@ async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus
 fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
     #[cfg(target_os = "linux")]
     if let Some(note) = crate::diagnostics::desktop_session()["note"].as_str().filter(|n| !n.is_empty()) {
-        println!("{note}");
+        say!("{note}");
         shared.emit("log", json!({"text": note}));
     }
     std::thread::spawn(move || {
@@ -970,7 +962,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
                 (body, json!({"text": ""}))
             }
             Err(e) => {
-                println!("  library {} cannot be built: {e}", library.pack.id);
+                say!("  library {} cannot be built: {e}", library.pack.id);
                 return;
             }
         },
@@ -1022,7 +1014,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
         return;
     }
     let id = body.layout.clone();
-    println!("  -> {} ({}){} keys: {}", body.name, id, status["text"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" [{t}]")).unwrap_or_default(),
+    say!("  -> {} ({}){} keys: {}", body.name, id, status["text"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" [{t}]")).unwrap_or_default(),
              body.keys.iter().map(|k| format!("{}={}", k.key, k.label)).collect::<Vec<_>>().join(", "));
     let summary = json!({"id": id, "name": body.name, "source": body.source, "reviewed": body.reviewed, "grid": grid, "page": body.page, "pages": body.pages,
                          "keys": body.keys.iter().map(|k| json!({"key": k.key, "label": k.label})).collect::<Vec<_>>()});
@@ -1097,7 +1089,7 @@ async fn draft_new_page(catalog: &Catalog, focus: &Focus, drafted: &DraftedPages
         attempted.remove(&(web.host.clone(), kind));
         return;
     }
-    println!("  new kind of page on {}: {kind}; drafting its keys", web.host);
+    say!("  new kind of page on {}: {kind}; drafting its keys", web.host);
     shared.board_status("Making keys for this page...".into());
     start_configure(focus.clone(), site_scope(catalog, focus), events, shared).await;
 }
@@ -1158,7 +1150,7 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
     if shown.as_deref() == Some(signature.as_str()) {
         return;
     }
-    println!("  -> launcher: {}", body.keys.iter().map(|k| k.label.as_str()).collect::<Vec<_>>().join(", "));
+    say!("  -> launcher: {}", body.keys.iter().map(|k| k.label.as_str()).collect::<Vec<_>>().join(", "));
     if sender.send("knoend.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
         let _ = sender.send("knoend.status", json!({"text": status})).await;
         *shown = Some(signature);
@@ -1178,7 +1170,7 @@ async fn show_edit(sender: &mut wifi::WifiSender, paging: &mut Paging, shown: &m
     let mut body = match layout::build(&library, knoend_core::focus::Os::current(), &pages, page) {
         Ok(body) => body,
         Err(e) => {
-            println!("  edited library {} cannot be shown: {e}", library.pack.id);
+            say!("  edited library {} cannot be shown: {e}", library.pack.id);
             return true;
         }
     };
@@ -1194,7 +1186,7 @@ async fn show_edit(sender: &mut wifi::WifiSender, paging: &mut Paging, shown: &m
     if shown.as_deref() == Some(signature.as_str()) {
         return true;
     }
-    println!("  -> editing {} page {}: {}", library.pack.id, page + 1,
+    say!("  -> editing {} page {}: {}", library.pack.id, page + 1,
              body.keys.iter().map(|k| format!("{}={}", k.key, k.label.replace('\n', "/"))).collect::<Vec<_>>().join(", "));
     let summary = json!({"id": body.layout, "name": body.name, "source": body.source, "reviewed": body.reviewed, "grid": body.grid,
                          "page": body.page, "pages": body.pages, "editing": true,
@@ -1269,7 +1261,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
                 return Err("Claude's screens cannot be edited here yet".into());
             }
             crate::edit::check(serde_json::to_value(library).map_err(|e| e.to_string())?, paging.board)?;
-            println!("Edit mode: {}", library.pack.id);
+            say!("Edit mode: {}", library.pack.id);
             *session = Some(Edit::start(library, path));
             Ok(None)
         }
@@ -1296,7 +1288,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             let edit = session.as_mut().ok_or("edit mode is off")?;
             let before = edit.library.pack.id.clone();
             let (path, library) = edit.save(&config_dir().join("libraries"))?;
-            println!("  saved {} to {}", library.pack.id, path.display());
+            say!("  saved {} to {}", library.pack.id, path.display());
             if paging.layout == before {
                 paging.layout = library.pack.id.clone(); // a draft saved as the person's own stays on its page
             }
@@ -1312,7 +1304,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             let edit = session.as_ref().ok_or("edit mode is off")?;
             let path = edit.path.clone().ok_or("there is no version of your own to remove")?;
             std::fs::remove_file(&path).map_err(|e| format!("could not remove {}: {e}", path.display()))?;
-            println!("  removed {} ({})", edit.library.pack.id, path.display());
+            say!("  removed {} ({})", edit.library.pack.id, path.display());
             catalog.remove(&edit.library.pack.id);
             // Back to the recipe or draft it was layered on; nothing left to edit ends edit mode.
             let under = edit.library.pack.overrides.as_deref().and_then(|id| catalog.by_id(id)).map(|(p, l)| Edit::start(l, p));
@@ -1321,7 +1313,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
         }
         Command::Stop => {
             if session.take().is_some() {
-                println!("Edit mode off");
+                say!("Edit mode off");
             }
             Ok(None)
         }
@@ -1345,18 +1337,18 @@ async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &
     match wanted.shown_by(&identity) {
         Some(true) => false,
         Some(false) => {
-            println!("Display: asking the board for {}", wanted.look());
+            say!("Display: asking the board for {}", wanted.look());
             match sender.send("knoend.display", wanted.look()).await {
                 Ok(_) => true,
                 Err(e) => {
-                    println!("  could not send the display settings: {e}");
+                    say!("  could not send the display settings: {e}");
                     false
                 }
             }
         }
         None => {
             if *wanted != (crate::display::Display { key_size: wanted.key_size, ..Default::default() }) {
-                println!("Display: this board's firmware ({}) has one look only; update its firmware for themes and turning", board.firmware);
+                say!("Display: this board's firmware ({}) has one look only; update its firmware for themes and turning", board.firmware);
             }
             false
         }
@@ -1625,11 +1617,11 @@ async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catal
                 }
             }
             let title = if q.header.is_empty() { screen.pack.name.clone() } else { format!("{}: {}", screen.pack.name, q.header) };
-            println!("  -> question on the board [{}]", q.question);
+            say!("  -> question on the board [{}]", q.question);
             (title, clean(&detail), format!("{}: {}", screen.pack.name, q.question), "attention")
         }
         None => {
-            println!("  -> permission request on the board [{}]", approval.summary);
+            say!("  -> permission request on the board [{}]", approval.summary);
             (screen.pack.name.clone(), clean(&approval.detail), approval.summary.clone(), if approval.destructive { "alert" } else { "attention" })
         }
     };
@@ -1702,7 +1694,7 @@ fn spawn_notification_watcher(events: mpsc::Sender<Event>) {
             !n.from_any(NOTIFYING_APPS) || events.blocking_send(Event::Notified(n)).is_ok()
         });
         if let Err(e) = result {
-            println!("Desktop notifications not followed: {e}");
+            say!("Desktop notifications not followed: {e}");
         }
     });
 }
@@ -1746,8 +1738,8 @@ fn unsupported_layout(focus: &Focus, paging: &mut Paging) -> LayoutBody {
 async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: &HashMap<u8, KeyRef>, players: &[NowPlaying],
                          sender: &mut wifi::WifiSender, shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
-        "knoend.layout.ack" if packet.body["ok"] != true => println!("  board rejected layout: {}", packet.body),
-        "knoend.error" => println!("  board error: {}", packet.body),
+        "knoend.layout.ack" if packet.body["ok"] != true => say!("  board rejected layout: {}", packet.body),
+        "knoend.error" => say!("  board error: {}", packet.body),
         "knoend.key" => {
             let layout = packet.body["layout"].as_str().unwrap_or("");
             let key = packet.body["key"].as_u64().unwrap_or(0);
@@ -1821,7 +1813,7 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
             // Configure is the unsupported screen's only key of its own (a media row may share it).
             if layout == UNSUPPORTED && acting.is_none() {
                 let target = focus?.clone();
-                println!("  Configure requested for {}", target.display_name());
+                say!("  Configure requested for {}", target.display_name());
                 let text = format!("Configuring {}: drafting keys...", target.display_name());
                 let _ = sender.send("knoend.status", json!({"text": text, "level": "attention"})).await;
                 return Some(target);

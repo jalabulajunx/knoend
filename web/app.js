@@ -54,6 +54,7 @@ document.addEventListener("click", (e) => {
 // ---- dashboard ----
 
 function renderStatus(s) {
+  renderStatus.last = s;
   const pill = $("link-pill");
   const text = { connected: "Board connected", searching: "Looking for the board", "no-pairing": "No board paired" }[s.link] || "Starting";
   pill.textContent = text;
@@ -888,6 +889,8 @@ $("install").addEventListener("click", async () => {
   $("flash-stage").className = "note";
   $("flash-stage").textContent = "Downloading and checking the firmware...";
   try {
+    delete $("to-pair").dataset.next;
+    $("to-pair").textContent = "Next";
     await api("/flash", { port: setup.port, board: setup.board, erase: $("erase").checked });
   } catch (e) {
     onFlash({ stage: "failed", error: e.message });
@@ -911,7 +914,11 @@ function onFlash(p) {
     $("bar").style.width = "100%";
     stage.className = "note success";
     stage.textContent = `Installed KnoEnd ${p.version}. The board restarted.`;
-    $("to-pair").disabled = false;
+    if ($("erase").checked) {
+      $("to-pair").disabled = false;
+    } else {
+      afterKeptSettings();
+    }
   } else if (p.stage === "failed") {
     stage.className = "note error";
     stage.textContent = `Install failed: ${p.error}`;
@@ -921,7 +928,39 @@ function onFlash(p) {
   if (p.text) logTo($("flash-log"), p.text);
 }
 
-$("to-pair").addEventListener("click", () => { step(4); scanWifi(); });
+$("to-pair").addEventListener("click", () => {
+  if ($("to-pair").dataset.next === "look") keySizeStep();
+  else { step(4); scanWifi(); }
+});
+
+/**
+ * After an install that kept the board's settings: a board paired with this computer comes back on
+ * its Wi-Fi by itself, so pairing and Wi-Fi are skipped when it does (within 40 s).
+ */
+async function afterKeptSettings() {
+  const button = $("to-pair");
+  const stage = $("flash-stage");
+  const paired = renderStatus.last && renderStatus.last.link !== "no-pairing";
+  if (!paired) {
+    button.disabled = false;
+    return;
+  }
+  stage.textContent += " It keeps its pairing and Wi-Fi: waiting for it to come back on your network...";
+  const deadline = Date.now() + 40000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1000));
+    if (renderStatus.last && renderStatus.last.link === "connected") {
+      stage.textContent = "Installed. The board kept its pairing and Wi-Fi and is connected again: nothing to pair.";
+      button.dataset.next = "look";
+      button.textContent = "Next: keys and look";
+      button.disabled = false;
+      return;
+    }
+  }
+  stage.className = "note";
+  stage.textContent = "Installed, but the board has not come back on the network after 40 seconds. Pair it and give it Wi-Fi again.";
+  button.disabled = false;
+}
 
 // ---- Wi-Fi networks, as the board hears them ----
 
@@ -1329,9 +1368,9 @@ function watchTyping() {
   }, 3000);
 }
 
-/** One line per change in a suggested fix. */
-function describeFix(fix) {
-  const lines = [];
+/** One line per change in a suggested fix; `settings` are labelled by the service. */
+function describeFix(fix, settings = []) {
+  const lines = settings.map((s) => `${s.title}: ${s.label}`);
   if (fix.model) lines.push(`Model: ${fix.model}`);
   if (fix.base_url !== undefined) lines.push(fix.base_url ? `API address: ${fix.base_url}` : "API address: the provider's usual one");
   for (const [name, value] of Object.entries(fix.options || {})) {
@@ -1364,6 +1403,17 @@ async function applyFix(fix) {
     $("install").disabled = false;
     if (setup.step !== 2) step(2);
     done.push(`chose ${c.name}`);
+  }
+  if (fix.settings) {
+    try {
+      const r = await api("/settings", { changes: fix.settings });
+      await loadDisplay().catch(() => {});
+      done.push(r.done.join(", "));
+    } catch (e) {
+      status.className = "note error";
+      status.textContent = `Could not apply it: ${e.message}`;
+      return;
+    }
   }
   if (fix.model || fix.base_url !== undefined || fix.options || fix.timeout_secs) {
     status.textContent = "Saving the change and sending a one-word test request...";
@@ -1408,7 +1458,9 @@ async function ask(question, error) {
                     ai_models_available: models.slice(0, 200) };
   try {
     const r = await api("/assist", { question, context });
-    $("advice-text").textContent = r.answer;
+    // What it looked into before answering, so the person sees the answer rests on a check.
+    const looked = (r.checked || []).map((c) => c.check.replaceAll("_", " "));
+    $("advice-text").textContent = (looked.length ? `(Checked: ${looked.join(", ")}.)\n` : "") + r.answer;
     $("advice-sent").textContent = JSON.stringify(r.sent, null, 2);
     for (const id of r.actions) {
       if (!ACTIONS[id]) continue;
@@ -1419,7 +1471,7 @@ async function ask(question, error) {
       $("advice-actions").append(b);
     }
     if (r.fix) {
-      $("advice-fix-list").replaceChildren(...describeFix(r.fix).map((line) => { const li = document.createElement("li"); li.textContent = line; return li; }));
+      $("advice-fix-list").replaceChildren(...describeFix(r.fix, r.settings_described || []).map((line) => { const li = document.createElement("li"); li.textContent = line; return li; }));
       $("advice-fix-status").hidden = true;
       const apply = $("advice-fix-apply");
       apply.disabled = false;

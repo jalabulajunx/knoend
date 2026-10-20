@@ -63,6 +63,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/ai/models", post(ai_models))
         .route("/ai/tools", get(ai_tools))
         .route("/display", get(display_settings).post(save_display))
+        .route("/settings", get(settings).post(change_settings))
         .route("/assist", post(assist))
         .route("/open", post(open_help))
         .route("/typing", get(typing))
@@ -78,7 +79,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .with_state(app);
 
     let url = format!("http://127.0.0.1:{port}/");
-    println!("KnoEnd is at {url}");
+    say!("KnoEnd is at {url}");
     if open {
         let opener = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
         let _ = std::process::Command::new(opener).arg(&url).spawn();
@@ -388,37 +389,38 @@ async fn app_board(app: &App) -> Option<crate::service::BoardStatus> {
 /// Any of the three; what is left out stays as it is.
 #[derive(Deserialize)]
 struct DisplayRequest {
-    key_size: Option<crate::display::KeySize>,
-    theme: Option<crate::display::Theme>,
-    turn: Option<u8>,
+    key_size: Option<Value>,
+    theme: Option<Value>,
+    turn: Option<Value>,
 }
 
-/// Saves the choice and applies it at once: the key size here, the theme and turn on the board
-/// (which restarts for them).
+/// Saves the choice and applies it at once, through the settings list (settings.rs).
 async fn save_display(State(app): State<App>, Json(request): Json<DisplayRequest>) -> ApiResult {
-    let mut display = crate::display::load();
-    let look = (display.theme, display.turn);
-    if let Some(turn) = request.turn {
-        if turn > 3 {
-            return Err(fail(StatusCode::BAD_REQUEST, "turn must be 0-3"));
+    let mut changes = serde_json::Map::new();
+    for (id, value) in [("key_size", request.key_size), ("theme", request.theme), ("turn", request.turn)] {
+        if let Some(value) = value {
+            changes.insert(id.into(), value);
         }
-        display.turn = turn;
     }
-    if let Some(theme) = request.theme {
-        display.theme = theme;
-    }
-    let key_size = request.key_size.filter(|k| *k != display.key_size);
-    if let Some(k) = key_size {
-        display.key_size = k;
-    }
-    crate::display::save(&display).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    if let Some(k) = key_size {
-        app.shared.key_size_changed(k);
-    }
-    if look != (display.theme, display.turn) {
-        app.shared.look_changed(display.clone());
-    }
+    crate::settings::apply(&app.shared, &changes).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
+    let display = crate::display::load();
     Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn})))
+}
+
+/// Every setting the person can change, described (settings.rs).
+async fn settings(State(app): State<App>) -> ApiResult {
+    Ok(Json(json!({"settings": crate::settings::all(&app.shared).await})))
+}
+
+#[derive(Deserialize)]
+struct SettingsRequest {
+    changes: serde_json::Map<String, Value>,
+}
+
+/// Applies changes `{id: value}` (an assistant fix the person applied, or the web app's own).
+async fn change_settings(State(app): State<App>, Json(request): Json<SettingsRequest>) -> ApiResult {
+    let done = crate::settings::apply(&app.shared, &request.changes).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(json!({"done": done})))
 }
 
 /// The AI tools on this computer (Claude Code, Antigravity, Codex), looked up now.
@@ -503,9 +505,45 @@ struct AssistRequest {
 async fn assist(State(app): State<App>, Json(request): Json<AssistRequest>) -> ApiResult {
     let config = crate::agent_config().map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
     let snapshot = crate::diagnostics::snapshot(&app.shared, request.context).await;
-    let advice = knoend_agents::assistant::advise(&config, &request.question, &snapshot).await
+    // The assistant may ask for checks (checks.rs) before it answers: they run here, and it is
+    // asked again with the results, a few rounds at most.
+    let mut earlier: Vec<(String, Value)> = Vec::new();
+    let mut checked: Vec<Value> = Vec::new();
+    let mut advice = knoend_agents::assistant::advise(&config, &request.question, &snapshot, &earlier).await
         .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
-    Ok(Json(json!({"answer": advice.answer, "actions": advice.actions, "fix": advice.fix, "sent": snapshot, "by": config.describe()})))
+    while !advice.checks.is_empty() && earlier.len() < knoend_agents::assistant::CHECK_ROUNDS {
+        let mut results = serde_json::Map::new();
+        for id in advice.checks.iter().filter(|c| crate::checks::ALL.iter().any(|(k, _)| k == &c.as_str())) {
+            say!("Assistant checks: {id}");
+            let result = crate::checks::run(id, &app.shared).await;
+            checked.push(json!({"check": id, "result": result}));
+            results.insert(id.clone(), result);
+        }
+        if results.is_empty() {
+            break;
+        }
+        earlier.push((advice.raw.clone(), Value::Object(results)));
+        advice = knoend_agents::assistant::advise(&config, &request.question, &snapshot, &earlier).await
+            .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
+    }
+    // A settings change is offered only with values its setting takes, labelled for the person.
+    let mut fix = advice.fix.clone();
+    let mut settings_described = Vec::new();
+    if let Some(f) = fix.as_mut() {
+        if let Some(changes) = f.settings.take() {
+            let known = crate::settings::all(&app.shared).await;
+            let kept: serde_json::Map<String, Value> = changes.into_iter().filter(|(id, value)| {
+                known.iter().find(|s| s["id"] == id.as_str()).and_then(|s| s["choices"].as_array()
+                    .and_then(|c| c.iter().find(|c| &c["value"] == value)).map(|c| {
+                        settings_described.push(json!({"id": id, "value": value, "title": s["title"], "label": c["label"]}));
+                    })).is_some()
+            }).collect();
+            f.settings = (!kept.is_empty()).then_some(kept);
+        }
+    }
+    let fix = fix.filter(|f| *f != knoend_agents::assistant::Fix::default());
+    Ok(Json(json!({"answer": advice.answer, "actions": advice.actions, "fix": fix, "settings_described": settings_described,
+                   "checked": checked, "sent": snapshot, "by": config.describe()})))
 }
 
 /// Whether this computer lets knoend type for the board (macOS asks for Accessibility; elsewhere
@@ -526,7 +564,7 @@ struct OpenRequest {
 /// still approves everything there).
 async fn open_help(Json(request): Json<OpenRequest>) -> ApiResult {
     let done = crate::macos_help::open(&request.target).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
-    println!("{done}");
+    say!("{done}");
     Ok(Json(json!({"done": done})))
 }
 

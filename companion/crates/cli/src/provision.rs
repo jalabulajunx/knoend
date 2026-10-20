@@ -129,8 +129,16 @@ pub fn change_wifi(port: &str, ssid: &str, password: &str, log: &mut dyn FnMut(S
 /// Sends the network name and password and waits for the board to join (30 s). The password is
 /// never passed to `log`.
 fn join_wifi(link: &mut SerialLink, ssid: &str, password: &str, log: &mut dyn FnMut(String)) -> Result<Option<String>, String> {
-    let ack = link.request("knoend.wifi", json!({"ssid": ssid, "password": password}),
-                           "knoend.wifi.ack", Duration::from_secs(3))?;
+    // A board that has just restarted may still be joining its stored network and slow to answer:
+    // 10 s, and once more before giving up.
+    let wifi = json!({"ssid": ssid, "password": password});
+    let ack = match link.request("knoend.wifi", wifi.clone(), "knoend.wifi.ack", Duration::from_secs(10)) {
+        Ok(ack) => ack,
+        Err(first) => {
+            log(format!("The board did not answer the Wi-Fi settings yet ({first}); trying once more"));
+            link.request("knoend.wifi", wifi, "knoend.wifi.ack", Duration::from_secs(10))?
+        }
+    };
     if ack.body["ok"] != true {
         return Err(format!("Wi-Fi settings refused: {}", ack.body["error"]));
     }

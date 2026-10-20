@@ -27,6 +27,12 @@ confirmed), not only in the log.
 
 ## The setup assistant should be able to do what you did
 
+**The service describes itself.** A feature is not done until the assistant can see it, change it
+and check it: settings in `settings.rs`, buttons in `assistant::ACTIONS` (with what each does),
+read-only checks in `checks.rs`, and what the service notices in its log via `say!`. The
+assistant's prompt tells it to read those lists each time instead of naming every setting, so
+problems and settings nobody planned for still reach it.
+
 The goal is that anyone can set up their computer and a board with the in-product setup assistant
 alone, without a coding agent or a developer. So when you solve a setup problem by hand (a missing
 driver, a permission, a wrong board, a setting), do not stop at the fix:
@@ -36,7 +42,14 @@ driver, a permission, a wrong board, a setting), do not stop at the fix:
 2. **Evidence:** make the deciding fact visible in the assistant's snapshot
    (`companion/crates/cli/src/diagnostics.rs`, `system_checks`), so the assistant reads it instead
    of asking the person to run commands. Facts only: never passwords, keys or window titles.
-3. **Action:** if the fix needs the person (a password, an Allow switch, an installer), add an
+   Print what the service notices with `say!` (not `println!`): every such line reaches the
+   assistant through the journal (`cli/src/journal.rs`). Evidence that is too slow or too big for
+   every snapshot becomes a read-only check in `cli/src/checks.rs`, which the assistant runs when
+   it needs it.
+3. **Action:** every setting the person can change goes in `cli/src/settings.rs` (meaning,
+   choices, current value): the web app, the assistant's snapshot and its one-click fixes all read
+   that list, so the assistant can see and change a new setting with no prompt edit. If the fix
+   needs the person (a password, an Allow switch, an installer), add an
    assistant action that takes them to the exact place (`assistant::ACTIONS`, the web app's
    `ACTIONS`, a fixed list in `cli/src/macos_help.rs` or alongside), or a checked field in the
    assistant's `fix` (`assistant::check_fix`) when the fix is a setting. Actions only open or prepare;

@@ -175,7 +175,7 @@ pub async fn serve(browser: Arc<Browser>, tabs: mpsc::Sender<BrowserEvent>) {
     let listener = match bind_private(&socket_path()) {
         Ok(l) => l,
         Err(e) => {
-            println!("Browser link off: {}: {e}", socket_path().display());
+            say!("Browser link off: {}: {e}", socket_path().display());
             return;
         }
     };
@@ -214,7 +214,7 @@ async fn connection(id: u64, stream: tokio::net::UnixStream, browser: Arc<Browse
             Some("hello") => {
                 let kind = if message["browser"] == "firefox" { "firefox" } else { "chrome" };
                 browser.pages.lock().unwrap().entry(id).or_insert_with(|| (String::new(), None, 0)).0 = kind.to_string();
-                println!("Browser extension connected ({} {})", message["browser"].as_str().unwrap_or("?"), message["version"].as_str().unwrap_or("?"));
+                say!("Browser extension connected ({} {})", message["browser"].as_str().unwrap_or("?"), message["version"].as_str().unwrap_or("?"));
             }
             Some("tab") => {
                 // The tab counts whether or not the browser thinks its window is focused: the

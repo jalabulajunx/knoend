@@ -12,6 +12,8 @@
 //!
 //! A browser that starts this binary as its native messaging host (spec/browser.md) gets the host.
 
+#[macro_use]
+mod journal;
 mod agent_hooks;
 mod app_facts;
 mod background;
@@ -19,7 +21,9 @@ mod launcher;
 mod browser;
 mod diagnostics;
 mod edit;
+mod checks;
 mod display;
+mod settings;
 mod firmware;
 mod macos_help;
 mod provision;

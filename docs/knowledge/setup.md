@@ -114,6 +114,17 @@ C3, C6) are not supported.
     over Bluetooth).
   - `event-sent`: the action needs the companion (open a page, run a command).
 
+- **Asked to pair and join Wi-Fi again after installing new firmware.** Not needed when the board
+  was installed without erasing: it keeps its pairing, Wi-Fi and settings, restarts and joins its
+  network by itself within about 20 s. Setup now waits for it and skips pairing when it comes back
+  (`find_boards_on_network` shows it with `paired_with_this_computer`). Only an erase, or a board
+  paired from another computer, needs pairing again. Confirmed on the ONX, Linux, 2026-10-20.
+- **"no knoend.wifi.ack from the board within 3s" seconds after installing.** The pairing step
+  worked, then the board did not answer the Wi-Fi step in time: it had just restarted and was still
+  joining its stored network. Doing it again a little later worked (ONX, Linux, 2026-10-20). The
+  Wi-Fi step now waits 10 s and tries once more by itself. If it still fails: wait half a minute and
+  check whether the board came back by itself before pairing again.
+
 ### Wi-Fi and pairing
 
 - **Board never joins Wi-Fi.** The ESP32-S3 joins **2.4 GHz only**; a 5 GHz-only network, or a band
@@ -133,6 +144,21 @@ C3, C6) are not supported.
   hold different keys (board erased, or paired from another computer). Pair again over USB.
 - **Board restarted and the dashboard still says connected.** The companion pings every 10 s and
   reconnects after 25 s of silence; wait half a minute.
+
+### How the board looks
+
+- **Key size, Look and Way round** are settings (dashboard, setup's "Keys and look" step, and the
+  assistant's settings list). Key size is the grid every page uses (Big 2x2, Medium 3x3 by default,
+  Small 4x4); an app's keys fill it in order and the rest go on further pages. The look (Dark,
+  White, Sepia) and the way round (landscape, portrait, either upside down) are kept on the board
+  and change at once, without a restart. Portrait on the ONX fits 3 keys across and 4 down.
+- **"this firmware draws landscape only" or "has one look only".** The board's firmware is older
+  than the setting: install the latest firmware (without erasing). The web app puts the choice back
+  to what the board shows and says so.
+- **Sepia looks like dimmed white.** The first sepia (a pale cream) did on the ONX's 16-bit panel;
+  firmware from 2026-10-20 on uses a stronger tan and brown. Install the latest firmware.
+- **Keys too small to read or hit.** Choose a bigger key size (Medium or Big), or White or Sepia
+  for contrast.
 
 ### Bluetooth keyboard
 
@@ -311,6 +337,12 @@ devices and whether each has a port, the WCH driver state, and whether knoend ma
    and the pins, then draft a definition (`spec/schemas/board.schema.json`) and test it. Never use
    GPIO 26-37 on the ESP32-S3 (flash and PSRAM).
 7. Say plainly what is known, what is a guess, and what to check next.
-8. Look below the port list. A board can be on the USB bus with no driver (macOS), or a permission
+8. Use what the service can tell you before asking the person: the settings list (what can be
+   changed, and to what), the checks it can run (the board on the network now, the full service
+   log, the USB ports now) and the service log, which holds every line the service printed. These
+   grow as KnoEnd grows; read them each time.
+9. Before sending the person back to a step, find out whether it is needed (a board that kept its
+   pairing needs none), and after a fix, check again that it worked.
+10. Look below the port list. A board can be on the USB bus with no driver (macOS), or a permission
    can stop keys with every board-side step working: the companion log is the first place where
    the failing layer shows ("could not type", "no paired board", focus lines).
