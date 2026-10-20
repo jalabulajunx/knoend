@@ -342,6 +342,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Ok(Some(Event::Tab(t))) => tab = t,
                 Ok(Some(Event::Players(p))) => players = p,
+                Ok(Some(Event::Edit(command, answer))) => edit_while_away(command, answer, &shared),
                 _ => {}
             }
             if let Some(f) = effective(&focus, &tab) {
@@ -506,6 +507,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     shared.emit("edit.tap", json!({"page": paging.page, "slot": packet.body["key"]}));
                 }
                 Event::Edit(command, answer) => {
+                    let list = matches!(command, crate::edit::Command::List);
                     let result = edit_command(command, &mut catalog, &mut paging, &shared);
                     if result.is_ok() {
                         let count = catalog.len();
@@ -520,11 +522,12 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                     let result = result.map(|value| value.unwrap_or_else(|| edit_state(&shared, &paging)));
-                    match answer {
-                        Some(answer) => {
-                            let _ = answer.send(result);
-                        }
-                        None => shared.emit("edit", edit_state(&shared, &paging)),
+                    // Every tab follows the session, not only the one that asked.
+                    if result.is_ok() && !list {
+                        shared.emit("edit", edit_state(&shared, &paging));
+                    }
+                    if let Some(answer) = answer {
+                        let _ = answer.send(result);
                     }
                 }
                 Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE
@@ -762,6 +765,7 @@ async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus
             }
             Event::Tab(t) => *tab = t,
             Event::Players(p) => { *players = p; continue; }
+            Event::Edit(command, answer) => { edit_while_away(command, answer, shared); continue; }
             _ => continue,
         }
         if let Some(f) = effective(focus, tab) {
@@ -1122,6 +1126,24 @@ async fn show_edit(sender: &mut wifi::WifiSender, paging: &mut Paging, shown: &m
     true
 }
 
+/// Edit mode shows changes on the board; while it is away, Stop still ends it and everything else
+/// says why it cannot be done.
+fn edit_while_away(command: crate::edit::Command, answer: Option<tokio::sync::oneshot::Sender<Result<Value, String>>>, shared: &Shared) {
+    let result = match command {
+        crate::edit::Command::Stop => {
+            if let Ok(mut session) = shared.edit.lock() {
+                *session = None;
+            }
+            shared.emit("edit", json!({"editing": false}));
+            Ok(json!({"editing": false}))
+        }
+        _ => Err("the board is not connected; edit mode needs it to show your changes".to_string()),
+    };
+    if let Some(answer) = answer {
+        let _ = answer.send(result);
+    }
+}
+
 /// The edit session as the web app shows it, or `{"editing": false}`.
 fn edit_state(shared: &Shared, paging: &Paging) -> Value {
     match shared.edit.lock().ok().as_ref().and_then(|e| e.as_ref()) {
@@ -1142,8 +1164,10 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
     let mut session = shared.edit.lock().map_err(|e| e.to_string())?;
     match command {
         Command::List => {
-            let libraries: Vec<Value> = catalog.all().map(|(path, l)| {
-                let kind = if !l.matches.agent.is_empty() { "agent" } else if !l.matches.web.is_empty() { "site" } else { "app" };
+            // Agent screens (Claude's questions and permission requests) are not edited here yet:
+            // their keys answer a waiting request and their middle rows hold its text.
+            let libraries: Vec<Value> = catalog.all().filter(|(_, l)| l.matches.agent.is_empty()).map(|(path, l)| {
+                let kind = if !l.matches.web.is_empty() { "site" } else { "app" };
                 json!({"id": l.pack.id, "name": l.pack.name, "source": l.pack.source, "kind": kind, "keys": l.keys.len(),
                        "overrides": l.pack.overrides, "own": l.pack.source == Source::User && path.is_file()})
             }).collect();
@@ -1159,6 +1183,10 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             let (path, library) = catalog.by_id(&id).ok_or_else(|| format!("{id} has no keys to edit here; pick one from the list"))?;
             // The person's own version, when there is one, is what they edit.
             let (path, library) = catalog.all().find(|(_, l)| l.pack.overrides.as_deref() == Some(id.as_str())).unwrap_or((path, library));
+            if !library.matches.agent.is_empty() {
+                return Err("Claude's screens cannot be edited here yet".into());
+            }
+            crate::edit::check(serde_json::to_value(library).map_err(|e| e.to_string())?, paging.max)?;
             println!("Edit mode: {}", library.pack.id);
             *session = Some(Edit::start(library, path));
             Ok(None)

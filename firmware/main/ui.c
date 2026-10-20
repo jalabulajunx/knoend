@@ -275,7 +275,6 @@ static const lv_font_t *fitting_font(const char *text, const lv_font_t *preferre
 // are kept and wrap between words as usual.
 static void cut_long_words(const char *text, const lv_font_t *font, lv_coord_t width, char *out, size_t size)
 {
-    const lv_coord_t dots = lv_txt_get_width("...", 3, font, 0, LV_TEXT_FLAG_NONE);
     size_t n = 0;
     const char *p = text;
     while (*p != '\0' && n + 1 < size) {
@@ -290,7 +289,15 @@ static void cut_long_words(const char *text, const lv_font_t *font, lv_coord_t w
         uint32_t keep = (uint32_t)(end - p);
         const bool cut = widest_piece(p, keep, font) > width;
         if (cut) {
-            while (keep > 1 && lv_txt_get_width(p, keep, font, 0, LV_TEXT_FLAG_NONE) + dots > width) {
+            // Measured with the dots attached: the last letter's spacing depends on what follows.
+            char candidate[UI_LABEL_BYTES + 4];
+            while (keep > 1) {
+                const uint32_t len = keep < UI_LABEL_BYTES ? keep : UI_LABEL_BYTES - 1;
+                memcpy(candidate, p, len);
+                memcpy(candidate + len, "...", 4);
+                if (lv_txt_get_width(candidate, len + 3, font, 0, LV_TEXT_FLAG_NONE) <= width) {
+                    break;
+                }
                 keep--;
                 while (keep > 1 && ((unsigned char)p[keep] & 0xC0) == 0x80) {
                     keep--; // not inside a UTF-8 character

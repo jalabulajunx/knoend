@@ -66,7 +66,16 @@ impl Edit {
         let path = match &self.path {
             Some(path) => path.clone(),
             None => {
-                let name = own_name(&library.pack.id).to_string();
+                // Another library's own version may have the name already (builtin.okular and
+                // ai.okular would both make user.okular): then the next free one.
+                let base = own_name(&library.pack.id).to_string();
+                let mut name = base.clone();
+                for n in 2.. {
+                    if !dir.join(format!("user-{name}.toml")).exists() {
+                        break;
+                    }
+                    name = format!("{base}-{n}");
+                }
                 if library.pack.source != Source::User {
                     library.pack.overrides = Some(library.pack.id.clone());
                 }
@@ -177,6 +186,13 @@ action = { kind = "shortcut", keys = "Enter" }
         // Saving again writes the same file.
         edit.library.keys[0].label = "=".into();
         assert_eq!(edit.save(&dir).unwrap().0, path);
+        // Another library with the same name (a recipe and a draft for one app) gets its own file.
+        let mut recipe = Library::parse(&DRAFT.replace("ai.calculator", "builtin.calculator").replace("\"ai\"", "\"builtin\"")).unwrap();
+        recipe.keys[0].label = "Clear all".into();
+        let mut other = Edit::start(&recipe, Path::new("/nonexistent"));
+        let (second, saved) = other.save(&dir).unwrap();
+        assert_eq!((second, saved.pack.id.as_str()), (dir.join("user-calculator-2.toml"), "user.calculator-2"));
+        assert_eq!(Library::parse(&std::fs::read_to_string(&path).unwrap()).unwrap().keys[0].label, "=", "the first is untouched");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -139,7 +139,9 @@ function connectEvents() {
 // Every change goes to the board at once, unsaved: the board itself is the preview. A tap on a board
 // key selects it here. Save writes the person's own version on top of the recipe or AI draft.
 
-const edit = { state: null, selected: null, timer: null, recording: false };
+// rev counts local changes; sent is the last one the service has (its answers to older ones are
+// not shown over newer typing).
+const edit = { state: null, selected: null, timer: null, recording: false, rev: 0, sent: 0 };
 
 // The shortcut grammar (spec/protocol.md section 5; the names in companion/crates/core/src/keys.rs).
 const MODIFIERS = ["Primary", "Ctrl", "Alt", "Shift", "Meta"];
@@ -210,6 +212,9 @@ function showEditError(text) {
 }
 
 async function editCommand(command, extra = {}) {
+  // Save and page turns carry the last change with them; the others drop what is not sent yet.
+  if (command === "save" || command === "page") await sendChange();
+  else if (command !== "list") dropChange();
   showEditError("");
   try {
     const answer = await api("/edit", { command, ...extra });
@@ -265,10 +270,10 @@ function onEditState(state, shown) {
   if (!$("edit-key").contains(document.activeElement)) renderEditKey();
 }
 
-/** A page turn on the board, or edit mode ended when another tab closed. */
+/** The session changed (here, in another tab, or a page turn on the board). */
 function onEditEvent(state) {
-  if (edit.timer && state.editing && edit.state) {
-    edit.state.page = state.page; // a change of ours is about to be sent: keep it
+  if (edit.rev !== edit.sent && state.editing && edit.state) {
+    edit.state.page = state.page; // changes of ours are not with the service yet: keep them
     renderEditPage();
   } else {
     onEditState(state);
@@ -390,11 +395,32 @@ function changed() {
   $("edit-dirty").hidden = false;
   $("edit-save").disabled = $("edit-revert").disabled = false;
   renderEditPage();
+  edit.rev++;
   clearTimeout(edit.timer);
-  edit.timer = setTimeout(() => {
-    edit.timer = null;
-    editCommand("change", { library: edit.state.library }).catch(() => {});
-  }, 250);
+  edit.timer = setTimeout(sendChange, 250);
+}
+
+/** Sends the library as edited now, if the service does not have it yet. */
+async function sendChange() {
+  clearTimeout(edit.timer);
+  edit.timer = null;
+  if (!edit.state || edit.sent === edit.rev) return;
+  const rev = edit.rev;
+  try {
+    const answer = await api("/edit", { command: "change", library: edit.state.library });
+    edit.sent = rev;
+    showEditError("");
+    if (edit.rev === rev) onEditState(answer); // not over typing that came after
+  } catch (e) {
+    edit.sent = rev; // sent again with the next change
+    showEditError(e.message);
+  }
+}
+
+function dropChange() {
+  clearTimeout(edit.timer);
+  edit.timer = null;
+  edit.sent = edit.rev;
 }
 
 function editKey(apply) {
