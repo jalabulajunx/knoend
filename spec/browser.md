@@ -136,6 +136,7 @@ inventory.
   id-like segments replaced by `*`, never a query), and the inventory (controls' names and
   selectors, same-site link paths without queries). Never the full URL, page text or what a person
   typed. Path segments that are not id-like stay as they are, so a kind can still name a user or a
-  repository (`/jalabulajunx/openpager`), and so can a link path. The inventory goes to the agent
+  repository (`/jalabulajunx/openpager`). Link paths are sent unchanged, ids included (an `open`
+  key needs the real path), so links to documents carry their ids. The inventory goes to the agent
   only when the person asks for keys for that site, or for a new kind of page on a site they asked
   for.
