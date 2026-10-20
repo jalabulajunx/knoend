@@ -175,6 +175,14 @@ C3, C6) are not supported.
   from the renderer, fonts are read from a copy in PSRAM, and a font the board did not get through
   a start with is dropped at the next start (`board.fonts.refused`; the service then does not send
   it again and says so). With firmware v0.1.1-110 itself: install the latest firmware (no erase).
+- **Board stops answering on Wi-Fi but its screen stays on; serial shows repeated
+  "task_wdt: Task watchdog got triggered ... IDLE0 ... CPU 0: taskLVGL".** The board has not
+  restarted (the number in brackets is milliseconds since it started, and keeps growing): the
+  display task is stuck, and Wi-Fi starves. Seen 2026-10-20 on the ONX after 14 minutes, on
+  firmware v0.1.1-111: LVGL waited forever for the screen to report an update done
+  (`draw_buf_flush`). Unplug and plug the board in to get it back; firmware after v0.1.1-113 gives
+  up waiting after 300 ms and logs "display: an update never reported done". A watchdog line is not
+  a crash; "Guru Meditation" or `rst:` with a panic is.
 - **"Could not get the font" or "could not reach Google Fonts".** The computer is offline or
   Google Fonts is blocked (some offices and schools); the name may also be misspelt: pick it from
   the list.
