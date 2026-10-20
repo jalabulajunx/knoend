@@ -492,12 +492,21 @@ code { font: .9em var(--mono); }
 .stage figcaption > span { display: none; }
 .setup-flow[data-step="1"] .c1, .setup-flow[data-step="2"] .c2, .setup-flow[data-step="3"] .c3,
 .setup-flow[data-step="4"] .c4, .setup-flow[data-step="5"] .c5 { display: inline; }
-/* 1: the plug slides in, a spark. */
-.s1 .plug { fill: #ece8df; animation: plug 2.6s var(--ease) infinite; }
-.s1 .cable { animation: plug 2.6s var(--ease) infinite; }
-.s1 .spark { stroke: var(--signal); animation: spark 2.6s steps(1) infinite; }
-@keyframes plug { 0%, 15% { transform: translateX(-22px); } 45%, 100% { transform: none; } }
-@keyframes spark { 0%, 44% { opacity: 0; } 45%, 70% { opacity: 1; } 71% { opacity: 0; } }
+/* 1: the cable goes into the port on the board's edge; the screen wakes, the ° lights. */
+.stage { padding-left: 48px; }
+.usb { position: absolute; right: 100%; top: 50%; height: 12px; margin-top: -6px; display: flex; align-items: center;
+  opacity: 0; transition: opacity .4s; }
+.usb .wire { width: 46px; height: 3px; border-radius: 2px; background: #8d897f; }
+.usb .head { width: 14px; height: 12px; border-radius: 2px 1px 1px 2px; background: #ece8df; }
+/* Plugged in from step 1 on: it moves in on step 1, and stays in while installing and pairing. */
+.setup-flow[data-step="1"] .usb, .setup-flow[data-step="2"] .usb,
+.setup-flow[data-step="3"] .usb, .setup-flow[data-step="4"] .usb { opacity: 1; }
+.setup-flow[data-step="1"] .usb { animation: plug-in 2.8s var(--ease) infinite; }
+@keyframes plug-in { 0%, 15% { transform: translateX(-26px); } 45%, 100% { transform: translateX(-1px); } }
+.s1 .wake { stroke: #3a3f44; stroke-width: 3; animation: wake 2.8s var(--ease) infinite; }
+.s1 .ready { fill: #57544d; stroke: none; font: 500 7px var(--mono); letter-spacing: .2em; text-anchor: middle; animation: wake-text 2.8s var(--ease) infinite; }
+@keyframes wake { 0%, 44% { stroke: #3a3f44; fill: none; } 52%, 92% { stroke: var(--signal); fill: var(--signal); filter: drop-shadow(0 0 4px var(--signal)); } }
+@keyframes wake-text { 0%, 44% { fill: #3a3f44; } 52%, 92% { fill: #ece8df; } }
 /* 2: the chip, its pins lighting in turn. */
 .s2 .chip { stroke: #ece8df; }
 .s2 .pins { stroke: var(--signal); stroke-dasharray: 2 4; animation: pins 1.2s linear infinite; }
