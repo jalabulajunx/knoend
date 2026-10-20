@@ -2,8 +2,9 @@
     "deviceId": "a0b1c2d3e4f5", "deviceName": "KnoEnd", "deviceType": "board",
     "protocolVersion": 0, "firmware": "a1ea8a8",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
-               "grid": { "cols": 4, "rows": 4 }, "statusBar": true },
+               "grid": { "cols": 4, "rows": 4 }, "statusBar": true,
+               "display": { "theme": "dark", "turn": 0 } },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
-    "incoming": ["knoend.layout", "knoend.status", "knoend.ping"],
-    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.ping"] } }
+    "incoming": ["knoend.layout", "knoend.status", "knoend.display", "knoend.ping"],
+    "outgoing": ["knoend.key", "knoend.page", "knoend.layout.ack", "knoend.display.ack", "knoend.ping"] } }

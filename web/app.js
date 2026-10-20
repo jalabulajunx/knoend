@@ -67,6 +67,12 @@ function renderStatus(s) {
     $("f-address").textContent = s.board.address;
     $("f-id").textContent = s.board.id;
   }
+  // A new board connection (a restart for a new look, other firmware): the choices follow it.
+  const look = s.board ? JSON.stringify([s.board.firmware, s.board.display]) : "";
+  if (look !== renderStatus.look) {
+    renderStatus.look = look;
+    loadDisplay().catch(() => {});
+  }
   $("now-app").textContent = s.app || "-";
   const layout = s.link === "connected" ? s.layout : null;
   $("now-layout").textContent = layout ? layout.name + (layout.pages > 1 ? ` (page ${layout.page} of ${layout.pages})` : "") : "-";
@@ -612,30 +618,52 @@ const KEY_SIZES = [
   ["small", "Small: up to 4x4", "Sixteen keys a page. Short labels, or icons only; best for a bigger screen or a steady hand."],
 ];
 
-async function saveKeySize(key_size) {
-  await api("/display", { key_size });
-  $("key-size").value = key_size;
+const THEMES = [
+  ["dark", "Dark, in colour", "Light text on dark keys; colour shows a pressed key, a key waiting for its second tap, and messages."],
+  ["paper", "Paper: black on white", "An e-ink look with high contrast, easy to read in daylight. App pictures turn grey."],
+];
+
+async function saveDisplay(change) {
+  const saved = await api("/display", change);
+  $("key-size").value = saved.key_size;
+  $("theme").value = saved.theme;
+  return saved;
+}
+
+/** Fills the dashboard's choices; the look only when the board's firmware can change it. */
+async function loadDisplay() {
+  const d = await api("/display");
+  $("key-size").value = d.key_size;
+  $("theme").value = d.theme;
+  $("theme").disabled = !d.board_can_change_look;
+  $("theme").title = d.board_can_change_look ? "" : "This board's firmware has one look only; install the latest firmware to choose.";
+  return d;
 }
 
 /** Setup step 5: the key size, chosen once after pairing (the current choice ticked). */
 async function keySizeStep() {
   step(5);
   $("setup-done").hidden = true;
-  const current = await api("/display").then((d) => d.key_size).catch(() => "medium");
-  const list = $("key-size-setup");
-  list.replaceChildren();
-  for (const [value, title, sub] of KEY_SIZES) {
-    const { li, input } = choice("key-size-choice", value, title, sub);
-    input.checked = value === current;
-    list.append(li);
-  }
+  const current = await api("/display").catch(() => ({ key_size: "medium", theme: "dark", board_can_change_look: false }));
+  const fill = (list, name, choices, value, disabled) => {
+    list.replaceChildren();
+    for (const [v, title, sub] of choices) {
+      const { li, input } = choice(name, v, title, sub, disabled && v !== value);
+      input.checked = v === value;
+      list.append(li);
+    }
+  };
+  fill($("key-size-setup"), "key-size-choice", KEY_SIZES, current.key_size);
+  fill($("theme-setup"), "theme-choice", THEMES, current.theme, !current.board_can_change_look);
+  $("theme-note").hidden = current.board_can_change_look;
 }
 
 $("key-size-save").addEventListener("click", async (e) => {
   const picked = document.querySelector('input[name="key-size-choice"]:checked');
+  const look = document.querySelector('input[name="theme-choice"]:checked');
   e.target.disabled = true;
   try {
-    await saveKeySize(picked ? picked.value : "medium");
+    await saveDisplay({ key_size: picked ? picked.value : "medium", theme: look ? look.value : "dark" });
     $("setup-done").hidden = false;
   } catch (err) {
     logTo($("pair-log"), `Could not save the key size: ${err.message}`, "error");
@@ -644,8 +672,9 @@ $("key-size-save").addEventListener("click", async (e) => {
   }
 });
 
-$("key-size").addEventListener("change", (e) => saveKeySize(e.target.value).catch((err) => alert(`Could not save the key size: ${err.message}`)));
-api("/display").then((d) => { $("key-size").value = d.key_size; }).catch(() => {});
+$("key-size").addEventListener("change", (e) => saveDisplay({ key_size: e.target.value }).catch((err) => alert(`Could not save the key size: ${err.message}`)));
+$("theme").addEventListener("change", (e) => saveDisplay({ theme: e.target.value }).catch((err) => alert(`Could not change the look: ${err.message}`)));
+loadDisplay().catch(() => {});
 
 /** What the last port scan saw, so watching only redraws (and asks the assistant) on a change. */
 let lastPorts = null;

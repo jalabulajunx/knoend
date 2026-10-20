@@ -7,6 +7,7 @@
 
 #include "ble_keyboard.h"
 #include "board.h"
+#include "display.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
@@ -26,14 +27,29 @@
 #define CONFIRM_MS     3000
 #define HID_USAGE_1    0x1E // USB HID usage IDs for '1'..'9' are consecutive
 
-#define COLOR_BG        0x101418
-#define COLOR_KEY       0x2A3440
-#define COLOR_KEY_BLANK 0x181E25
-#define COLOR_PRESSED   0x3D7EFF
-#define COLOR_CONFIRM   0xC98A1B
-#define COLOR_TEXT      0xC0C8D0
-#define COLOR_ATTENTION 0x5A4512
-#define COLOR_ALERT     0x6B1C1C
+// The two themes (spec/protocol.md 3.6d). Dark: light text on dark keys, colour for the states.
+// Paper: an e-ink look, black on white, high contrast; states are shades of grey and borders.
+typedef struct {
+    uint32_t bg, key, key_blank, key_border, pressed, confirm, confirm_text;
+    uint32_t key_text, icon, bar_text, bar_text_highlighted, attention, alert, detail_text;
+    int border; // key outline, px
+} theme_t;
+
+static const theme_t DARK = {
+    .bg = 0x101418, .key = 0x2A3440, .key_blank = 0x181E25, .key_border = 0x2A3440,
+    .pressed = 0x3D7EFF, .confirm = 0xC98A1B, .confirm_text = 0xFFFFFF,
+    .key_text = 0xFFFFFF, .icon = 0xFFFFFF, .bar_text = 0xC0C8D0, .bar_text_highlighted = 0xFFFFFF,
+    .attention = 0x5A4512, .alert = 0x6B1C1C, .detail_text = 0xFFFFFF, .border = 0,
+};
+
+static const theme_t PAPER = {
+    .bg = 0xFFFFFF, .key = 0xFFFFFF, .key_blank = 0xF2F2F2, .key_border = 0x000000,
+    .pressed = 0xBDBDBD, .confirm = 0x000000, .confirm_text = 0xFFFFFF,
+    .key_text = 0x000000, .icon = 0x000000, .bar_text = 0x000000, .bar_text_highlighted = 0xFFFFFF,
+    .attention = 0x555555, .alert = 0x000000, .detail_text = 0x000000, .border = 2,
+};
+
+static const theme_t *theme = &DARK;
 
 static const char *TAG = "ui";
 
@@ -58,6 +74,17 @@ typedef struct {
 } sent_image_t;
 static sent_image_t images[IMAGE_SLOTS];
 static uint32_t image_clock;
+
+// A key's colours: normal, or waiting for its confirming second tap.
+static void paint_key(int index, bool confirming)
+{
+    const bool blank = layout.keys[index].send == UI_SEND_NONE;
+    lv_obj_set_style_bg_color(key_buttons[index], lv_color_hex(confirming ? theme->confirm : blank ? theme->key_blank : theme->key), 0);
+    lv_obj_set_style_border_width(key_buttons[index], blank ? 0 : theme->border, 0);
+    const uint32_t text = confirming ? theme->confirm_text : theme->key_text;
+    lv_obj_set_style_text_color(key_labels[index], lv_color_hex(text), 0);
+    lv_obj_set_style_img_recolor(key_icons[index], lv_color_hex(confirming ? theme->confirm_text : theme->icon), 0);
+}
 
 static const lv_img_dsc_t *sent_image(const char *name)
 {
@@ -105,20 +132,20 @@ static void update_status_locked(void)
         status_text[0] = '\0';
     }
     if (confirm_slot >= 0 && now >= confirm_expires_us) {
-        lv_obj_set_style_bg_color(key_buttons[confirm_slot], lv_color_hex(COLOR_KEY), 0);
+        paint_key(confirm_slot, false);
         confirm_slot = -1;
     }
 
-    uint32_t bar_color = COLOR_BG;
+    uint32_t bar_color = theme->bg;
     if (confirm_slot >= 0) {
         lv_label_set_text_fmt(status_label, "Tap again to confirm: %s",
                               layout.keys[confirm_slot].label);
-        bar_color = COLOR_ATTENTION;
+        bar_color = theme->attention;
     } else if (status_text[0] != '\0') {
         lv_label_set_text(status_label, status_text);
-        bar_color = status_level == UI_STATUS_ALERT       ? COLOR_ALERT
-                    : status_level == UI_STATUS_ATTENTION ? COLOR_ATTENTION
-                                                          : COLOR_BG;
+        bar_color = status_level == UI_STATUS_ALERT       ? theme->alert
+                    : status_level == UI_STATUS_ATTENTION ? theme->attention
+                                                          : theme->bg;
     } else {
         const char *link = ble_keyboard_connected() ? "Bluetooth connected"
                                                     : "Pair \"KnoEnd\" over Bluetooth";
@@ -131,6 +158,10 @@ static void update_status_locked(void)
         }
     }
     lv_obj_set_style_bg_color(status_bar, lv_color_hex(bar_color), 0);
+    const bool highlighted = bar_color != theme->bg;
+    const uint32_t bar_text = highlighted ? theme->bar_text_highlighted : theme->bar_text;
+    lv_obj_set_style_text_color(status_label, lv_color_hex(bar_text), 0);
+    lv_obj_set_style_text_color(pager_label, lv_color_hex(highlighted ? theme->bar_text_highlighted : theme->key_text), 0);
 }
 
 static void status_timer(lv_timer_t *timer)
@@ -167,7 +198,7 @@ static void turn_page(bool next)
         return;
     }
     if (confirm_slot >= 0) {
-        lv_obj_set_style_bg_color(key_buttons[confirm_slot], lv_color_hex(COLOR_KEY), 0);
+        paint_key(confirm_slot, false);
         confirm_slot = -1;
     }
     protocol_send_page(layout.id, next);
@@ -211,17 +242,17 @@ static void key_event(lv_event_t *event)
 
     if (key->confirm && confirm_slot != index) {
         if (confirm_slot >= 0) {
-            lv_obj_set_style_bg_color(key_buttons[confirm_slot], lv_color_hex(COLOR_KEY), 0);
+            paint_key(confirm_slot, false);
         }
         confirm_slot = index;
         confirm_expires_us = esp_timer_get_time() + CONFIRM_MS * 1000LL;
-        lv_obj_set_style_bg_color(key_buttons[index], lv_color_hex(COLOR_CONFIRM), 0);
+        paint_key(index, true);
         printf("KEY %d seq=%" PRIu32 " t=%" PRIu64 " confirm-pending\n", index + 1, tap_count,
                (uint64_t)(esp_timer_get_time() / 1000));
         fflush(stdout);
     } else {
         if (confirm_slot == index) {
-            lv_obj_set_style_bg_color(key_buttons[index], lv_color_hex(COLOR_KEY), 0);
+            paint_key(index, false);
             confirm_slot = -1;
         }
         act(index);
@@ -354,9 +385,9 @@ static void draw_keys_locked(void)
         const bool blank = key->send == UI_SEND_NONE;
         const bool big = key_w >= 140 && h >= 90;  // 1x1, 1x2, 2x2
         const bool small = key_w < 90 || h < 50;   // 4 columns or 4 rows
-        lv_obj_set_style_bg_color(key_buttons[i], lv_color_hex(blank ? COLOR_KEY_BLANK : COLOR_KEY), 0);
+        paint_key(i, confirm_slot == i);
         lv_label_set_text(key_labels[i], blank ? "" : key->label);
-        // A sent picture ("app:...", in colour) or a Material icon (white).
+        // A sent picture ("app:...", as sent) or a Material icon (in the theme's colour).
         const bool sent = strchr(key->icon, ':') != NULL;
         const lv_img_dsc_t *icon = blank || detail ? NULL : sent ? sent_image(key->icon) : icons_find(key->icon);
         lv_obj_set_style_img_recolor_opa(key_icons[i], sent ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
@@ -444,8 +475,9 @@ void ui_start(void)
     }
 
     const board_info_t *board = board_info();
+    theme = display_settings()->theme == DISPLAY_THEME_PAPER ? &PAPER : &DARK;
     lv_obj_t *screen = lv_scr_act();
-    lv_obj_set_style_bg_color(screen, lv_color_hex(COLOR_BG), 0);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(theme->bg), 0);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     // Keys, the status bar and the detail panel pass swipes up to the screen (LVGL's default).
     lv_obj_add_event_cb(screen, gesture_event, LV_EVENT_GESTURE, NULL);
@@ -456,8 +488,10 @@ void ui_start(void)
     // Every key the largest grid needs; draw_keys_locked places and sizes them per layout.
     for (int i = 0; i < UI_KEYS; i++) {
         lv_obj_t *button = lv_btn_create(screen);
-        lv_obj_set_style_bg_color(button, lv_color_hex(COLOR_PRESSED), LV_STATE_PRESSED);
+        lv_obj_set_style_bg_color(button, lv_color_hex(theme->pressed), LV_STATE_PRESSED);
         lv_obj_set_style_radius(button, 8, 0);
+        lv_obj_set_style_shadow_width(button, 0, 0);
+        lv_obj_set_style_border_color(button, lv_color_hex(theme->key_border), 0);
         lv_obj_add_event_cb(button, key_event, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t *label = lv_label_create(button);
@@ -465,7 +499,7 @@ void ui_start(void)
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(label);
         lv_obj_t *icon = lv_img_create(button);
-        lv_obj_set_style_img_recolor(icon, lv_color_white(), 0);
+        lv_obj_set_style_img_recolor(icon, lv_color_hex(theme->icon), 0);
         lv_obj_set_style_img_recolor_opa(icon, LV_OPA_COVER, 0);
         lv_obj_add_flag(icon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE);
@@ -477,7 +511,9 @@ void ui_start(void)
     detail_box = lv_obj_create(screen);
     lv_obj_remove_style_all(detail_box);
     lv_obj_set_style_bg_opa(detail_box, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(detail_box, lv_color_hex(COLOR_KEY_BLANK), 0);
+    lv_obj_set_style_bg_color(detail_box, lv_color_hex(theme->key_blank), 0);
+    lv_obj_set_style_border_width(detail_box, theme->border, 0);
+    lv_obj_set_style_border_color(detail_box, lv_color_hex(theme->key_border), 0);
     lv_obj_set_style_radius(detail_box, 8, 0);
     lv_obj_set_style_pad_all(detail_box, 6, 0);
     lv_obj_set_scroll_dir(detail_box, LV_DIR_VER);
@@ -487,7 +523,7 @@ void ui_start(void)
     lv_obj_set_width(detail_label, lv_pct(100));
     lv_label_set_long_mode(detail_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(detail_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(detail_label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(detail_label, lv_color_hex(theme->detail_text), 0);
     lv_obj_align(detail_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
     status_bar = lv_obj_create(screen);
@@ -499,7 +535,7 @@ void ui_start(void)
     status_label = lv_label_create(status_bar);
     lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
     lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(status_label, lv_color_hex(COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(status_label, lv_color_hex(theme->bar_text), 0);
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
     lv_obj_align(status_label, LV_ALIGN_LEFT_MID, GRID_GAP, 0);
 
@@ -507,14 +543,14 @@ void ui_start(void)
     lv_obj_remove_style_all(pager);
     lv_obj_set_size(pager, PAGER_WIDTH, STATUS_HEIGHT);
     lv_obj_align(pager, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_style_bg_color(pager, lv_color_hex(COLOR_PRESSED), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(pager, lv_color_hex(theme->pressed), LV_STATE_PRESSED);
     lv_obj_set_style_bg_opa(pager, LV_OPA_COVER, LV_STATE_PRESSED);
     lv_obj_add_flag(pager, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(pager, pager_event, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(pager, LV_OBJ_FLAG_HIDDEN);
     pager_label = lv_label_create(pager);
     lv_obj_set_style_text_font(pager_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(pager_label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(pager_label, lv_color_hex(theme->key_text), 0);
     lv_obj_center(pager_label);
 
     draw_keys_locked();

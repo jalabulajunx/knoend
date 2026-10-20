@@ -7,6 +7,9 @@
 
 #include "board.h"
 #include "cJSON.h"
+#include "display.h"
+#include "esp_system.h"
+#include "esp_timer.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -28,11 +31,11 @@ static const char *TAG = "protocol";
 // Only what this firmware actually handles is advertised.
 static const char *const incoming_types[] = {
     "identity", "layout", "status", "pair", "wifi",
-    "wifi.scan", "ping", "image",
+    "wifi.scan", "ping", "image", "display",
 };
 static const char *const outgoing_types[] = {
     "identity", "key", "page", "layout.ack", "pair.ack",
-    "wifi.ack", "wifi.networks", "ping", "error", "image.ack",
+    "wifi.ack", "wifi.networks", "ping", "error", "image.ack", "display.ack",
 };
 static const char *const transports[] = { "ble-hid", "serial", "wifi" };
 
@@ -149,6 +152,10 @@ static void send_identity(int64_t re, transport_t to)
     cJSON_AddNumberToObject(grid, "cols", max_cols);
     cJSON_AddNumberToObject(grid, "rows", max_rows);
     cJSON_AddBoolToObject(b, "statusBar", true);
+    const display_settings_t *look = display_settings();
+    cJSON *display = cJSON_AddObjectToObject(b, "display");
+    cJSON_AddStringToObject(display, "theme", display_theme_name(look->theme));
+    cJSON_AddNumberToObject(display, "turn", look->turn);
 
     cJSON *features = cJSON_AddObjectToObject(body, "features");
     cJSON_AddBoolToObject(features, "speaker", board->has_speaker);
@@ -591,6 +598,56 @@ static bool message_name(const char *type, transport_t transport)
     return true;
 }
 
+static void restart_now(void *arg)
+{
+    esp_restart();
+}
+
+// The person's theme and turn (spec/protocol.md 3.6d): stored, answered, then a restart applies
+// them (the UI is built once, at start-up).
+static void handle_display(const cJSON *body, int64_t re, transport_t transport)
+{
+    display_settings_t wanted = *display_settings();
+    const cJSON *theme = cJSON_GetObjectItemCaseSensitive(body, "theme");
+    const cJSON *turn = cJSON_GetObjectItemCaseSensitive(body, "turn");
+    if (theme == NULL && turn == NULL) {
+        send_error(re, "bad-packet", "theme or turn is required", transport);
+        return;
+    }
+    if (theme != NULL && !display_theme_parse(cJSON_GetStringValue(theme), &wanted.theme)) {
+        send_error(re, "bad-packet", "theme must be dark or paper", transport);
+        return;
+    }
+    if (turn != NULL && !get_int(body, "turn", 0, 3, &wanted.turn)) {
+        send_error(re, "bad-packet", "turn must be 0-3", transport);
+        return;
+    }
+    if (wanted.turn != 0) {
+        send_error(re, "unsupported", "this firmware draws landscape only", transport);
+        return;
+    }
+    const display_settings_t *now = display_settings();
+    const bool changed = wanted.theme != now->theme || wanted.turn != now->turn;
+    if (changed && display_settings_store(&wanted) != ESP_OK) {
+        send_error(re, "busy", "could not store the display settings", transport);
+        return;
+    }
+    cJSON *ack = cJSON_CreateObject();
+    cJSON_AddStringToObject(ack, "theme", display_theme_name(wanted.theme));
+    cJSON_AddNumberToObject(ack, "turn", wanted.turn);
+    cJSON_AddBoolToObject(ack, "restarting", changed);
+    send_packet("display.ack", ack, re, transport);
+    if (changed) {
+        ESP_LOGI(TAG, "display: %s, turn %d; restarting", display_theme_name(wanted.theme), wanted.turn);
+        // Time for the answer to leave before the restart.
+        static esp_timer_handle_t timer;
+        const esp_timer_create_args_t args = { .callback = restart_now, .name = "display-restart" };
+        if (timer == NULL && esp_timer_create(&args, &timer) == ESP_OK) {
+            esp_timer_start_once(timer, 500 * 1000);
+        }
+    }
+}
+
 static void handle_line(const char *line, transport_t transport)
 {
     cJSON *packet = cJSON_Parse(line);
@@ -623,6 +680,8 @@ static void handle_line(const char *line, transport_t transport)
         handle_wifi(body, re, transport);
     } else if (strcmp(name_of(type->valuestring), "wifi.scan") == 0) {
         handle_wifi_scan(re, transport);
+    } else if (strcmp(name_of(type->valuestring), "display") == 0) {
+        handle_display(body, re, transport);
     }
     // Anything else is ignored, as the spec requires for unknown types.
     cJSON_Delete(packet);

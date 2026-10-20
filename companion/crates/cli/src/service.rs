@@ -34,6 +34,9 @@ pub struct BoardStatus {
     pub address: String,
     /// The largest grid the board draws.
     pub grid: Grid,
+    /// What the identity says about its look (`board.display`); None on firmware without
+    /// `knoend.display`.
+    pub display: Option<Value>,
 }
 
 /// Which page of the layout on the board is shown: the companion turns pages (spec/protocol.md
@@ -160,6 +163,12 @@ impl Shared {
 
     /// Tells the service loop the key size changed (it is saved already); the next connection
     /// reads it from the file anyway.
+    pub fn look_changed(&self, display: crate::display::Display) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.try_send(Event::Look(display));
+        }
+    }
+
     pub fn key_size_changed(&self, key_size: crate::display::KeySize) {
         if let Some(inbox) = self.inbox.get() {
             let _ = inbox.try_send(Event::KeySize(key_size));
@@ -260,6 +269,8 @@ enum Event {
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
+    /// The person chose another theme or turn in the web app (already saved).
+    Look(crate::display::Display),
     /// The person chose another key size in the web app (already saved).
     KeySize(crate::display::KeySize),
     /// From the web app's editor, with where to send the answer.
@@ -376,7 +387,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
         let mut sent_images: HashSet<String> = HashSet::new();
-        let mut paging = Paging::new(board.grid, crate::display::load().key_size);
+        let wanted = crate::display::load();
+        let mut paging = Paging::new(board.grid, wanted.key_size);
+        PAPER.store(board.display.as_ref().is_some_and(|d| d["theme"] == "paper"), std::sync::atomic::Ordering::Relaxed);
+        send_look(&mut sender, &board, &wanted).await;
         if focus.is_none() {
             show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
@@ -517,6 +531,9 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE && shared.editing() => {
                     // Edit mode: a tap selects the key in the web app; nothing runs.
                     shared.emit("edit.tap", json!({"page": paging.page, "slot": packet.body["key"]}));
+                }
+                Event::Look(wanted) => {
+                    send_look(&mut sender, &board, &wanted).await;
                 }
                 Event::KeySize(key_size) => {
                     paging.max = crate::display::shown_grid(paging.board, key_size);
@@ -843,6 +860,7 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
         firmware: identity.body["firmware"].as_str().unwrap_or("?").to_string(),
         address: board.address.to_string(),
         grid: identity_grid(&identity.body),
+        display: identity.body["board"].get("display").cloned(),
     };
     tokio::spawn(async move {
         loop {
@@ -1271,11 +1289,37 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
     }
 }
 
+/// Whether the connected board uses the Paper theme: pictures are then sent in grey.
+static PAPER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Sends the person's theme and turn when the board shows something else; the board stores them
+/// and restarts (spec/protocol.md 3.6d), and the service connects again.
+async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &crate::display::Display) {
+    let identity = json!({"board": {"display": board.display}});
+    match wanted.shown_by(&identity) {
+        Some(true) => {}
+        Some(false) => {
+            println!("Display: asking the board for {}", wanted.look());
+            if let Err(e) = sender.send("knoend.display", wanted.look()).await {
+                println!("  could not send the display settings: {e}");
+            }
+        }
+        None if *wanted != crate::display::Display { key_size: wanted.key_size, ..Default::default() } => {
+            println!("Display: this board's firmware ({}) has one look only; update its firmware for themes and turning", board.firmware);
+        }
+        None => {}
+    }
+}
+
 /// Sends a 32x32 RGBA picture to the board in slices that fit a packet. False if the board
 /// refused the first slice (a board without picture support ignores the rest).
 async fn send_image(sender: &mut wifi::WifiSender, name: &str, rgba: &[u8]) -> bool {
     use base64::Engine;
-    let pixels = crate::launcher::board_pixels(rgba);
+    let mut rgba = rgba.to_vec();
+    if PAPER.load(std::sync::atomic::Ordering::Relaxed) {
+        crate::display::to_grey(&mut rgba);
+    }
+    let pixels = crate::launcher::board_pixels(&rgba);
     for (i, chunk) in pixels.chunks(2048).enumerate() {
         let body = json!({"name": name, "w": 32, "h": 32, "offset": i * 2048, "total": pixels.len(),
                           "data": base64::engine::general_purpose::STANDARD.encode(chunk)});
@@ -1650,6 +1694,8 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                          sender: &mut wifi::WifiSender, shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
         "knoend.layout.ack" if packet.body["ok"] != true => println!("  board rejected layout: {}", packet.body),
+        "knoend.display.ack" => println!("  board display: {}", packet.body),
+        "knoend.error" => println!("  board error: {}", packet.body),
         "knoend.key" => {
             let layout = packet.body["layout"].as_str().unwrap_or("");
             let key = packet.body["key"].as_u64().unwrap_or(0);

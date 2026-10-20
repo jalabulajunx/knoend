@@ -78,6 +78,8 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `knoend.wifi.ack` | B→C | Credentials stored; the board joins the network |
 | `knoend.wifi.scan` | C→B | Serial only: list the Wi-Fi networks the board can hear (empty body) |
 | `knoend.wifi.networks` | B→C | Up to 20 networks, strongest first: `ssid`, `rssi` (dBm), `channel`, `secured`. The ESP32-S3 hears 2.4 GHz only |
+| `knoend.display` | C→B | How the board looks: its theme and which way it sits (section 3.6d) |
+| `knoend.display.ack` | B→C | Stored; says whether the board restarts to apply it |
 | `knoend.ping` | both | Liveness check; answer with `knoend.ping` and `re` set |
 | `knoend.error` | both | A packet could not be handled |
 
@@ -91,7 +93,8 @@ arrives.
     "deviceId": "a0b1c2d3e4f5", "deviceName": "KnoEnd", "deviceType": "board",
     "protocolVersion": 0, "firmware": "a1ea8a8",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
-               "grid": { "cols": 4, "rows": 4 }, "statusBar": true },
+               "grid": { "cols": 4, "rows": 4 }, "statusBar": true,
+               "display": { "theme": "dark", "turn": 0 } },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
     "incoming": ["knoend.layout", "knoend.status", "knoend.ping"],
@@ -100,6 +103,10 @@ arrives.
 
 - `board.grid`: the largest grid the board draws legibly (cols and rows 1-4), from its screen size.
   The companion splits a page with a bigger grid onto pages of this size.
+- `board.width`, `board.height` and `board.grid` are as the board sits now: turned to portrait, the
+  ONX is 240x320 and its largest grid 3x4.
+- `board.display`: the theme and turn the board uses now (section 3.6d). Absent on firmware older
+  than this message, which is always `dark`, turn 0.
 - `deviceId`: stable per device (boards: base MAC, lowercase hex, no separators).
 - `deviceType`: `board`, `companion` or `sim` (the simulator identifies as `sim` but otherwise
   behaves exactly like a board).
@@ -218,6 +225,32 @@ companion sends a picture again on each new connection, before the layout that u
 - Nothing focused (empty desktop): the launcher (`system.launcher`): up to 9 apps and sites the
   person used most and most recently, with their own icons; a tap opens one. Usage (seconds in front
   per app and site) is kept on the computer only.
+
+### 3.6d `knoend.display` / `knoend.display.ack`
+
+How the board looks, chosen by the person at setup and changeable from the web app. The board
+keeps both values with its pairing and Wi-Fi settings, so it starts that way before any companion
+connects.
+
+```json
+{ "id": 12, "type": "knoend.display", "body": { "theme": "paper", "turn": 1 } }
+{ "id": 4, "re": 12, "type": "knoend.display.ack", "body": { "theme": "paper", "turn": 1, "restarting": true } }
+```
+
+- `theme`: `dark` (the usual: light text on dark keys, colour for pressed, confirm and the status
+  levels) or `paper` (an e-ink look: black on white, high contrast; pressed and confirm keys are
+  inverted, `attention` and `alert` are a black bar with white text, and Material icons are black).
+  Pictures the companion sends (3.6b) are drawn as sent; in `paper` the companion sends them in
+  grey.
+- `turn`: quarter turns clockwise from the board's usual landscape (its definition's
+  `display.rotation`): 0 landscape, 1 portrait, 2 landscape upside down, 3 portrait upside down.
+  Touch follows the turn.
+- Either field may be left out to keep its current value.
+- The board stores the values, answers, and restarts when something changed (`restarting: true`);
+  the companion then connects again and reads the new size and grid from the identity. Nothing
+  changed: `restarting: false`, no restart.
+- The companion sends `knoend.display` after the identities when the person's choice differs from
+  the identity's `board.display`, and when the person changes it.
 
 ### 3.7 `knoend.error`
 

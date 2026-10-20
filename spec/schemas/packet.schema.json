@@ -262,6 +262,38 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knoend.display"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/display"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knoend.display.ack"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/displayAck"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -341,6 +373,30 @@
             },
             "statusBar": {
               "type": "boolean"
+            },
+            "display": {
+              "description": "The theme and turn the board uses now; absent on older firmware (dark, turn 0).",
+              "type": "object",
+              "required": [
+                "theme",
+                "turn"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "theme": {
+                  "enum": [
+                    "dark",
+                    "paper"
+                  ],
+                  "description": "dark: light on dark keys, in colour. paper: an e-ink look, black on white."
+                },
+                "turn": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3,
+                  "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
+                }
+              }
             }
           }
         },
@@ -871,6 +927,54 @@
           ]
         }
       }
+    },
+    "display": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "theme": {
+          "enum": [
+            "dark",
+            "paper"
+          ],
+          "description": "dark: light on dark keys, in colour. paper: an e-ink look, black on white."
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
+        }
+      }
+    },
+    "displayAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "theme": {
+          "enum": [
+            "dark",
+            "paper"
+          ],
+          "description": "dark: light on dark keys, in colour. paper: an e-ink look, black on white."
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
+        },
+        "restarting": {
+          "type": "boolean",
+          "description": "True when something changed and the board restarts to apply it."
+        }
+      },
+      "required": [
+        "theme",
+        "turn",
+        "restarting"
+      ]
     }
   }
 }

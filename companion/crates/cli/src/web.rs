@@ -373,22 +373,52 @@ async fn ai_settings() -> ApiResult {
 }
 
 /// How the keys look: the key size (and the grid it allows) and the choices.
-async fn display_settings() -> ApiResult {
+async fn display_settings(State(app): State<App>) -> ApiResult {
     let display = crate::display::load();
-    Ok(Json(json!({"key_size": display.key_size, "choices": ["big", "medium", "small"]})))
+    let board = app_board(&app).await;
+    Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn,
+                   // False when the board's firmware has one look only (or no board is connected).
+                   "board_can_change_look": board.is_some_and(|b| b.display.is_some())})))
 }
 
+async fn app_board(app: &App) -> Option<crate::service::BoardStatus> {
+    app.shared.status.read().await.board.clone()
+}
+
+/// Any of the three; what is left out stays as it is.
 #[derive(Deserialize)]
 struct DisplayRequest {
-    key_size: crate::display::KeySize,
+    key_size: Option<crate::display::KeySize>,
+    theme: Option<crate::display::Theme>,
+    turn: Option<u8>,
 }
 
-/// Saves the key size and shows the board's keys at the new size at once.
+/// Saves the choice and applies it at once: the key size here, the theme and turn on the board
+/// (which restarts for them).
 async fn save_display(State(app): State<App>, Json(request): Json<DisplayRequest>) -> ApiResult {
-    let display = crate::display::Display { key_size: request.key_size };
+    let mut display = crate::display::load();
+    let look = (display.theme, display.turn);
+    if let Some(turn) = request.turn {
+        if turn > 3 {
+            return Err(fail(StatusCode::BAD_REQUEST, "turn must be 0-3"));
+        }
+        display.turn = turn;
+    }
+    if let Some(theme) = request.theme {
+        display.theme = theme;
+    }
+    let key_size = request.key_size.filter(|k| *k != display.key_size);
+    if let Some(k) = key_size {
+        display.key_size = k;
+    }
     crate::display::save(&display).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    app.shared.key_size_changed(display.key_size);
-    Ok(Json(json!({"key_size": display.key_size})))
+    if let Some(k) = key_size {
+        app.shared.key_size_changed(k);
+    }
+    if look != (display.theme, display.turn) {
+        app.shared.look_changed(display.clone());
+    }
+    Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn})))
 }
 
 /// The AI tools on this computer (Claude Code, Antigravity, Codex), looked up now.
