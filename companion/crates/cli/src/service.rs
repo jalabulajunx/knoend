@@ -1821,13 +1821,32 @@ async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catal
     }
 }
 
+/// The panel while the person answers on the computer: the questions, short, then what happens.
+/// The board's panel takes 240 characters and its built-in font is ASCII, so each question gets
+/// an equal share, cut with "...".
+fn answering_text(app: &str, questions: &[crate::agent_hooks::Question]) -> String {
+    const PANEL: usize = 240;
+    let head = format!("Answering in {app}:");
+    let tail = "Clears when Claude has every answer. Tap below to answer here.";
+    let room = PANEL.saturating_sub(head.len() + tail.len() + 2);
+    let each = (room / questions.len().max(1)).saturating_sub(4).max(12);
+    let ascii = |text: &str| -> String { text.chars().map(|c| if c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).collect() };
+    let mut lines = vec![head];
+    for (i, q) in questions.iter().enumerate() {
+        let text = ascii(q.question.trim());
+        let short = if text.len() > each { format!("{}...", text[..each - 3].trim_end()) } else { text };
+        lines.push(format!("{}. {short}", i + 1));
+    }
+    lines.push(tail.to_string());
+    let mut text = lines.join("\n");
+    text.truncate(PANEL);
+    text
+}
+
 /// The board while the person answers on the computer: what is happening, and "Answer here".
 async fn show_answering(sender: &mut wifi::WifiSender, approval: &Approval, focus: &Focus, shown: &mut Option<String>, shared: &Shared) {
     let app = focus.display_name().to_string();
-    let left = approval.questions.len().saturating_sub(approval.step);
-    let detail = format!("You are answering in {app}. The board cannot see each answer there, only when Claude has them all: \
-                          then it clears by itself.\n{left} question{} to go. To answer here instead, tap Answer here.",
-                         if left == 1 { "" } else { "s" });
+    let detail = answering_text(&app, &approval.questions);
     let keys = vec![LayoutKey { key: ANSWER_HERE_SLOT, label: "Answer here".into(), speak: Some("Answer the questions here".into()),
                                 icon: Some("reply".into()), confirm: false, send: Send::Event(true) }];
     let title = format!("Answering in {app}");
@@ -2163,6 +2182,17 @@ mod tests {
         assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 4, "rows": 2}}})), Grid { cols: 4, rows: 2 });
         assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 9, "rows": 2}}})), Grid::DEFAULT);
         assert_eq!(identity_grid(&json!({})), Grid::DEFAULT);
+    }
+
+    #[test]
+    fn the_answering_panel_lists_the_questions_within_240_ascii_characters() {
+        let q = |text: &str| crate::agent_hooks::Question { question: text.into(), header: String::new(), options: Vec::new(), multi: false };
+        let long = "What should the default key size be on a small 2.8 inch screen for people who find it hard to read? ".repeat(2);
+        let text = answering_text("Claude", &[q("Which way round?"), q(&long), q("Dark or paper — and why?")]);
+        assert!(text.len() <= 240 && text.is_ascii(), "{text}");
+        assert!(text.starts_with("Answering in Claude:\n1. Which way round?\n2. What should"));
+        assert!(text.contains("...\n3. Dark or paper"));
+        assert!(text.ends_with("Tap below to answer here."));
     }
 
     #[test]

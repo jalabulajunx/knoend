@@ -380,10 +380,15 @@ static void draw_keys_locked(void)
     // the text takes the rows between them, scrollable by swiping.
     const int compact_h = (grid_h - GRID_GAP * 4) / 3 * 2 / 3;
     const int detail_h = grid_h - 2 * compact_h - GRID_GAP * 4;
+    // A top row with no keys is left out: the text takes its place too (one panel, keys below).
+    bool top_empty = detail;
+    for (int i = 0; detail && i < cols; i++) {
+        top_empty = top_empty && layout.keys[i].send == UI_SEND_NONE;
+    }
     if (detail) {
         lv_label_set_text(detail_label, layout.detail);
-        lv_obj_set_pos(detail_box, GRID_GAP, GRID_GAP + compact_h + GRID_GAP);
-        lv_obj_set_size(detail_box, grid_w - 2 * GRID_GAP, detail_h);
+        lv_obj_set_pos(detail_box, GRID_GAP, top_empty ? GRID_GAP : GRID_GAP + compact_h + GRID_GAP);
+        lv_obj_set_size(detail_box, grid_w - 2 * GRID_GAP, top_empty ? detail_h + compact_h + GRID_GAP : detail_h);
         lv_obj_scroll_to_y(detail_box, 0, LV_ANIM_OFF);
         lv_obj_clear_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
     } else {
@@ -391,8 +396,10 @@ static void draw_keys_locked(void)
     }
     for (int i = 0; i < UI_KEYS; i++) {
         const int row = i / cols;
-        // Keys past the grid, and the middle rows under a detail, are hidden.
-        if (i >= cols * rows || (detail && row > 0 && row < rows - 1)) {
+        // Keys past the grid, the middle rows under a detail, and empty slots beside a detail are
+        // hidden (they read as blank tiles around the text).
+        if (i >= cols * rows || (detail && row > 0 && row < rows - 1)
+            || (detail && layout.keys[i].send == UI_SEND_NONE)) {
             lv_obj_add_flag(key_buttons[i], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
