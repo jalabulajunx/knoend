@@ -3,9 +3,11 @@
 #include <string.h>
 
 #include "esp_flash.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_partition.h"
 #include "esp_rom_crc.h"
+#include "nvs.h"
 
 #define FONTS_SUBTYPE 0x41
 #define FONT_MAGIC    0x544E464B // "KFNT"
@@ -25,9 +27,8 @@ static const esp_partition_t *partition;
 static size_t slot_size;
 
 static struct {
-    const uint8_t *data;
-    esp_partition_mmap_handle_t map;
-    bool mapped;
+    uint8_t *data; // a copy in PSRAM (not read in place from flash: a font's stray offset must not
+                   // fault the flash mapping, and flash writes must not stop drawing)
     header_t header;
     size_t received; // while receiving
     bool receiving;
@@ -45,14 +46,28 @@ size_t fonts_slot_capacity(void)
 
 static void unmap(font_slot_t slot)
 {
-    if (slots[slot].mapped) {
-        esp_partition_munmap(slots[slot].map);
-        slots[slot].mapped = false;
-    }
+    heap_caps_free(slots[slot].data);
     slots[slot].data = NULL;
 }
 
-// Maps the slot's font if its header and CRC-32 are right.
+// Hides the kerning tables (GPOS, kern) from the renderer: tiny_ttf always reads them, and a font
+// whose GPOS points past its end crashed the board (WDXL Lubrifont SC, 2026-10-20). Kerning is
+// invisible at key-label sizes. Only the table's name in the directory changes.
+static void hide_kerning(uint8_t *font, size_t len)
+{
+    if (len < 12) {
+        return;
+    }
+    const unsigned tables = (unsigned)font[4] << 8 | font[5];
+    for (unsigned i = 0; i < tables && 12 + 16 * (i + 1) <= len; i++) {
+        uint8_t *tag = font + 12 + 16 * i;
+        if (memcmp(tag, "GPOS", 4) == 0 || memcmp(tag, "kern", 4) == 0) {
+            tag[0] = 'x';
+        }
+    }
+}
+
+// Reads the slot's font into PSRAM if its header and CRC-32 are right.
 static void map(font_slot_t slot)
 {
     unmap(slot);
@@ -63,21 +78,38 @@ static void map(font_slot_t slot)
         return;
     }
     header.name[FONT_NAME_BYTES - 1] = '\0';
-    const void *data;
-    if (esp_partition_mmap(partition, slot_offset(slot) + SECTOR, header.len, ESP_PARTITION_MMAP_DATA, &data,
-                           &slots[slot].map) != ESP_OK) {
-        ESP_LOGW(TAG, "%s: could not map the font", fonts_slot_name(slot));
+    uint8_t *data = heap_caps_malloc(header.len, MALLOC_CAP_SPIRAM);
+    if (data == NULL || esp_partition_read(partition, slot_offset(slot) + SECTOR, data, header.len) != ESP_OK) {
+        ESP_LOGW(TAG, "%s: could not read the font", fonts_slot_name(slot));
+        heap_caps_free(data);
         return;
     }
-    slots[slot].mapped = true;
     if (esp_rom_crc32_le(0, data, header.len) != header.crc) {
         ESP_LOGW(TAG, "%s: stored font is damaged; ignored", fonts_slot_name(slot));
-        unmap(slot);
+        heap_caps_free(data);
         return;
     }
+    hide_kerning(data, header.len);
     slots[slot].data = data;
     slots[slot].header = header;
     ESP_LOGI(TAG, "%s: %s, %u bytes", fonts_slot_name(slot), header.name, (unsigned)header.len);
+}
+
+#define NVS_NAMESPACE "openpager" // storage name kept from before the rename
+
+// A font that crashed the board must not crash it at every start: "font_trying" is set while the
+// fonts are first used after a start, and cleared once they have drawn (fonts_settled). Found set
+// at start, the stored fonts are dropped and their names kept in "font_refused" for the companion.
+static char refused[2 * FONT_NAME_BYTES];
+
+static void set_trying(uint8_t value)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u8(nvs, "font_trying", value);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+    }
 }
 
 void fonts_init(void)
@@ -90,6 +122,59 @@ void fonts_init(void)
     slot_size = (partition->size / FONT_SLOTS) & ~(size_t)(SECTOR - 1);
     for (int slot = 0; slot < FONT_SLOTS; slot++) {
         map(slot);
+    }
+    nvs_handle_t nvs;
+    uint8_t trying = 0;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        size_t size = sizeof(refused);
+        nvs_get_u8(nvs, "font_trying", &trying);
+        if (trying) {
+            refused[0] = '\0';
+            for (int slot = 0; slot < FONT_SLOTS; slot++) {
+                if (slots[slot].data != NULL) {
+                    if (refused[0] != '\0') {
+                        strlcat(refused, ", ", sizeof(refused));
+                    }
+                    strlcat(refused, slots[slot].header.name, sizeof(refused));
+                    fonts_clear(slot);
+                }
+            }
+            ESP_LOGW(TAG, "the last start with these fonts did not finish; dropped: %s", refused);
+            nvs_set_str(nvs, "font_refused", refused);
+            nvs_set_u8(nvs, "font_trying", 0);
+            nvs_commit(nvs);
+        } else if (nvs_get_str(nvs, "font_refused", refused, &size) != ESP_OK) {
+            refused[0] = '\0';
+        }
+        nvs_close(nvs);
+    }
+    if (!trying && (slots[FONT_SLOT_KEYS].data != NULL || slots[FONT_SLOT_START].data != NULL)) {
+        set_trying(1);
+    }
+}
+
+void fonts_settled(void)
+{
+    set_trying(0);
+}
+
+const char *fonts_refused(void)
+{
+    return refused;
+}
+
+// A font the companion sends anew is no longer refused.
+static void forget_refused(void)
+{
+    if (refused[0] == '\0') {
+        return;
+    }
+    refused[0] = '\0';
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_erase_key(nvs, "font_refused");
+        nvs_commit(nvs);
+        nvs_close(nvs);
     }
 }
 
@@ -170,6 +255,12 @@ esp_err_t fonts_finish(font_slot_t slot, uint32_t crc)
         return err;
     }
     map(slot);
+    if (slots[slot].data != NULL) {
+        forget_refused();
+        if (slot == FONT_SLOT_KEYS) {
+            set_trying(1); // drawn at once, until it has (fonts_settled); the start font draws at the next start
+        }
+    }
     return slots[slot].data != NULL ? ESP_OK : ESP_ERR_INVALID_CRC;
 }
 

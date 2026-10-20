@@ -489,6 +489,10 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "refused": {
+                  "type": "string",
+                  "description": "Fonts dropped after a start the board did not get through with them."
                 }
               },
               "additionalProperties": false

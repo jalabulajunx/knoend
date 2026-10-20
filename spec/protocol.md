@@ -283,6 +283,10 @@ font lacks is drawn in the built-in font.
   the CRC matched and the font is in use), or at the first slice it cannot take (`ok` false and
   `error`). Until then the slot holds no font.
 - `"clear": true` empties the slot: the built-in font again. The answer has no `name`.
+- A board that crashes while starting with its stored fonts drops them at the next start and
+  names them in `board.fonts.refused`; the companion does not send a refused font again by itself.
+  The board hides a font's kerning tables (`GPOS`, `kern`) from its renderer: a font whose kerning
+  points past its end crashed it.
 - The companion sends a font after the identities when the person's choice differs from
   `board.fonts`, and when the person changes it.
 

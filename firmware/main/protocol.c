@@ -158,6 +158,9 @@ static void send_identity(int64_t re, transport_t to)
     // The fonts the person chose that this board holds (spec/protocol.md 3.6e).
     cJSON *fonts = cJSON_AddObjectToObject(b, "fonts");
     cJSON_AddNumberToObject(fonts, "capacity", fonts_slot_capacity());
+    if (fonts_refused()[0] != '\0') {
+        cJSON_AddStringToObject(fonts, "refused", fonts_refused());
+    }
     for (int slot = 0; slot < FONT_SLOTS; slot++) {
         const char *font_name;
         uint32_t crc;

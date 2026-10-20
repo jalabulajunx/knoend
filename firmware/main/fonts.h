@@ -34,3 +34,9 @@ esp_err_t fonts_finish(font_slot_t slot, uint32_t crc);
 
 // Empties the slot (back to the built-in font).
 esp_err_t fonts_clear(font_slot_t slot);
+
+// The fonts have drawn since they were last loaded: a crash from now on is not theirs.
+void fonts_settled(void);
+
+// Names of fonts dropped because the board did not get through a start with them ("" if none).
+const char *fonts_refused(void);

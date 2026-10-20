@@ -560,6 +560,11 @@ void ui_fonts_release(void)
     lvgl_port_unlock();
 }
 
+static void settled(lv_timer_t *timer)
+{
+    fonts_settled();
+}
+
 void ui_fonts_reload(void)
 {
     if (!lvgl_port_lock(1000)) {
@@ -569,6 +574,9 @@ void ui_fonts_reload(void)
     load_key_font_locked();
     draw_keys_locked();
     lvgl_port_unlock();
+    // Drawn once (LVGL draws in its own task, a moment later): then it is kept.
+    lv_timer_t *settle = lv_timer_create(settled, 2000, NULL);
+    lv_timer_set_repeat_count(settle, 1);
 }
 
 // The name shown for a moment at start-up, in the start-up font the person chose (else Montserrat).
@@ -578,6 +586,7 @@ static lv_font_t *splash_font;
 
 static void splash_done(lv_timer_t *timer)
 {
+    fonts_settled(); // the chosen fonts have drawn: keep them
     lv_obj_del(splash);
     splash = NULL;
     if (splash_font != NULL) {

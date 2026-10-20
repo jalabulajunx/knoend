@@ -168,6 +168,13 @@ C3, C6) are not supported.
   are hard to read on keys at 12-20 px: suggest them for the start-up name, plain ones
   (Atkinson Hyperlegible, Lexend) for keys. Fonts need firmware from 2026-10-20 on, flashed with
   the new partition table (any web-app install writes it; no erase needed).
+- **The board restarts over and over after a font was chosen.** Seen 2026-10-20 with WDXL Lubrifont
+  SC for keys: its kerning table points past the end of the font, and the renderer crashed reading
+  it at every start (serial log: "Cache disabled but cached memory region accessed", backtrace in
+  stb_truetype `GetGlyphKernAdvance`). Fixed in firmware after v0.1.1-110: kerning tables are hidden
+  from the renderer, fonts are read from a copy in PSRAM, and a font the board did not get through
+  a start with is dropped at the next start (`board.fonts.refused`; the service then does not send
+  it again and says so). With firmware v0.1.1-110 itself: install the latest firmware (no erase).
 - **"Could not get the font" or "could not reach Google Fonts".** The computer is offline or
   Google Fonts is blocked (some offices and schools); the name may also be misspelt: pick it from
   the list.

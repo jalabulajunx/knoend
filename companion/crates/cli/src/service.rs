@@ -1383,9 +1383,15 @@ fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &m
         }
         return;
     };
+    let refused = held["refused"].as_str().unwrap_or_default();
     for (slot, family) in [("keys", wanted.key_font.clone()), ("start", wanted.start_font.clone())] {
         let holds = held[slot]["name"].as_str().unwrap_or_default();
         if holds == family {
+            continue;
+        }
+        // The board dropped it after a start it did not get through: not sent again by itself.
+        if !family.is_empty() && refused.split(", ").any(|r| r == family) {
+            say!("Fonts: the board dropped {family} after it could not start with it; choose another font for {slot} (or choose it again to retry)");
             continue;
         }
         let events = events.clone();
