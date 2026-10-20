@@ -162,6 +162,7 @@ function connectEvents() {
     if (event.kind === "configured") loadDrafts();
     if (event.kind === "edit") onEditEvent(d);
     if (event.kind === "edit.tap") onEditTap(d);
+    if (event.kind === "display") { loadDisplay().catch(() => {}); if (setup.step === 5) keySizeStep(); }
     if (d.text && event.kind !== "status") logTo($("activity"), d.text.trim(), event.kind === "configure-failed" ? "error" : "");
   };
   source.onerror = () => {

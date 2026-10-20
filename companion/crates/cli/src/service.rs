@@ -390,7 +390,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let wanted = crate::display::load();
         let mut paging = Paging::new(board.grid, wanted.key_size);
         set_picture_theme(board.display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
-        send_look(&mut sender, &board, &wanted).await;
+        let mut asked_look = send_look(&mut sender, &board, &wanted).await;
         if focus.is_none() {
             show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
@@ -533,7 +533,22 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     shared.emit("edit.tap", json!({"page": paging.page, "slot": packet.body["key"]}));
                 }
                 Event::Look(wanted) => {
-                    send_look(&mut sender, &board, &wanted).await;
+                    asked_look = send_look(&mut sender, &board, &wanted).await;
+                }
+                Event::Board(packet) if packet.kind == "knoend.error" && asked_look => {
+                    // The board cannot show that look (older firmware): the choice goes back to
+                    // what it shows, and the web app says why.
+                    asked_look = false;
+                    let reason = packet.body["message"].as_str().unwrap_or("the board refused it").to_string();
+                    println!("  board refused the display settings: {reason}");
+                    let mut saved = crate::display::load();
+                    if let Some(shown) = &board.display {
+                        saved.theme = crate::display::Theme::named(shown["theme"].as_str().unwrap_or("dark"));
+                        saved.turn = shown["turn"].as_u64().and_then(|t| u8::try_from(t).ok()).unwrap_or(0);
+                    }
+                    let _ = crate::display::save(&saved);
+                    shared.emit("display", json!({"text": format!("The board could not show that: {reason}. Its firmware may need updating."),
+                                                  "theme": saved.theme, "turn": saved.turn}));
                 }
                 Event::KeySize(key_size) => {
                     paging.max = crate::display::shown_grid(paging.board, key_size);
@@ -664,6 +679,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::Board(packet) if packet.kind == "knoend.display.ack" => {
+                    asked_look = false;
                     // A new theme or turn is shown at once: pictures are sent again in the theme's
                     // colours, and the layout in a grid that fits the screen as it now sits.
                     println!("  board display: {}", packet.body);
@@ -1323,20 +1339,27 @@ fn set_picture_theme(name: &str) {
 
 /// Sends the person's theme and turn when the board shows something else; the board stores and
 /// shows them, and answers with its new size (spec/protocol.md 3.6d).
-async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &crate::display::Display) {
+/// True when it asked (an answer or an error follows).
+async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &crate::display::Display) -> bool {
     let identity = json!({"board": {"display": board.display}});
     match wanted.shown_by(&identity) {
-        Some(true) => {}
+        Some(true) => false,
         Some(false) => {
             println!("Display: asking the board for {}", wanted.look());
-            if let Err(e) = sender.send("knoend.display", wanted.look()).await {
-                println!("  could not send the display settings: {e}");
+            match sender.send("knoend.display", wanted.look()).await {
+                Ok(_) => true,
+                Err(e) => {
+                    println!("  could not send the display settings: {e}");
+                    false
+                }
             }
         }
-        None if *wanted != crate::display::Display { key_size: wanted.key_size, ..Default::default() } => {
-            println!("Display: this board's firmware ({}) has one look only; update its firmware for themes and turning", board.firmware);
+        None => {
+            if *wanted != (crate::display::Display { key_size: wanted.key_size, ..Default::default() }) {
+                println!("Display: this board's firmware ({}) has one look only; update its firmware for themes and turning", board.firmware);
+            }
+            false
         }
-        None => {}
     }
 }
 
