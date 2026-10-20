@@ -146,6 +146,17 @@ pub async fn serve(events: mpsc::Sender<AgentEvent>) {
 #[cfg(not(unix))]
 pub async fn serve(_events: mpsc::Sender<AgentEvent>) {}
 
+/// A tool's input without what the person filled in: when AskUserQuestion finishes, its input
+/// also carries the `answers` (and `annotations`), so it never equals the question that was asked.
+fn asked(input: &Value) -> Value {
+    let mut input = input.clone();
+    if let Some(fields) = input.as_object_mut() {
+        fields.remove("answers");
+        fields.remove("annotations");
+    }
+    input
+}
+
 /// Whether `event` (any hook event) shows that the pending permission `request` was settled in the
 /// agent's own window: the same session finished that tool, stopped, took a new prompt, or went
 /// idle. (A session cannot move on while one of its permission questions is open.)
@@ -154,7 +165,7 @@ pub fn settles(event: &Value, request: &Value) -> bool {
         return false;
     }
     match event["hook_event_name"].as_str() {
-        Some("PostToolUse") => event["tool_name"] == request["tool_name"] && event["tool_input"] == request["tool_input"],
+        Some("PostToolUse") => event["tool_name"] == request["tool_name"] && asked(&event["tool_input"]) == asked(&request["tool_input"]),
         Some("Stop") | Some("UserPromptSubmit") => true,
         Some("Notification") => event["notification_type"] == "idle_prompt",
         _ => false,
@@ -347,6 +358,17 @@ pub fn uninstall() -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_question_answered_in_the_app_settles_although_its_input_now_has_answers() {
+        let request = json!({"session_id": "s", "tool_name": "AskUserQuestion", "tool_input": {"questions": [{"question": "Which?"}]}});
+        let finished = json!({"session_id": "s", "hook_event_name": "PostToolUse", "tool_name": "AskUserQuestion",
+                              "tool_input": {"questions": [{"question": "Which?"}], "answers": {"Which?": "A"}, "annotations": {}}});
+        assert!(settles(&finished, &request));
+        let other = json!({"session_id": "s", "hook_event_name": "PostToolUse", "tool_name": "AskUserQuestion",
+                           "tool_input": {"questions": [{"question": "Another?"}], "answers": {}}});
+        assert!(!settles(&other, &request), "another question does not settle this one");
+    }
 
     #[test]
     fn questions_are_read_and_answered_into_the_input() {

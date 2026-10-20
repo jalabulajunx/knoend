@@ -812,6 +812,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Agent(crate::agent_hooks::AgentEvent::Notification(n)) => {
                     // Answered in Claude's own window? Then the request leaves the board.
+                    if n["hook_event_name"] == "PostToolUse" && n["tool_name"] == "AskUserQuestion" {
+                        let fields: Vec<&String> = n["tool_input"].as_object().map(|o| o.keys().collect()).unwrap_or_default();
+                        say!("Agent: AskUserQuestion finished (input fields: {fields:?})");
+                    }
                     let before = approvals.len();
                     approvals.retain(|a| !crate::agent_hooks::settles(&n, &a.request));
                     if approvals.len() != before {
