@@ -31,6 +31,7 @@ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
 # pool, which a few TrueType fonts and their glyph caches would fill.
 CONFIG_LV_USE_TINY_TTF=y
 CONFIG_LV_MEM_CUSTOM=y
+CONFIG_LV_MEM_CUSTOM_INCLUDE="lv_mem_psram.h"
 
 # Bluetooth LE keyboard (Bluedroid, BLE only: the ESP32-S3 has no Classic Bluetooth).
 CONFIG_BT_ENABLED=y
