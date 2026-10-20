@@ -262,6 +262,70 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knoend.display"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/display"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knoend.display.ack"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/displayAck"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knoend.font"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/font"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knoend.font.ack"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/fontAck"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -341,6 +405,103 @@
             },
             "statusBar": {
               "type": "boolean"
+            },
+            "display": {
+              "description": "The theme and turn the board uses now; absent on older firmware (dark, turn 0).",
+              "type": "object",
+              "required": [
+                "theme",
+                "turn"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "theme": {
+                  "enum": [
+                    "dark",
+                    "white",
+                    "sepia"
+                  ],
+                  "description": "dark: light on dark keys, in colour. white, sepia: e-ink looks, dark ink on white or on warm paper."
+                },
+                "turn": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3,
+                  "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
+                },
+                "startSize": {
+                  "type": "integer",
+                  "minimum": 24,
+                  "maximum": 96,
+                  "description": "Pixels of the name shown at start-up; a change shows it for 2 s as a preview."
+                }
+              }
+            },
+            "fonts": {
+              "description": "Fonts the person chose that the board holds; absent on firmware without fonts.",
+              "type": "object",
+              "required": [
+                "capacity"
+              ],
+              "properties": {
+                "capacity": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "keys": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "crc"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "crc": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "start": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "crc"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "crc": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "refused": {
+                  "type": "string",
+                  "description": "Fonts dropped after a start the board did not get through with them."
+                }
+              },
+              "additionalProperties": false
             }
           }
         },
@@ -384,6 +545,18 @@
             "$ref": "#/$defs/packetType"
           },
           "uniqueItems": true
+        },
+        "lastStart": {
+          "enum": [
+            "power-on",
+            "restart",
+            "crash",
+            "watchdog",
+            "brownout",
+            "wake",
+            "other"
+          ],
+          "description": "Boards: why the board last started. crash, watchdog and brownout mean it stopped on its own."
         }
       },
       "if": {
@@ -871,6 +1044,159 @@
           ]
         }
       }
+    },
+    "display": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "theme": {
+          "enum": [
+            "dark",
+            "white",
+            "sepia"
+          ],
+          "description": "dark: light on dark keys, in colour. white, sepia: e-ink looks, dark ink on white or on warm paper."
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
+        },
+        "startSize": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 96,
+          "description": "Pixels of the name shown at start-up; a change shows it for 2 s as a preview."
+        }
+      }
+    },
+    "displayAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "theme": {
+          "enum": [
+            "dark",
+            "white",
+            "sepia"
+          ],
+          "description": "dark: light on dark keys, in colour. white, sepia: e-ink looks, dark ink on white or on warm paper."
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "grid": {
+          "description": "The largest grid the board draws as it now sits.",
+          "$ref": "#/$defs/grid"
+        },
+        "startSize": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 96,
+          "description": "Pixels of the name shown at start-up; a change shows it for 2 s as a preview."
+        }
+      },
+      "required": [
+        "theme",
+        "turn",
+        "width",
+        "height",
+        "grid"
+      ]
+    },
+    "font": {
+      "type": "object",
+      "required": [
+        "slot"
+      ],
+      "properties": {
+        "slot": {
+          "enum": [
+            "keys",
+            "start"
+          ]
+        },
+        "clear": {
+          "const": true,
+          "description": "Empty the slot: the built-in font again."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "crc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "CRC-32 (IEEE) of the whole font."
+        },
+        "data": {
+          "type": "string",
+          "maxLength": 2732,
+          "description": "Base64 of at most 2048 bytes."
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "clear"
+          ]
+        },
+        {
+          "required": [
+            "name",
+            "total",
+            "offset",
+            "crc",
+            "data"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "fontAck": {
+      "type": "object",
+      "required": [
+        "slot",
+        "ok"
+      ],
+      "properties": {
+        "slot": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -79,6 +79,7 @@ pub fn run_hook(kind: &str) -> Result<(), String> {
         Some("answer") if reply["input"].is_object() => json!({"behavior": "allow", "updatedInput": reply["input"]}),
         _ => return Ok(()),
     };
+    // The hook's answer to Claude Code: stdout, not the journal.
     println!("{}", json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": decision}}));
     Ok(())
 }
@@ -96,7 +97,7 @@ pub async fn serve(events: mpsc::Sender<AgentEvent>) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
     let path = socket_path();
     let Ok(listener) = crate::browser::bind_private(&path) else {
-        println!("Agent hooks off: cannot listen on {}", path.display());
+        problem!("agent-hooks", "Claude Code questions cannot reach the board: cannot listen on {}", path.display());
         return;
     };
     let old = crate::browser::bind_private(&old_socket_path()).ok();

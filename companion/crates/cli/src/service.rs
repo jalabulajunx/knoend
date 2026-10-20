@@ -34,12 +34,23 @@ pub struct BoardStatus {
     pub address: String,
     /// The largest grid the board draws.
     pub grid: Grid,
+    /// What the identity says about its look (`board.display`); None on firmware without
+    /// `knoend.display`.
+    pub display: Option<Value>,
+    /// The fonts it holds (`board.fonts`: capacity, and per slot name and CRC-32); None on firmware
+    /// without fonts.
+    pub fonts: Option<Value>,
+    /// Why the board last started (identity `lastStart`): "crash", "watchdog" and "brownout" mean it
+    /// stopped on its own.
+    pub last_start: Option<String>,
 }
 
 /// Which page of the layout on the board is shown: the companion turns pages (spec/protocol.md
 /// 3.4a) and drops taps from a page that is no longer shown.
 struct Paging {
-    /// The largest grid the board draws.
+    /// The largest grid the board draws (edit mode shows layouts at this size).
+    board: Grid,
+    /// The largest grid layouts are shown in: the person's key size, within `board` (display.rs).
     max: Grid,
     /// The layout whose pages these are, the page shown (0-based), how many it has, and the grid of
     /// the page shown.
@@ -50,8 +61,8 @@ struct Paging {
 }
 
 impl Paging {
-    fn new(max: Grid) -> Paging {
-        Paging { max, layout: String::new(), page: 0, pages: 1, grid: Grid::DEFAULT }
+    fn new(board: Grid, key_size: crate::display::KeySize) -> Paging {
+        Paging { board, max: crate::display::shown_grid(board, key_size), layout: String::new(), page: 0, pages: 1, grid: Grid::DEFAULT }
     }
 
     /// Shows `layout`, which has `pages` pages: another layout starts on its first page. Returns
@@ -101,8 +112,6 @@ pub struct Shared {
     pub firmware_source: String,
     /// Types keystrokes for a board that cannot (no Bluetooth host); connected on first use.
     typist: Arc<std::sync::Mutex<Option<knoend_input::Typist>>>,
-    /// The last log lines, for the setup assistant's snapshot.
-    recent: std::sync::Mutex<std::collections::VecDeque<String>>,
     /// The browser extension link (`spec/browser.md`).
     pub browser: Arc<crate::browser::Browser>,
     /// Media players (MPRIS on Linux); None where there are none to read.
@@ -120,7 +129,6 @@ impl Shared {
         let (events, _) = broadcast::channel(256);
         Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())), firmware_source,
                           typist: Arc::new(std::sync::Mutex::new(None)),
-                          recent: std::sync::Mutex::new(std::collections::VecDeque::new()),
                           browser: Arc::new(crate::browser::Browser::default()),
                           media: knoend_media::Players::connect().ok().map(Arc::new),
                           inbox: std::sync::OnceLock::new(), edit: std::sync::Mutex::new(None),
@@ -130,13 +138,7 @@ impl Shared {
     /// Publishes an event to the web app and prints it for the terminal.
     pub fn emit(&self, kind: &str, data: Value) {
         if let Some(text) = data.get("text").and_then(Value::as_str) {
-            println!("{text}");
-            if let Ok(mut recent) = self.recent.lock() {
-                recent.push_back(text.trim().to_string());
-                while recent.len() > 40 {
-                    recent.pop_front();
-                }
-            }
+            say!("{text}");
         }
         let _ = self.events.send(json!({"kind": kind, "data": data}));
     }
@@ -154,6 +156,20 @@ impl Shared {
         let (answer, reply) = tokio::sync::oneshot::channel();
         inbox.send(Event::Edit(command, Some(answer))).await.map_err(|_| "the service stopped".to_string())?;
         reply.await.map_err(|_| "no answer from the service".to_string())?
+    }
+
+    /// Tells the service loop the key size changed (it is saved already); the next connection
+    /// reads it from the file anyway.
+    pub fn look_changed(&self, display: crate::display::Display) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.try_send(Event::Look(display));
+        }
+    }
+
+    pub fn key_size_changed(&self, key_size: crate::display::KeySize) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.try_send(Event::KeySize(key_size));
+        }
     }
 
     pub fn editing(&self) -> bool {
@@ -186,8 +202,9 @@ impl Shared {
         }
     }
 
+    /// The last lines the service said (journal.rs).
     pub fn recent(&self) -> Vec<String> {
-        self.recent.lock().map(|r| r.iter().cloned().collect()).unwrap_or_default()
+        crate::journal::recent(60)
     }
 
     async fn update(&self, change: impl FnOnce(&mut Status)) {
@@ -250,6 +267,13 @@ enum Event {
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
+    /// The person chose another theme or turn in the web app (already saved).
+    Look(crate::display::Display),
+    /// A font fetched for a slot ("keys", "start"): its family (empty: back to the built-in font)
+    /// and the TrueType bytes.
+    Font(String, String, Result<Vec<u8>, String>),
+    /// The person chose another key size in the web app (already saved).
+    KeySize(crate::display::KeySize),
     /// From the web app's editor, with where to send the answer.
     Edit(crate::edit::Command, Option<tokio::sync::oneshot::Sender<Result<Value, String>>>),
 }
@@ -262,11 +286,11 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     dirs.extend(extra_libraries);
     let (mut catalog, rejected) = Catalog::load(&dirs);
     for problem in load_builtin(&mut catalog) {
-        println!("  skipped {problem}");
+        say!("  skipped {problem}");
     }
-    println!("Libraries: {} loaded from {:?}", catalog.len(), dirs);
+    say!("Libraries: {} loaded from {:?}", catalog.len(), dirs);
     for r in &rejected {
-        println!("  skipped {}: {}", r.path.display(), r.reason);
+        say!("  skipped {}: {}", r.path.display(), r.reason);
     }
     let count = catalog.len();
     shared.update(|s| s.libraries = count).await;
@@ -330,6 +354,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     let mut attempted: HashSet<(String, String)> = HashSet::new();
     // What each slot on the board does right now (the layout plus any media row).
     let mut shown_actions: HashMap<u8, KeyRef> = HashMap::new();
+    // A paired board missing from the network for minutes is a problem worth raising (watch.rs).
+    let mut missing_since: Option<tokio::time::Instant> = None;
     loop {
         let pairings = Pairings::load();
         if pairings.boards.is_empty() {
@@ -351,20 +377,38 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             continue;
         }
         shared.update(|s| s.link = "searching".into()).await;
-        let (board, mut sender) = match connect(&pairings, events.clone()).await {
+        let (mut board, mut sender) = match connect(&pairings, events.clone()).await {
             Ok(link) => link,
             Err(e) => {
-                println!("{e}; retrying in 5 s");
+                say!("{e}; retrying in 5 s");
+                // Not while installing or pairing over USB: the board is restarting on purpose then.
+                if shared.serial.try_lock().is_err() {
+                    missing_since = None;
+                }
+                let since = *missing_since.get_or_insert_with(tokio::time::Instant::now);
+                if since.elapsed() >= Duration::from_secs(120) {
+                    problem!("board-missing", "The paired board has not been found on the network for {} minutes ({e})",
+                             since.elapsed().as_secs() / 60);
+                    missing_since = Some(tokio::time::Instant::now()); // again in two minutes if still missing
+                }
                 drain_focus(&mut inbox, &mut focus, &mut tab, &mut players, &shared).await;
                 continue;
             }
         };
+        missing_since = None;
         shared.emit("log", json!({"text": format!("Connected to board {} over Wi-Fi", board.id)}));
         let board_status = board.clone();
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
         let mut sent_images: HashSet<String> = HashSet::new();
-        let mut paging = Paging::new(board.grid);
+        if let Some(reason) = board.last_start.as_deref().filter(|r| ["crash", "watchdog", "brownout"].contains(r)) {
+            problem!("board-crash", "The board started again after a {reason} (it stopped on its own; firmware {})", board.firmware);
+        }
+        let wanted = crate::display::load();
+        let mut paging = Paging::new(board.grid, wanted.key_size);
+        set_picture_theme(board.display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
+        let mut asked_look = send_look(&mut sender, &board, &wanted).await;
+        fetch_fonts(&board, &wanted, &events);
         if focus.is_none() {
             show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
@@ -397,7 +441,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             let local = last_hook.is_some_and(|h| h.max(at) - h.min(at) <= HOOK_GRACE * 3);
                             let in_front = effective(&focus, &tab).is_some_and(|f| Calling::matches(&f, &n));
                             if !local && !in_front && approvals.is_empty() {
-                                println!("  {} notification with no local session behind it (cloud?): Go to key on the board", n.app);
+                                say!("  {} notification with no local session behind it (cloud?): Go to key on the board", n.app);
                                 calling = Some(Calling::new(&n, &catalog));
                             }
                         }
@@ -413,7 +457,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     let before = approvals.len();
                     approvals.retain(|a| !a.answer.is_closed());
                     if approvals.len() != before {
-                        println!("  permission request answered elsewhere; withdrawn from the board");
+                        say!("  permission request answered elsewhere; withdrawn from the board");
                         shown = None;
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
@@ -461,7 +505,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         calling = None;
                     }
                     usage.focused(crate::launcher::usage_key(&f, &apps));
-                    println!("Focus: {} ({})", f.display_name(), f.instance);
+                    say!("Focus: {} ({})", f.display_name(), f.instance);
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
                     show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
@@ -469,7 +513,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Focus(None) => {
                     // Nothing in front: the launcher.
-                    println!("Focus: nothing (launcher)");
+                    say!("Focus: nothing (launcher)");
                     tab = shared.browser.focus_changed("", "");
                     focus = None;
                     usage.focused(None);
@@ -487,11 +531,11 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     favicons.insert(host, pixels);
                 }
                 Event::Board(packet) if packet.kind == "knoend.key" && paging.stale(&packet) => {
-                    println!("  tap on page {} of {}, which is no longer shown; ignored", packet.body["page"], paging.layout);
+                    say!("  tap on page {} of {}, which is no longer shown; ignored", packet.body["page"], paging.layout);
                 }
                 Event::Page(to) => {
                     if approvals.is_empty() && paging.turn(&to) {
-                        println!("  page {}/{} of {}", paging.page + 1, paging.pages, paging.layout);
+                        say!("  page {}/{} of {}", paging.page + 1, paging.pages, paging.layout);
                         match effective(&focus, &tab) {
                             Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
                             None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
@@ -505,6 +549,77 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE && shared.editing() => {
                     // Edit mode: a tap selects the key in the web app; nothing runs.
                     shared.emit("edit.tap", json!({"page": paging.page, "slot": packet.body["key"]}));
+                }
+                Event::Look(wanted) => {
+                    asked_look = send_look(&mut sender, &board, &wanted).await;
+                    fetch_fonts(&board, &wanted, &events);
+                }
+                Event::Font(slot, family, font) => match font {
+                    Ok(bytes) if family.is_empty() => {
+                        say!("Font {slot}: back to the built-in font");
+                        let _ = sender.send("knoend.font", json!({"slot": slot, "clear": true})).await;
+                        let _ = bytes;
+                    }
+                    Ok(bytes) => {
+                        say!("Font {slot}: sending {family} ({} bytes) to the board", bytes.len());
+                        send_font(&mut sender, &slot, &family, &bytes).await;
+                    }
+                    Err(e) => {
+                        raise!("font", "Could not get the font {family}: {e}");
+                        shared.emit("display", json!({"text": format!("Could not get the font {family}: {e}")}));
+                    }
+                },
+                Event::Board(packet) if packet.kind == "knoend.font.ack" => {
+                    let slot = packet.body["slot"].as_str().unwrap_or("?").to_string();
+                    if packet.body["ok"] == true {
+                        let name = packet.body["name"].as_str().unwrap_or_default();
+                        shared.emit("display", json!({"text": if name.is_empty() { format!("The board uses its built-in font for {slot} again") }
+                                                              else { format!("The board now uses {name} for {slot}") }}));
+                        if let Some(fonts) = board.fonts.as_mut() {
+                            fonts[slot.as_str()] = if name.is_empty() { Value::Null } else { json!({"name": name}) };
+                        }
+                        let status = board.clone();
+                        shared.update(|s| s.board = Some(status)).await;
+                        // The keys again, now in the new font.
+                        shown = None;
+                        if approvals.is_empty() {
+                            if let Some(f) = effective(&focus, &tab) {
+                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
+                            }
+                        }
+                    } else {
+                        let reason = packet.body["error"].as_str().unwrap_or("it refused it");
+                        raise!("font", "The board could not keep the {slot} font {}: {reason}", packet.body["name"].as_str().unwrap_or_default());
+                        shared.emit("display", json!({"text": format!("The board could not keep the {slot} font: {reason}")}));
+                    }
+                }
+                Event::Board(packet) if packet.kind == "knoend.error" && asked_look => {
+                    // The board cannot show that look (older firmware): the choice goes back to
+                    // what it shows, and the web app says why.
+                    asked_look = false;
+                    let reason = packet.body["message"].as_str().unwrap_or("the board refused it").to_string();
+                    problem!("display", "The board refused the display settings: {reason}");
+                    let mut saved = crate::display::load();
+                    if let Some(shown) = &board.display {
+                        saved.theme = crate::display::Theme::named(shown["theme"].as_str().unwrap_or("dark"));
+                        saved.turn = shown["turn"].as_u64().and_then(|t| u8::try_from(t).ok()).unwrap_or(0);
+                    }
+                    let _ = crate::display::save(&saved);
+                    shared.emit("display", json!({"text": format!("The board could not show that: {reason}. Its firmware may need updating."),
+                                                  "theme": saved.theme, "turn": saved.turn}));
+                }
+                Event::KeySize(key_size) => {
+                    paging.max = crate::display::shown_grid(paging.board, key_size);
+                    say!("Key size: {key_size:?}, pages up to {}x{}", paging.max.cols, paging.max.rows);
+                    // Shown again at the new size.
+                    shown = None;
+                    if approvals.is_empty() {
+                        match effective(&focus, &tab) {
+                            Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                                  &mut shown, calling.as_ref(), &shared).await,
+                        }
+                    }
                 }
                 Event::Edit(command, answer) => {
                     let list = matches!(command, crate::edit::Command::List);
@@ -539,8 +654,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         knoend_focus::bring_to_front(&names)
                     }).await.unwrap_or_else(|e| Err(e.to_string()));
                     match result {
-                        Ok(()) => println!("  brought {} to the front", c.app),
-                        Err(e) => println!("  could not bring {} to the front: {e}", c.app),
+                        Ok(()) => say!("  brought {} to the front", c.app),
+                        Err(e) => say!("  could not bring {} to the front: {e}", c.app),
                     }
                     match effective(&focus, &tab) {
                         Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
@@ -579,7 +694,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     let browser_focused = focus.as_ref().is_some_and(|f| crate::browser::is_browser(&f.app, &f.instance));
                     if changed && browser_focused {
                         let f = effective(&focus, &tab).expect("focus");
-                        println!("Site: {}", f.display_name());
+                        say!("Site: {}", f.display_name());
                         usage.focused(crate::launcher::usage_key(&f, &apps));
                         let name = f.display_name().to_string();
                         shared.update(|s| s.app = Some(name)).await;
@@ -608,7 +723,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     };
                     // Only a tap that answers takes the request off the queue.
                     if let Some((decision, front)) = decision.and_then(|d| approvals.pop_front().map(|f| (d, f))) {
-                        println!("  answered on the board: {decision:?} ({})", front.summary);
+                        say!("  answered on the board: {decision:?} ({})", front.summary);
                         let _ = front.answer.send(decision);
                         shown = None;
                         match approvals.front() {
@@ -621,6 +736,30 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                 }
+                Event::Board(packet) if packet.kind == "knoend.display.ack" => {
+                    asked_look = false;
+                    // A new theme or turn is shown at once: pictures are sent again in the theme's
+                    // colours, and the layout in a grid that fits the screen as it now sits.
+                    say!("  board display: {}", packet.body);
+                    board.display = Some(json!({"theme": packet.body["theme"], "turn": packet.body["turn"]}));
+                    if packet.body["grid"].is_object() {
+                        board.grid = identity_grid(&json!({"board": {"grid": packet.body["grid"]}}));
+                    }
+                    paging.board = board.grid;
+                    paging.max = crate::display::shown_grid(board.grid, crate::display::load().key_size);
+                    set_picture_theme(packet.body["theme"].as_str().unwrap_or("dark"));
+                    let status = board.clone();
+                    shared.update(|s| s.board = Some(status)).await;
+                    sent_images.clear();
+                    shown = None;
+                    if approvals.is_empty() {
+                        match effective(&focus, &tab) {
+                            Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                                  &mut shown, calling.as_ref(), &shared).await,
+                        }
+                    }
+                }
                 Event::Board(packet) => {
                     let current = effective(&focus, &tab);
                     if let Some(target) = on_board_packet(&packet, current.as_ref(), &shown_actions, &players, &mut sender, &shared).await {
@@ -630,7 +769,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Agent(crate::agent_hooks::AgentEvent::Permission { request, answer }) => {
                     let summary = crate::agent_hooks::summary(&request);
-                    println!("Permission request: {summary}");
+                    say!("Permission request: {summary}");
                     approvals.push_back(Approval { request: request.clone(), summary, detail: crate::agent_hooks::detail(&request), destructive: crate::agent_hooks::destructive(&request),
                                                    can_remember: request["permission_suggestions"].as_array().is_some_and(|s| !s.is_empty()),
                                                    questions: crate::agent_hooks::questions(&request), step: 0, answers: Vec::new(), ticked: Vec::new(),
@@ -644,7 +783,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     let before = approvals.len();
                     approvals.retain(|a| !crate::agent_hooks::settles(&n, &a.request));
                     if approvals.len() != before {
-                        println!("  permission request settled in the app; withdrawn from the board");
+                        say!("  permission request settled in the app; withdrawn from the board");
                         shown = None;
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
@@ -662,7 +801,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // Permission prompts arrive as PermissionRequest already.
                     if !matches!(kind, "permission_prompt" | "auth_success" | "elicitation_complete" | "elicitation_response") {
                         let message = n["message"].as_str().unwrap_or("needs your attention");
-                        println!("Agent notification ({kind}): {message}");
+                        say!("Agent notification ({kind}): {message}");
                         let text = board_text(&format!("Claude: {message}"), 80);
                         if approvals.is_empty() {
                             let _ = sender.send("knoend.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
@@ -670,7 +809,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::Notified(n) => {
-                    println!("Notification from {}: {}", n.app, n.summary);
+                    say!("Notification from {}: {}", n.app, n.summary);
                     if n.from_any(&["claude"]) {
                         unexplained = Some((n.clone(), std::time::Instant::now()));
                     }
@@ -726,6 +865,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             if target.web.is_some() {
                                 shared.browser.notify(json!({"type": "configure-status", "ok": false, "text": format!("Could not make keys: {error}")}));
                             }
+                            raise!("configure", "Drafting keys failed for {}: {error}", target.display_name());
                             shared.emit("configure-failed", json!({"text": format!("  configure failed for {}: {error}", target.display_name()),
                                                                    "app": target.display_name(), "error": error}));
                             let mut text = format!("Could not configure {}: {error}", target.display_name());
@@ -735,6 +875,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::LinkDown(reason) => {
+                    raise!("link-lost", "Link to board {} lost: {reason}", board.id);
                     shared.emit("log", json!({"text": format!("Link to board {} lost: {reason}", board.id)}));
                     shared.update(|s| { s.link = "searching".into(); s.layout = None; }).await;
                     break;
@@ -778,7 +919,7 @@ async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus
 fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
     #[cfg(target_os = "linux")]
     if let Some(note) = crate::diagnostics::desktop_session()["note"].as_str().filter(|n| !n.is_empty()) {
-        println!("{note}");
+        say!("{note}");
         shared.emit("log", json!({"text": note}));
     }
     std::thread::spawn(move || {
@@ -818,6 +959,9 @@ async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(Bo
         firmware: identity.body["firmware"].as_str().unwrap_or("?").to_string(),
         address: board.address.to_string(),
         grid: identity_grid(&identity.body),
+        display: identity.body["board"].get("display").cloned(),
+        fonts: identity.body["board"].get("fonts").cloned(),
+        last_start: identity.body["lastStart"].as_str().map(str::to_string),
     };
     tokio::spawn(async move {
         loop {
@@ -863,7 +1007,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
     let player = knoend_media::for_focus(players, &focus.app, &focus.instance);
     let mut actions: HashMap<u8, KeyRef> = HashMap::new();
     let found = catalog.layout_for(focus).map(|library| {
-        let pages = layout::pages(&library, paging.max);
+        let pages = layout::packed(&library, paging.max);
         let page = paging.enter(&library.pack.id, pages.len());
         let built = layout::build(&library, focus.os, &pages, page);
         (library, built, pages.into_iter().nth(page).map(|p| p.keys).unwrap_or_default())
@@ -888,7 +1032,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
                 (body, json!({"text": ""}))
             }
             Err(e) => {
-                println!("  library {} cannot be built: {e}", library.pack.id);
+                say!("  library {} cannot be built: {e}", library.pack.id);
                 return;
             }
         },
@@ -940,7 +1084,7 @@ async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, p
         return;
     }
     let id = body.layout.clone();
-    println!("  -> {} ({}){} keys: {}", body.name, id, status["text"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" [{t}]")).unwrap_or_default(),
+    say!("  -> {} ({}){} keys: {}", body.name, id, status["text"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" [{t}]")).unwrap_or_default(),
              body.keys.iter().map(|k| format!("{}={}", k.key, k.label)).collect::<Vec<_>>().join(", "));
     let summary = json!({"id": id, "name": body.name, "source": body.source, "reviewed": body.reviewed, "grid": grid, "page": body.page, "pages": body.pages,
                          "keys": body.keys.iter().map(|k| json!({"key": k.key, "label": k.label})).collect::<Vec<_>>()});
@@ -1015,7 +1159,7 @@ async fn draft_new_page(catalog: &Catalog, focus: &Focus, drafted: &DraftedPages
         attempted.remove(&(web.host.clone(), kind));
         return;
     }
-    println!("  new kind of page on {}: {kind}; drafting its keys", web.host);
+    say!("  new kind of page on {}: {kind}; drafting its keys", web.host);
     shared.board_status("Making keys for this page...".into());
     start_configure(focus.clone(), site_scope(catalog, focus), events, shared).await;
 }
@@ -1034,8 +1178,8 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
     if show_edit(sender, paging, shown, shared).await {
         return;
     }
-    // 3x3 pages (icons and names fit), smaller on a board that cannot draw 3x3.
-    let grid = Grid::DEFAULT.within(paging.max);
+    // Pages at the person's key size (3x3 unless they chose otherwise).
+    let grid = paging.max;
     let per_page = usize::from(grid.size());
     let entries = usage.top(per_page * LAUNCHER_PAGES);
     let pages = entries.len().div_ceil(per_page);
@@ -1076,7 +1220,7 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
     if shown.as_deref() == Some(signature.as_str()) {
         return;
     }
-    println!("  -> launcher: {}", body.keys.iter().map(|k| k.label.as_str()).collect::<Vec<_>>().join(", "));
+    say!("  -> launcher: {}", body.keys.iter().map(|k| k.label.as_str()).collect::<Vec<_>>().join(", "));
     if sender.send("knoend.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
         let _ = sender.send("knoend.status", json!({"text": status})).await;
         *shown = Some(signature);
@@ -1091,12 +1235,12 @@ async fn show_edit(sender: &mut wifi::WifiSender, paging: &mut Paging, shown: &m
     let Some((library, dirty)) = shared.edit.lock().ok().and_then(|e| e.as_ref().map(|e| (e.library.clone(), e.dirty()))) else {
         return false;
     };
-    let pages = layout::pages(&library, paging.max);
+    let pages = layout::pages(&library, paging.board);
     let page = paging.enter(&library.pack.id, pages.len());
     let mut body = match layout::build(&library, knoend_core::focus::Os::current(), &pages, page) {
         Ok(body) => body,
         Err(e) => {
-            println!("  edited library {} cannot be shown: {e}", library.pack.id);
+            say!("  edited library {} cannot be shown: {e}", library.pack.id);
             return true;
         }
     };
@@ -1112,7 +1256,7 @@ async fn show_edit(sender: &mut wifi::WifiSender, paging: &mut Paging, shown: &m
     if shown.as_deref() == Some(signature.as_str()) {
         return true;
     }
-    println!("  -> editing {} page {}: {}", library.pack.id, page + 1,
+    say!("  -> editing {} page {}: {}", library.pack.id, page + 1,
              body.keys.iter().map(|k| format!("{}={}", k.key, k.label.replace('\n', "/"))).collect::<Vec<_>>().join(", "));
     let summary = json!({"id": body.layout, "name": body.name, "source": body.source, "reviewed": body.reviewed, "grid": body.grid,
                          "page": body.page, "pages": body.pages, "editing": true,
@@ -1148,7 +1292,7 @@ fn edit_while_away(command: crate::edit::Command, answer: Option<tokio::sync::on
 fn edit_state(shared: &Shared, paging: &Paging) -> Value {
     match shared.edit.lock().ok().as_ref().and_then(|e| e.as_ref()) {
         Some(edit) => {
-            let mut state = edit.state(paging.page, paging.max);
+            let mut state = edit.state(paging.page, paging.board);
             state["editing"] = json!(true);
             state
         }
@@ -1172,7 +1316,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
                        "overrides": l.pack.overrides, "own": l.pack.source == Source::User && path.is_file()})
             }).collect();
             let edit = session.as_ref().map(|e| {
-                let mut state = e.state(paging.page, paging.max);
+                let mut state = e.state(paging.page, paging.board);
                 state["editing"] = json!(true);
                 state
             }).unwrap_or_else(|| json!({"editing": false}));
@@ -1186,19 +1330,19 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             if !library.matches.agent.is_empty() {
                 return Err("Claude's screens cannot be edited here yet".into());
             }
-            crate::edit::check(serde_json::to_value(library).map_err(|e| e.to_string())?, paging.max)?;
-            println!("Edit mode: {}", library.pack.id);
+            crate::edit::check(serde_json::to_value(library).map_err(|e| e.to_string())?, paging.board)?;
+            say!("Edit mode: {}", library.pack.id);
             *session = Some(Edit::start(library, path));
             Ok(None)
         }
         Command::Change(json) => {
             let edit = session.as_mut().ok_or("edit mode is off")?;
-            let library = crate::edit::check(json, paging.max)?;
+            let library = crate::edit::check(json, paging.board)?;
             if library.pack.id != edit.library.pack.id {
                 return Err("the library's id cannot change while editing".into());
             }
             // Every shortcut must be one the board can type.
-            let pages = layout::pages(&library, paging.max);
+            let pages = layout::pages(&library, paging.board);
             for page in 0..pages.len() {
                 layout::build(&library, knoend_core::focus::Os::current(), &pages, page)?;
             }
@@ -1214,7 +1358,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             let edit = session.as_mut().ok_or("edit mode is off")?;
             let before = edit.library.pack.id.clone();
             let (path, library) = edit.save(&config_dir().join("libraries"))?;
-            println!("  saved {} to {}", library.pack.id, path.display());
+            say!("  saved {} to {}", library.pack.id, path.display());
             if paging.layout == before {
                 paging.layout = library.pack.id.clone(); // a draft saved as the person's own stays on its page
             }
@@ -1230,7 +1374,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             let edit = session.as_ref().ok_or("edit mode is off")?;
             let path = edit.path.clone().ok_or("there is no version of your own to remove")?;
             std::fs::remove_file(&path).map_err(|e| format!("could not remove {}: {e}", path.display()))?;
-            println!("  removed {} ({})", edit.library.pack.id, path.display());
+            say!("  removed {} ({})", edit.library.pack.id, path.display());
             catalog.remove(&edit.library.pack.id);
             // Back to the recipe or draft it was layered on; nothing left to edit ends edit mode.
             let under = edit.library.pack.overrides.as_deref().and_then(|id| catalog.by_id(id)).map(|(p, l)| Edit::start(l, p));
@@ -1239,9 +1383,86 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
         }
         Command::Stop => {
             if session.take().is_some() {
-                println!("Edit mode off");
+                say!("Edit mode off");
             }
             Ok(None)
+        }
+    }
+}
+
+/// The connected board's theme, for the tones pictures are sent in.
+static PICTURE_THEME: std::sync::Mutex<crate::display::Theme> = std::sync::Mutex::new(crate::display::Theme::Dark);
+
+fn set_picture_theme(name: &str) {
+    if let Ok(mut theme) = PICTURE_THEME.lock() {
+        *theme = crate::display::Theme::named(name);
+    }
+}
+
+/// Sends the person's theme and turn when the board shows something else; the board stores and
+/// shows them, and answers with its new size (spec/protocol.md 3.6d).
+/// Fetches (in the background) each font the person chose that the board does not hold, or asks
+/// for the built-in one back; the loop then sends it (`Event::Font`).
+fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &mpsc::Sender<Event>) {
+    let Some(held) = board.fonts.clone() else {
+        if !wanted.key_font.is_empty() || !wanted.start_font.is_empty() {
+            say!("Fonts: this board's firmware ({}) has the built-in font only; update its firmware to use others", board.firmware);
+        }
+        return;
+    };
+    let refused = held["refused"].as_str().unwrap_or_default();
+    for (slot, family) in [("keys", wanted.key_font.clone()), ("start", wanted.start_font.clone())] {
+        let holds = held[slot]["name"].as_str().unwrap_or_default();
+        if holds == family {
+            continue;
+        }
+        // The board dropped it after a start it did not get through: not sent again by itself.
+        if !family.is_empty() && refused.split(", ").any(|r| r == family) {
+            problem!("font", "The board dropped the font {family} ({slot}) after it could not start with it: it is not sent again until it is chosen again");
+            continue;
+        }
+        let events = events.clone();
+        tokio::spawn(async move {
+            let font = if family.is_empty() { Ok(Vec::new()) } else { crate::fonts::fetch(&family).await };
+            let _ = events.send(Event::Font(slot.to_string(), family, font)).await;
+        });
+    }
+}
+
+/// Sends a font to the board in slices that fit a packet (spec/protocol.md 3.6e).
+async fn send_font(sender: &mut wifi::WifiSender, slot: &str, family: &str, bytes: &[u8]) {
+    use base64::Engine;
+    let crc = crate::fonts::crc32(bytes);
+    for (i, chunk) in bytes.chunks(2048).enumerate() {
+        let body = json!({"slot": slot, "name": family, "total": bytes.len(), "offset": i * 2048, "crc": crc,
+                          "data": base64::engine::general_purpose::STANDARD.encode(chunk)});
+        if let Err(e) = sender.send("knoend.font", body).await {
+            say!("  could not send the font: {e}");
+            return;
+        }
+    }
+}
+
+/// True when it asked (an answer or an error follows).
+async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &crate::display::Display) -> bool {
+    let identity = json!({"board": {"display": board.display}});
+    match wanted.shown_by(&identity) {
+        Some(true) => false,
+        Some(false) => {
+            say!("Display: asking the board for {}", wanted.look());
+            match sender.send("knoend.display", wanted.look()).await {
+                Ok(_) => true,
+                Err(e) => {
+                    say!("  could not send the display settings: {e}");
+                    false
+                }
+            }
+        }
+        None => {
+            if *wanted != (crate::display::Display { key_size: wanted.key_size, ..Default::default() }) {
+                say!("Display: this board's firmware ({}) has one look only; update its firmware for themes and turning", board.firmware);
+            }
+            false
         }
     }
 }
@@ -1250,7 +1471,11 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
 /// refused the first slice (a board without picture support ignores the rest).
 async fn send_image(sender: &mut wifi::WifiSender, name: &str, rgba: &[u8]) -> bool {
     use base64::Engine;
-    let pixels = crate::launcher::board_pixels(rgba);
+    let mut rgba = rgba.to_vec();
+    if let Ok(theme) = PICTURE_THEME.lock() {
+        theme.tone(&mut rgba);
+    }
+    let pixels = crate::launcher::board_pixels(&rgba);
     for (i, chunk) in pixels.chunks(2048).enumerate() {
         let body = json!({"name": name, "w": 32, "h": 32, "offset": i * 2048, "total": pixels.len(),
                           "data": base64::engine::general_purpose::STANDARD.encode(chunk)});
@@ -1504,11 +1729,11 @@ async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catal
                 }
             }
             let title = if q.header.is_empty() { screen.pack.name.clone() } else { format!("{}: {}", screen.pack.name, q.header) };
-            println!("  -> question on the board [{}]", q.question);
+            say!("  -> question on the board [{}]", q.question);
             (title, clean(&detail), format!("{}: {}", screen.pack.name, q.question), "attention")
         }
         None => {
-            println!("  -> permission request on the board [{}]", approval.summary);
+            say!("  -> permission request on the board [{}]", approval.summary);
             (screen.pack.name.clone(), clean(&approval.detail), approval.summary.clone(), if approval.destructive { "alert" } else { "attention" })
         }
     };
@@ -1581,7 +1806,7 @@ fn spawn_notification_watcher(events: mpsc::Sender<Event>) {
             !n.from_any(NOTIFYING_APPS) || events.blocking_send(Event::Notified(n)).is_ok()
         });
         if let Err(e) = result {
-            println!("Desktop notifications not followed: {e}");
+            say!("Desktop notifications not followed: {e}");
         }
     });
 }
@@ -1608,7 +1833,8 @@ fn unsupported_layout(focus: &Focus, paging: &mut Paging) -> LayoutBody {
     let mut name: String = format!("Unsupported: {}", focus.display_name());
     name.truncate(128);
     paging.enter(UNSUPPORTED, 1);
-    let grid = Grid::DEFAULT.within(paging.max);
+    // One key: a 3x3 places it in the middle, whatever the key size.
+    let grid = Grid::DEFAULT.within(paging.board);
     LayoutBody {
         layout: UNSUPPORTED.into(),
         name,
@@ -1624,7 +1850,8 @@ fn unsupported_layout(focus: &Focus, paging: &mut Paging) -> LayoutBody {
 async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: &HashMap<u8, KeyRef>, players: &[NowPlaying],
                          sender: &mut wifi::WifiSender, shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
-        "knoend.layout.ack" if packet.body["ok"] != true => println!("  board rejected layout: {}", packet.body),
+        "knoend.layout.ack" if packet.body["ok"] != true => say!("  board rejected layout: {}", packet.body),
+        "knoend.error" => problem!("board-error", "The board answered with an error: {}", packet.body),
         "knoend.key" => {
             let layout = packet.body["layout"].as_str().unwrap_or("");
             let key = packet.body["key"].as_u64().unwrap_or(0);
@@ -1641,7 +1868,10 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                 }).await.unwrap_or_else(|e| Err(e.to_string()));
                 match result {
                     Ok(()) => shared.emit("typed", json!({"text": format!("  typed key {key} on this computer (board has no Bluetooth host)")})),
-                    Err(e) => shared.emit("type-failed", json!({"text": format!("  could not type key {key}: {e}")})),
+                    Err(e) => {
+                        raise!("typing", "Could not type key {key} on this computer: {e}");
+                        shared.emit("type-failed", json!({"text": format!("  could not type key {key}: {e}")}));
+                    }
                 }
                 return None;
             }
@@ -1698,7 +1928,7 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
             // Configure is the unsupported screen's only key of its own (a media row may share it).
             if layout == UNSUPPORTED && acting.is_none() {
                 let target = focus?.clone();
-                println!("  Configure requested for {}", target.display_name());
+                say!("  Configure requested for {}", target.display_name());
                 let text = format!("Configuring {}: drafting keys...", target.display_name());
                 let _ = sender.send("knoend.status", json!({"text": text, "level": "attention"})).await;
                 return Some(target);
@@ -1808,7 +2038,7 @@ mod tests {
 
     #[test]
     fn pages_turn_wrap_and_drop_taps_from_another_page() {
-        let mut paging = Paging::new(Grid::LARGEST);
+        let mut paging = Paging::new(Grid::LARGEST, crate::display::KeySize::Small);
         assert_eq!(paging.enter("builtin.a", 3), 0);
         assert!(paging.turn("prev"));
         assert_eq!(paging.page, 2, "back from the first page wraps to the last");
@@ -1822,6 +2052,14 @@ mod tests {
     }
 
     #[test]
+    fn key_size_caps_pages_but_edit_mode_sees_the_board() {
+        let medium = Paging::new(Grid::LARGEST, crate::display::KeySize::Medium);
+        assert_eq!((medium.max, medium.board), (Grid::DEFAULT, Grid::LARGEST));
+        let big = Paging::new(Grid::DEFAULT, crate::display::KeySize::Big);
+        assert_eq!(big.max, Grid { cols: 2, rows: 2 });
+    }
+
+    #[test]
     fn board_grid_comes_from_its_identity() {
         assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 4, "rows": 2}}})), Grid { cols: 4, rows: 2 });
         assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 9, "rows": 2}}})), Grid::DEFAULT);
@@ -1831,8 +2069,8 @@ mod tests {
     #[test]
     fn configure_sits_in_the_middle_of_the_grid() {
         let focus = Focus { os: knoend_core::focus::Os::Linux, app: "x".into(), instance: "x".into(), title: String::new(), web: None };
-        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid::LARGEST)).keys[0].key, 5);
-        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid { cols: 2, rows: 2 })).keys[0].key, 1);
+        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid::LARGEST, crate::display::KeySize::Small)).keys[0].key, 5);
+        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid { cols: 2, rows: 2 }, crate::display::KeySize::Small)).keys[0].key, 1);
     }
 
     #[test]

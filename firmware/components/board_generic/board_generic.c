@@ -21,7 +21,10 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
+#include <inttypes.h>
+
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_lvgl_port.h"
 #include "esp_partition.h"
 #include "freertos/FreeRTOS.h"
@@ -455,6 +458,52 @@ static void touch_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
     data->state = LV_INDEV_STATE_PR;
 }
 
+static lv_disp_t *display;
+
+// LVGL waits for the panel to report each update done before the next. On 2026-10-20 the ONX lost
+// that report after 14 min (display task spinning in draw_buf_flush, Wi-Fi starved); whatever the
+// cause, one lost report must cost a frame, not the board: after 300 ms the update counts as done.
+#define FLUSH_GIVE_UP_US (300 * 1000)
+static void flush_wait(lv_disp_drv_t *drv)
+{
+    static int64_t waiting_since;
+    static uint32_t given_up;
+    lv_disp_draw_buf_t *buf = drv->draw_buf;
+    if (buf == NULL || !buf->flushing) {
+        waiting_since = 0;
+        return;
+    }
+    const int64_t now = esp_timer_get_time();
+    if (waiting_since == 0) {
+        waiting_since = now;
+    } else if (now - waiting_since > FLUSH_GIVE_UP_US) {
+        given_up++;
+        ESP_LOGW(TAG, "display: an update never reported done; carrying on (%" PRIu32 " so far)", given_up);
+        waiting_since = 0;
+        lv_disp_flush_ready(drv);
+    }
+}
+static const lv_disp_rot_t rotations[] = { LV_DISP_ROT_NONE, LV_DISP_ROT_90, LV_DISP_ROT_180, LV_DISP_ROT_270 };
+
+// The screen size for a rotation of the native panel (90 and 270 swap width and height).
+static void set_size(int rotation)
+{
+    const bool swap = rotation == 90 || rotation == 270;
+    info.width = swap ? def.height : def.width;
+    info.height = swap ? def.width : def.height;
+}
+
+void board_set_turn(int turn)
+{
+    if (display == NULL || turn < 0 || turn > 3) {
+        return;
+    }
+    const int rotation = (def.rotation + 90 * turn) % 360;
+    lv_disp_set_rotation(display, rotations[rotation / 90]);
+    set_size(rotation);
+    ESP_LOGI(TAG, "turned %d (rotation %d): %dx%d", turn, rotation, info.width, info.height);
+}
+
 static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t panel)
 {
     const lvgl_port_cfg_t port = ESP_LVGL_PORT_INIT_CONFIG();
@@ -466,13 +515,14 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t 
         // lvgl_port_add_disp() re-applies swap/mirror from this config when it registers the display,
         // overwriting what display_init() set: give it the definition's values.
         .rotation = { .swap_xy = def.swap_xy, .mirror_x = def.mirror_x, .mirror_y = def.mirror_y },
-        .flags = { .buff_spiram = true, .sw_rotate = def.rotation != 0 },
+        // Always: the person may turn the screen later (board_set_turn).
+        .flags = { .buff_spiram = true, .sw_rotate = true },
     };
-    lv_disp_t *display = lvgl_port_add_disp(&display_config);
+    display = lvgl_port_add_disp(&display_config);
     ESP_RETURN_ON_FALSE(display != NULL, ESP_FAIL, TAG, "lvgl display");
 
     ESP_RETURN_ON_FALSE(lvgl_port_lock(0), ESP_FAIL, TAG, "lvgl lock");
-    static const lv_disp_rot_t rotations[] = { LV_DISP_ROT_NONE, LV_DISP_ROT_90, LV_DISP_ROT_180, LV_DISP_ROT_270 };
+    display->driver->wait_cb = flush_wait;
     lv_disp_set_rotation(display, rotations[def.rotation / 90]);
     static lv_indev_drv_t touch_driver;
     lv_indev_drv_init(&touch_driver);
@@ -497,13 +547,11 @@ esp_err_t board_init(void)
         ESP_LOGE(TAG, "no usable board definition (%s); running without a display", esp_err_to_name(err));
         return err;
     }
-    const bool landscape_swap = def.rotation == 90 || def.rotation == 270;
     info = (board_info_t){
         .id = def.id, .name = def.name,
-        .width = landscape_swap ? def.height : def.width,
-        .height = landscape_swap ? def.width : def.height,
         .has_speaker = def.speaker, .has_native_usb = def.native_usb,
     };
+    set_size(def.rotation);
     ESP_LOGI(TAG, "definition %s: %s display, %s touch", def.id, def.display_driver, def.touch_driver);
 
     esp_lcd_panel_io_handle_t io = NULL;

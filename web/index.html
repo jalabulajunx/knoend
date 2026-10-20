@@ -5,11 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="knoend-token" content="{{TOKEN}}">
   <title>KnoEnd</title>
+  <!-- Instrument Sans and JetBrains Mono when online; system fonts otherwise. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="top">
-    <div class="brand"><span class="logo" aria-hidden="true"></span>KnoEnd</div>
+    <div class="brand" aria-label="KnoEnd">
+      <span class="word">Kn<span class="degree" aria-hidden="true"></span>End</span>
+      <!-- No end: a figure eight drawing itself, endlessly. -->
+      <svg class="loop" viewBox="0 0 120 40" aria-hidden="true"><path d="M60 20 C 75 2, 108 2, 108 20 C 108 38, 75 38, 60 20 C 45 2, 12 2, 12 20 C 12 38, 45 38, 60 20 Z"/></svg>
+    </div>
     <nav class="tabs" role="tablist">
       <button role="tab" data-view="dashboard" aria-selected="true">Dashboard</button>
       <button role="tab" data-view="edit" aria-selected="false">Edit keys</button>
@@ -21,6 +28,23 @@
   <main>
     <!-- Dashboard -->
     <section id="view-dashboard" class="view">
+      <section class="hero">
+        <figure class="device-figure">
+          <div class="device" aria-hidden="false">
+            <span class="port" aria-hidden="true"></span>
+            <div id="keys-preview" class="screen" aria-label="Keys on the board"></div>
+          </div>
+          <figcaption><span class="fig">Fig. 01</span> On the board now <span class="live">live</span></figcaption>
+        </figure>
+        <div class="hero-text">
+          <p class="tagline">One small screen.<br>No end of uses.</p>
+          <p class="lede">Any ESP32-S3 touch board becomes keys that follow whatever you are doing, with AI where it helps: drafting keys for a new app, answering Claude for you, and looking after the setup.</p>
+          <p class="kicker">Following</p>
+          <p class="now-app"><span class="muted">Focused app</span> <strong id="now-app">-</strong></p>
+          <p class="now-layout"><span class="muted">On the keys</span> <strong id="now-layout">-</strong> <span id="now-badge" class="badge" hidden></span></p>
+          <p id="configuring" class="note" hidden></p>
+        </div>
+      </section>
       <div class="grid2">
         <article class="card">
           <h2>Board</h2>
@@ -34,12 +58,36 @@
           <p class="actions left"><button type="button" id="change-wifi" class="secondary small-button">Change Wi-Fi</button>
             <span class="muted small">New router, new password or another place: over the USB cable, keeps pairing and settings.</span></p>
         </article>
-        <article class="card">
-          <h2>Now</h2>
-          <p class="now-app"><span class="muted">Focused app</span> <strong id="now-app">-</strong></p>
-          <p class="now-layout"><span class="muted">On the keys</span> <strong id="now-layout">-</strong> <span id="now-badge" class="badge" hidden></span></p>
-          <div id="keys-preview" class="keys" aria-label="Keys on the board"></div>
-          <p id="configuring" class="note" hidden></p>
+        <article class="card look">
+          <h2>Look</h2>
+          <div class="controls">
+          <label class="inline">Key size
+            <select id="key-size">
+              <option value="big">Big: 2x2</option>
+              <option value="medium">Medium: 3x3</option>
+              <option value="small">Small: 4x4</option>
+            </select></label>
+          <label class="inline">Look
+            <select id="theme">
+              <option value="dark">Dark, in colour</option>
+              <option value="white">White: black on white</option>
+              <option value="sepia">Sepia: brown on warm paper</option>
+            </select></label>
+          <label class="inline">Key font
+            <input id="key-font" class="font-pick" list="font-families" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
+          <label class="inline">Start-up font
+            <input id="start-font" class="font-pick" list="font-families" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
+          <label class="inline">Start-up size
+            <input id="start-size" type="number" min="24" max="96" step="1" class="size-pick"> px</label>
+          <p id="start-preview" class="start-preview" aria-label="The name the board shows at start-up">Kn°End</p>
+          <label class="inline">Way round
+            <select id="turn">
+              <option value="0">Landscape</option>
+              <option value="1">Portrait</option>
+              <option value="2">Landscape, upside down</option>
+              <option value="3">Portrait, upside down</option>
+            </select></label>
+          </div>
         </article>
       </div>
       <div class="grid2">
@@ -124,6 +172,14 @@
 
     <!-- Setup wizard -->
     <section id="view-setup" class="view" hidden>
+      <header class="setup-intro">
+        <h1>Set up a board <span class="muted">about five minutes</span></h1>
+        <ul class="needs" aria-label="What you need">
+          <li><span>01</span>An ESP32-S3 touch board</li>
+          <li><span>02</span>A USB cable that carries data</li>
+          <li><span>03</span>Your Wi-Fi name and password <em>2.4 GHz</em></li>
+        </ul>
+      </header>
       <article class="card" id="mode-card">
         <h2>How would you like to set up?</h2>
         <ul class="choices">
@@ -172,12 +228,39 @@
         </form>
       </article>
 
+      <div class="setup-flow" data-step="1">
+      <aside class="rail">
       <ol class="steps" aria-label="Setup steps">
         <li data-step="1" class="current">Find the board</li>
         <li data-step="2">Choose firmware</li>
         <li data-step="3">Install</li>
         <li data-step="4" id="step4-name">Pair and Wi-Fi</li>
+        <li data-step="5" id="step5-name">Keys and look</li>
       </ol>
+      <!-- The board, acting out the step: plug in, the chip, installing, joining Wi-Fi. -->
+      <figure class="stage" aria-hidden="true">
+        <div class="device small-device">
+          <span class="port"></span>
+          <!-- The USB cable, outside the board, going into its port. -->
+          <span class="usb"><span class="wire"></span><span class="head"></span></span>
+          <div class="stage-screen">
+            <svg class="scene s1" viewBox="0 0 120 80"><circle class="wake" cx="60" cy="38" r="9"/><text class="ready" x="60" y="66">READY</text></svg>
+            <svg class="scene s2" viewBox="0 0 120 80"><rect class="chip" x="38" y="18" width="44" height="44" rx="4"/><path class="pins" d="M46 12v6M56 12v6M66 12v6M76 12v6M46 62v6M56 62v6M66 62v6M76 62v6M32 26h6M32 36h6M32 46h6M32 56h6M82 26h6M82 36h6M82 46h6M82 56h6"/><text x="60" y="44">S3</text></svg>
+            <svg class="scene s3" viewBox="0 0 120 80"><rect class="track" x="20" y="36" width="80" height="8" rx="4"/><rect class="fill" x="20" y="36" width="80" height="8" rx="4"/></svg>
+            <svg class="scene s4" viewBox="0 0 120 80"><circle class="dot" cx="60" cy="58" r="4"/><path class="arc a1" d="M48 48 a17 17 0 0 1 24 0"/><path class="arc a2" d="M40 40 a28 28 0 0 1 40 0"/><path class="arc a3" d="M32 32 a39 39 0 0 1 56 0"/></svg>
+            <svg class="scene s5" viewBox="0 0 120 80"><g class="grid9"><rect x="22" y="12" width="22" height="16" rx="3"/><rect x="49" y="12" width="22" height="16" rx="3"/><rect x="76" y="12" width="22" height="16" rx="3"/><rect x="22" y="32" width="22" height="16" rx="3"/><rect x="49" y="32" width="22" height="16" rx="3"/><rect x="76" y="32" width="22" height="16" rx="3"/><rect x="22" y="52" width="22" height="16" rx="3"/><rect x="49" y="52" width="22" height="16" rx="3"/><rect x="76" y="52" width="22" height="16" rx="3"/></g></svg>
+          </div>
+        </div>
+        <figcaption>
+          <span class="c1"><span class="fig">Fig. 02</span> Plug it in with a data cable</span>
+          <span class="c2"><span class="fig">Fig. 03</span> One image for every ESP32-S3 board</span>
+          <span class="c3"><span class="fig">Fig. 04</span> Writing the firmware</span>
+          <span class="c4"><span class="fig">Fig. 05</span> A key of its own, then Wi-Fi</span>
+          <span class="c5"><span class="fig">Fig. 06</span> Your keys, your look</span>
+        </figcaption>
+      </figure>
+      </aside>
+      <div class="flow-main">
 
       <article class="card step" data-step="1">
         <h2>Find the board</h2>
@@ -234,27 +317,70 @@
         <p id="pair-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
       </article>
 
-      <article class="card" id="assistant">
-        <h2>Setup assistant <span id="assistant-by" class="muted small"></span></h2>
-        <form id="ask-form" class="ask">
-          <input id="ask-input" maxlength="500" placeholder="Describe what you see, or ask what to do next">
-          <button type="submit" class="secondary">Ask</button>
-        </form>
-        <div id="advice" hidden>
-          <p id="advice-text" class="advice"></p>
-          <div id="advice-actions" class="actions left"></div>
-          <div id="advice-fix" class="fix" hidden>
-            <p class="small"><strong>Suggested change</strong> <span class="muted">(nothing changes until you press Apply)</span></p>
-            <ul id="advice-fix-list" class="small"></ul>
-            <div class="actions left"><button type="button" id="advice-fix-apply" class="primary">Apply</button></div>
-            <p id="advice-fix-status" class="note" hidden></p>
+      <article class="card step" data-step="5" hidden>
+        <div class="grid2 look-setup">
+          <div>
+            <h2>How big should the keys be?</h2>
+            <p>Every page on the board uses this grid. An app's keys fill it in order; any that do not fit go on further pages you swipe through, so nothing is lost.</p>
+            <ul class="choices" id="key-size-setup"></ul>
+            <h3>How should the screen look?</h3>
+            <ul class="choices" id="theme-setup"></ul>
+            <h3>Which way round will the board sit?</h3>
+            <ul class="choices" id="turn-setup"></ul>
+            <h3>Fonts <span class="muted small">(optional, from Google Fonts)</span></h3>
+            <label>For the keys
+              <input id="key-font-setup" class="font-pick" list="font-families" placeholder="Built-in (Montserrat): type to search" autocomplete="off"></label>
+            <label>For the name at start-up
+              <input id="start-font-setup" class="font-pick" list="font-families" placeholder="Built-in (Montserrat): type to search" autocomplete="off"></label>
+            <label>Size of the name at start-up, in pixels (the board shows it for 2 seconds as you change it)
+              <input id="start-size-setup" type="number" min="24" max="96" step="1" class="size-pick"></label>
+            <p id="start-preview-setup" class="start-preview">Kn°End</p>
+            <p id="theme-note" class="muted small" hidden>This board's firmware has one look, landscape only. Install the latest firmware for these; the preview shows them meanwhile.</p>
           </div>
-          <details><summary class="muted small">What was sent to the AI</summary><pre id="advice-sent"></pre></details>
+          <div>
+            <h3>Preview</h3>
+            <p class="muted small">Each choice shows here and on the board at once. You can change them any time on the dashboard.</p>
+            <div id="setup-preview" class="screen" aria-label="Preview of the board"></div>
+          </div>
         </div>
-        <p id="assistant-off" class="muted small" hidden>Set up an AI provider above to use the assistant.</p>
+        <div class="actions"><button type="button" class="primary" id="key-size-save">Done</button></div>
+        <p id="setup-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
       </article>
+      </div>
+      </div>
+
     </section>
   </main>
+  <button type="button" id="assistant-open" class="assistant-open" aria-controls="assistant" aria-expanded="false"><span class="orb" aria-hidden="true"></span>Ask the assistant</button>
+  <aside id="assistant" class="assistant-panel" aria-label="Assistant" hidden>
+    <div class="assistant-head">
+      <h2>Assistant <span id="assistant-by" class="muted small"></span></h2>
+      <button type="button" id="assistant-close" class="secondary small-button" aria-label="Close the assistant">Close</button>
+    </div>
+    <p class="assistant-intro">It sees what KnoEnd sees: the board, its settings, the service's log, and checks it can run. It can change a setting for you, and nothing changes until you press Apply.</p>
+    <ol id="thread" class="thread" aria-label="Earlier questions"></ol>
+    <div id="advice" class="exchange current" hidden aria-live="polite">
+      <p id="advice-q" class="q" hidden></p>
+      <p id="advice-text" class="advice"></p>
+      <div id="advice-actions" class="actions left"></div>
+      <div id="advice-fix" class="fix" hidden>
+        <p class="small"><strong>Suggested change</strong> <span class="muted">(nothing changes until you press Apply)</span></p>
+        <ul id="advice-fix-list" class="small"></ul>
+        <div class="actions left"><button type="button" id="advice-fix-apply" class="primary">Apply</button></div>
+        <p id="advice-fix-status" class="note" hidden></p>
+      </div>
+      <details class="sent"><summary class="muted small">What was sent to the AI</summary><pre id="advice-sent"></pre></details>
+    </div>
+    <p id="assistant-off" class="muted small" hidden>Set up an AI provider in Set up a board to use the assistant.</p>
+    <div class="ask-dock">
+      <div id="ask-suggestions" class="suggestions" aria-label="Suggested questions"></div>
+      <form id="ask-form" class="ask">
+        <input id="ask-input" maxlength="500" placeholder="Ask anything, or describe what you see" autocomplete="off">
+        <button type="submit" class="primary" aria-label="Ask">Ask</button>
+      </form>
+    </div>
+  </aside>
+  <datalist id="font-families"></datalist>
   <script src="/app.js" type="module"></script>
 </body>
 </html>

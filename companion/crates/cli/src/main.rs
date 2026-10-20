@@ -12,6 +12,8 @@
 //!
 //! A browser that starts this binary as its native messaging host (spec/browser.md) gets the host.
 
+#[macro_use]
+mod journal;
 mod agent_hooks;
 mod app_facts;
 mod background;
@@ -19,6 +21,12 @@ mod launcher;
 mod browser;
 mod diagnostics;
 mod edit;
+mod checks;
+mod consult;
+mod watch;
+mod display;
+mod fonts;
+mod settings;
 mod firmware;
 mod macos_help;
 mod provision;
@@ -161,6 +169,7 @@ fn main() {
         Command::Serve { port, firmware, no_open, libraries } => tokio::runtime::Runtime::new().expect("tokio").block_on(async move {
             let shared = service::Shared::new(firmware);
             tokio::spawn(service::run(shared.clone(), libraries));
+            watch::start(shared.clone());
             web::serve(shared, port, !no_open).await
         }),
         Command::Run { libraries } => tokio::runtime::Runtime::new().expect("tokio").block_on(async move {

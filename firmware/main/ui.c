@@ -7,6 +7,8 @@
 
 #include "ble_keyboard.h"
 #include "board.h"
+#include "display.h"
+#include "fonts.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
@@ -26,14 +28,44 @@
 #define CONFIRM_MS     3000
 #define HID_USAGE_1    0x1E // USB HID usage IDs for '1'..'9' are consecutive
 
-#define COLOR_BG        0x101418
-#define COLOR_KEY       0x2A3440
-#define COLOR_KEY_BLANK 0x181E25
-#define COLOR_PRESSED   0x3D7EFF
-#define COLOR_CONFIRM   0xC98A1B
-#define COLOR_TEXT      0xC0C8D0
-#define COLOR_ATTENTION 0x5A4512
-#define COLOR_ALERT     0x6B1C1C
+// The themes (spec/protocol.md 3.6d). Dark: light text on dark keys, colour for the states.
+// White and Sepia: e-ink looks, dark ink on white or on warm paper, high contrast; states are
+// shades of the ink and borders.
+typedef struct {
+    uint32_t bg, key, key_blank, key_border, pressed, confirm, confirm_text;
+    uint32_t key_text, icon, bar_text, bar_text_highlighted, attention, alert, detail_text;
+    int border; // key outline, px
+} theme_t;
+
+static const theme_t DARK = {
+    .bg = 0x101418, .key = 0x2A3440, .key_blank = 0x181E25, .key_border = 0x2A3440,
+    .pressed = 0x3D7EFF, .confirm = 0xC98A1B, .confirm_text = 0xFFFFFF,
+    .key_text = 0xFFFFFF, .icon = 0xFFFFFF, .bar_text = 0xC0C8D0, .bar_text_highlighted = 0xFFFFFF,
+    .attention = 0x5A4512, .alert = 0x6B1C1C, .detail_text = 0xFFFFFF, .border = 0,
+};
+
+static const theme_t WHITE = {
+    .bg = 0xFFFFFF, .key = 0xFFFFFF, .key_blank = 0xF2F2F2, .key_border = 0x000000,
+    .pressed = 0xBDBDBD, .confirm = 0x000000, .confirm_text = 0xFFFFFF,
+    .key_text = 0x000000, .icon = 0x000000, .bar_text = 0x000000, .bar_text_highlighted = 0xFFFFFF,
+    .attention = 0x555555, .alert = 0x000000, .detail_text = 0x000000, .border = 2,
+};
+
+// Strong enough to read as sepia on a 16-bit panel: the first try (a pale cream, 0xF4ECD8) looked
+// like dimmed white on the ONX.
+static const theme_t SEPIA = {
+    .bg = 0xE3CC9E, .key = 0xEEDDB8, .key_blank = 0xD8BE8A, .key_border = 0x4A2F14,
+    .pressed = 0xC7A66C, .confirm = 0x4A2F14, .confirm_text = 0xEEDDB8,
+    .key_text = 0x3A2410, .icon = 0x3A2410, .bar_text = 0x3A2410, .bar_text_highlighted = 0xEEDDB8,
+    .attention = 0x7A5530, .alert = 0x4A2F14, .detail_text = 0x3A2410, .border = 2,
+};
+
+static const theme_t *theme_for(display_theme_t which)
+{
+    return which == DISPLAY_THEME_WHITE ? &WHITE : which == DISPLAY_THEME_SEPIA ? &SEPIA : &DARK;
+}
+
+static const theme_t *theme = &DARK;
 
 static const char *TAG = "ui";
 
@@ -58,6 +90,17 @@ typedef struct {
 } sent_image_t;
 static sent_image_t images[IMAGE_SLOTS];
 static uint32_t image_clock;
+
+// A key's colours: normal, or waiting for its confirming second tap.
+static void paint_key(int index, bool confirming)
+{
+    const bool blank = layout.keys[index].send == UI_SEND_NONE;
+    lv_obj_set_style_bg_color(key_buttons[index], lv_color_hex(confirming ? theme->confirm : blank ? theme->key_blank : theme->key), 0);
+    lv_obj_set_style_border_width(key_buttons[index], blank ? 0 : theme->border, 0);
+    const uint32_t text = confirming ? theme->confirm_text : theme->key_text;
+    lv_obj_set_style_text_color(key_labels[index], lv_color_hex(text), 0);
+    lv_obj_set_style_img_recolor(key_icons[index], lv_color_hex(confirming ? theme->confirm_text : theme->icon), 0);
+}
 
 static const lv_img_dsc_t *sent_image(const char *name)
 {
@@ -105,20 +148,20 @@ static void update_status_locked(void)
         status_text[0] = '\0';
     }
     if (confirm_slot >= 0 && now >= confirm_expires_us) {
-        lv_obj_set_style_bg_color(key_buttons[confirm_slot], lv_color_hex(COLOR_KEY), 0);
+        paint_key(confirm_slot, false);
         confirm_slot = -1;
     }
 
-    uint32_t bar_color = COLOR_BG;
+    uint32_t bar_color = theme->bg;
     if (confirm_slot >= 0) {
         lv_label_set_text_fmt(status_label, "Tap again to confirm: %s",
                               layout.keys[confirm_slot].label);
-        bar_color = COLOR_ATTENTION;
+        bar_color = theme->attention;
     } else if (status_text[0] != '\0') {
         lv_label_set_text(status_label, status_text);
-        bar_color = status_level == UI_STATUS_ALERT       ? COLOR_ALERT
-                    : status_level == UI_STATUS_ATTENTION ? COLOR_ATTENTION
-                                                          : COLOR_BG;
+        bar_color = status_level == UI_STATUS_ALERT       ? theme->alert
+                    : status_level == UI_STATUS_ATTENTION ? theme->attention
+                                                          : theme->bg;
     } else {
         const char *link = ble_keyboard_connected() ? "Bluetooth connected"
                                                     : "Pair \"KnoEnd\" over Bluetooth";
@@ -131,6 +174,10 @@ static void update_status_locked(void)
         }
     }
     lv_obj_set_style_bg_color(status_bar, lv_color_hex(bar_color), 0);
+    const bool highlighted = bar_color != theme->bg;
+    const uint32_t bar_text = highlighted ? theme->bar_text_highlighted : theme->bar_text;
+    lv_obj_set_style_text_color(status_label, lv_color_hex(bar_text), 0);
+    lv_obj_set_style_text_color(pager_label, lv_color_hex(highlighted ? theme->bar_text_highlighted : theme->key_text), 0);
 }
 
 static void status_timer(lv_timer_t *timer)
@@ -167,7 +214,7 @@ static void turn_page(bool next)
         return;
     }
     if (confirm_slot >= 0) {
-        lv_obj_set_style_bg_color(key_buttons[confirm_slot], lv_color_hex(COLOR_KEY), 0);
+        paint_key(confirm_slot, false);
         confirm_slot = -1;
     }
     protocol_send_page(layout.id, next);
@@ -211,17 +258,17 @@ static void key_event(lv_event_t *event)
 
     if (key->confirm && confirm_slot != index) {
         if (confirm_slot >= 0) {
-            lv_obj_set_style_bg_color(key_buttons[confirm_slot], lv_color_hex(COLOR_KEY), 0);
+            paint_key(confirm_slot, false);
         }
         confirm_slot = index;
         confirm_expires_us = esp_timer_get_time() + CONFIRM_MS * 1000LL;
-        lv_obj_set_style_bg_color(key_buttons[index], lv_color_hex(COLOR_CONFIRM), 0);
+        paint_key(index, true);
         printf("KEY %d seq=%" PRIu32 " t=%" PRIu64 " confirm-pending\n", index + 1, tap_count,
                (uint64_t)(esp_timer_get_time() / 1000));
         fflush(stdout);
     } else {
         if (confirm_slot == index) {
-            lv_obj_set_style_bg_color(key_buttons[index], lv_color_hex(COLOR_KEY), 0);
+            paint_key(index, false);
             confirm_slot = -1;
         }
         act(index);
@@ -256,15 +303,23 @@ static lv_coord_t widest_piece(const char *text, uint32_t len, const lv_font_t *
 
 // The font for a key label: `preferred`, or one size smaller when a word would not fit `width`,
 // never below 12 px (smaller cannot be read on these screens). Words still too wide are cut.
+// Key label fonts, largest first: 28, 20, 14 and 12 px. The built-in Montserrat, or the font the
+// person chose for keys (fonts.c, drawn by tiny_ttf), each falling back to Montserrat of the same
+// size for a character the chosen font lacks.
+enum { FONT_28, FONT_20, FONT_14, FONT_12, LABEL_FONTS };
+static const lv_font_t *const BUILT_IN[LABEL_FONTS] = {&lv_font_montserrat_28, &lv_font_montserrat_20,
+                                                       &lv_font_montserrat_14, &lv_font_montserrat_12};
+static const int LABEL_PX[LABEL_FONTS] = {28, 20, 14, 12};
+static const lv_font_t *label_fonts[LABEL_FONTS] = {&lv_font_montserrat_28, &lv_font_montserrat_20,
+                                                    &lv_font_montserrat_14, &lv_font_montserrat_12};
+static lv_font_t *chosen[LABEL_FONTS]; // tiny_ttf fonts, when the person chose one
+
 static const lv_font_t *fitting_font(const char *text, const lv_font_t *preferred, lv_coord_t width)
 {
-    static const lv_font_t *const sizes[] = {&lv_font_montserrat_28, &lv_font_montserrat_20, &lv_font_montserrat_14,
-                                              &lv_font_montserrat_12};
-    const size_t count = sizeof(sizes) / sizeof(sizes[0]);
-    for (size_t i = 0; i < count; i++) {
-        if (sizes[i] == preferred) {
+    for (size_t i = 0; i < LABEL_FONTS; i++) {
+        if (label_fonts[i] == preferred) {
             const bool fits = widest_piece(text, strlen(text), preferred) <= width;
-            return fits || i + 1 == count ? preferred : sizes[i + 1];
+            return fits || i + 1 == LABEL_FONTS ? preferred : label_fonts[i + 1];
         }
     }
     return preferred;
@@ -354,9 +409,9 @@ static void draw_keys_locked(void)
         const bool blank = key->send == UI_SEND_NONE;
         const bool big = key_w >= 140 && h >= 90;  // 1x1, 1x2, 2x2
         const bool small = key_w < 90 || h < 50;   // 4 columns or 4 rows
-        lv_obj_set_style_bg_color(key_buttons[i], lv_color_hex(blank ? COLOR_KEY_BLANK : COLOR_KEY), 0);
+        paint_key(i, confirm_slot == i);
         lv_label_set_text(key_labels[i], blank ? "" : key->label);
-        // A sent picture ("app:...", in colour) or a Material icon (white).
+        // A sent picture ("app:...", as sent) or a Material icon (in the theme's colour).
         const bool sent = strchr(key->icon, ':') != NULL;
         const lv_img_dsc_t *icon = blank || detail ? NULL : sent ? sent_image(key->icon) : icons_find(key->icon);
         lv_obj_set_style_img_recolor_opa(key_icons[i], sent ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
@@ -371,7 +426,7 @@ static void draw_keys_locked(void)
             // keys. Icons stay 32 px: LVGL 8 draws 4-bit alpha images line by line and cannot zoom
             // them (it reads a one-line buffer as the whole image, past its end).
             const int icon_px = 32;
-            const lv_font_t *font = fitting_font(key->label, big ? &lv_font_montserrat_20 : &lv_font_montserrat_14, key_w - 8);
+            const lv_font_t *font = fitting_font(key->label, big ? label_fonts[FONT_20] : label_fonts[FONT_14], key_w - 8);
             const int line_px = lv_font_get_line_height(font);
             char shown[UI_LABEL_BYTES * 2];
             cut_long_words(key->label, font, key_w - 8, shown, sizeof(shown));
@@ -393,9 +448,9 @@ static void draw_keys_locked(void)
             lv_obj_align(key_labels[i], LV_ALIGN_CENTER, 0, block / 2 - label_h / 2);
         } else {
             lv_obj_add_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
-            const lv_font_t *font = detail || small                   ? &lv_font_montserrat_14
-                                    : big || strlen(key->label) <= 2 ? &lv_font_montserrat_28
-                                                                     : &lv_font_montserrat_20;
+            const lv_font_t *font = detail || small                   ? label_fonts[FONT_14]
+                                    : big || strlen(key->label) <= 2 ? label_fonts[FONT_28]
+                                                                     : label_fonts[FONT_20];
             const lv_font_t *fitted = fitting_font(key->label, font, key_w - 8);
             char shown[UI_LABEL_BYTES * 2];
             cut_long_words(key->label, fitted, key_w - 8, shown, sizeof(shown));
@@ -435,6 +490,180 @@ void ui_max_grid(int *cols, int *rows)
     *rows = *rows < 1 ? 1 : *rows > GRID_MAX ? GRID_MAX : *rows;
 }
 
+// Everything the theme colours that is not redrawn with the keys and the status bar.
+static void apply_theme_locked(void)
+{
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(theme->bg), 0);
+    for (int i = 0; i < UI_KEYS; i++) {
+        lv_obj_set_style_bg_color(key_buttons[i], lv_color_hex(theme->pressed), LV_STATE_PRESSED);
+        lv_obj_set_style_border_color(key_buttons[i], lv_color_hex(theme->key_border), 0);
+    }
+    lv_obj_set_style_bg_color(detail_box, lv_color_hex(theme->key_blank), 0);
+    lv_obj_set_style_border_width(detail_box, theme->border, 0);
+    lv_obj_set_style_border_color(detail_box, lv_color_hex(theme->key_border), 0);
+    lv_obj_set_style_text_color(detail_label, lv_color_hex(theme->detail_text), 0);
+    lv_obj_set_style_bg_color(pager, lv_color_hex(theme->pressed), LV_STATE_PRESSED);
+}
+
+// The key area and the status bar for the screen's size as the board sits now.
+static void size_screen_locked(void)
+{
+    const board_info_t *board = board_info();
+    grid_w = board->width;
+    grid_h = board->height - STATUS_HEIGHT;
+    lv_obj_set_size(status_bar, board->width, STATUS_HEIGHT);
+    lv_obj_align(status_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
+}
+
+// Back to the built-in key font; the chosen one is freed. Called with the LVGL lock held.
+static void release_key_font_locked(void)
+{
+    for (int i = 0; i < LABEL_FONTS; i++) {
+        label_fonts[i] = BUILT_IN[i];
+    }
+    draw_keys_locked(); // nothing may still point at the fonts freed below
+    for (int i = 0; i < LABEL_FONTS; i++) {
+        if (chosen[i] != NULL) {
+            lv_tiny_ttf_destroy(chosen[i]);
+            chosen[i] = NULL;
+        }
+    }
+}
+
+// The person's key font, if one is stored. Called with the LVGL lock held.
+static void load_key_font_locked(void)
+{
+    size_t len;
+    const uint8_t *data = fonts_data(FONT_SLOT_KEYS, &len, NULL, NULL);
+    if (data == NULL) {
+        return;
+    }
+    for (int i = 0; i < LABEL_FONTS; i++) {
+        chosen[i] = lv_tiny_ttf_create_data(data, len, LABEL_PX[i]);
+        if (chosen[i] == NULL) {
+            ESP_LOGW(TAG, "could not use the chosen key font at %d px", LABEL_PX[i]);
+            release_key_font_locked();
+            return;
+        }
+        chosen[i]->fallback = BUILT_IN[i];
+        label_fonts[i] = chosen[i];
+    }
+}
+
+void ui_fonts_release(void)
+{
+    if (!lvgl_port_lock(1000)) {
+        return;
+    }
+    release_key_font_locked();
+    lvgl_port_unlock();
+}
+
+static void settled(lv_timer_t *timer)
+{
+    fonts_settled();
+}
+
+void ui_fonts_reload(void)
+{
+    if (!lvgl_port_lock(1000)) {
+        return;
+    }
+    release_key_font_locked();
+    load_key_font_locked();
+    draw_keys_locked();
+    lvgl_port_unlock();
+    // Drawn once (LVGL draws in its own task, a moment later): then it is kept.
+    lv_timer_t *settle = lv_timer_create(settled, 2000, NULL);
+    lv_timer_set_repeat_count(settle, 1);
+}
+
+// The name shown for a moment at start-up, in the start-up font the person chose (else Montserrat).
+#define SPLASH_MS 1800
+static lv_obj_t *splash;
+static lv_font_t *splash_font;
+
+static void splash_done(lv_timer_t *timer)
+{
+    fonts_settled(); // the chosen fonts have drawn: keep them
+    lv_obj_del(splash);
+    splash = NULL;
+    if (splash_font != NULL) {
+        lv_tiny_ttf_destroy(splash_font);
+        splash_font = NULL;
+    }
+    lv_timer_del(timer);
+}
+
+static void show_splash_locked(void)
+{
+    splash = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(splash);
+    lv_obj_set_size(splash, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_opa(splash, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(splash, lv_color_hex(theme->bg), 0);
+    lv_obj_t *name = lv_label_create(splash);
+    lv_label_set_text(name, "Kn\xC2\xB0" "End");
+    lv_obj_set_style_text_color(name, lv_color_hex(theme->key_text), 0);
+    size_t len;
+    const uint8_t *data = fonts_data(FONT_SLOT_START, &len, NULL, NULL);
+    splash_font = data != NULL ? lv_tiny_ttf_create_data(data, len, display_settings()->start_size) : NULL;
+    if (splash_font != NULL) {
+        splash_font->fallback = &lv_font_montserrat_28; // the degree sign, if the font has none
+    }
+    lv_obj_set_style_text_font(name, splash_font != NULL ? splash_font : &lv_font_montserrat_28, 0);
+    lv_obj_center(name);
+    lv_timer_create(splash_done, SPLASH_MS, NULL);
+}
+
+void ui_show_start(void)
+{
+    if (!lvgl_port_lock(1000)) {
+        return;
+    }
+    if (splash == NULL) {
+        show_splash_locked();
+    }
+    lvgl_port_unlock();
+}
+
+void ui_set_turn(int turn)
+{
+    if (!lvgl_port_lock(1000)) {
+        ESP_LOGE(TAG, "could not take the LVGL lock to turn the screen");
+        return;
+    }
+    board_set_turn(turn);
+    size_screen_locked();
+    // The layout on the board may not fit the new shape: until the companion sends one that does,
+    // its keys are drawn within the largest grid that fits.
+    int cols, rows;
+    ui_max_grid(&cols, &rows);
+    if (layout.cols > cols || layout.rows > rows) {
+        ui_layout_t fitted = layout;
+        fitted.cols = layout.cols > cols ? cols : layout.cols;
+        fitted.rows = layout.rows > rows ? rows : layout.rows;
+        layout = fitted;
+    }
+    draw_keys_locked();
+    update_status_locked();
+    lvgl_port_unlock();
+}
+
+void ui_set_theme(display_theme_t which)
+{
+    if (!lvgl_port_lock(1000)) {
+        ESP_LOGE(TAG, "could not take the LVGL lock to change the theme");
+        return;
+    }
+    theme = theme_for(which);
+    apply_theme_locked();
+    draw_keys_locked();
+    update_status_locked();
+    lvgl_port_unlock();
+}
+
 void ui_start(void)
 {
     default_layout(&layout);
@@ -443,21 +672,17 @@ void ui_start(void)
         return;
     }
 
-    const board_info_t *board = board_info();
     lv_obj_t *screen = lv_scr_act();
-    lv_obj_set_style_bg_color(screen, lv_color_hex(COLOR_BG), 0);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     // Keys, the status bar and the detail panel pass swipes up to the screen (LVGL's default).
     lv_obj_add_event_cb(screen, gesture_event, LV_EVENT_GESTURE, NULL);
 
-    grid_w = board->width;
-    grid_h = board->height - STATUS_HEIGHT;
 
     // Every key the largest grid needs; draw_keys_locked places and sizes them per layout.
     for (int i = 0; i < UI_KEYS; i++) {
         lv_obj_t *button = lv_btn_create(screen);
-        lv_obj_set_style_bg_color(button, lv_color_hex(COLOR_PRESSED), LV_STATE_PRESSED);
         lv_obj_set_style_radius(button, 8, 0);
+        lv_obj_set_style_shadow_width(button, 0, 0);
         lv_obj_add_event_cb(button, key_event, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t *label = lv_label_create(button);
@@ -465,7 +690,7 @@ void ui_start(void)
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(label);
         lv_obj_t *icon = lv_img_create(button);
-        lv_obj_set_style_img_recolor(icon, lv_color_white(), 0);
+        lv_obj_set_style_img_recolor(icon, lv_color_hex(theme->icon), 0);
         lv_obj_set_style_img_recolor_opa(icon, LV_OPA_COVER, 0);
         lv_obj_add_flag(icon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE);
@@ -477,7 +702,6 @@ void ui_start(void)
     detail_box = lv_obj_create(screen);
     lv_obj_remove_style_all(detail_box);
     lv_obj_set_style_bg_opa(detail_box, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(detail_box, lv_color_hex(COLOR_KEY_BLANK), 0);
     lv_obj_set_style_radius(detail_box, 8, 0);
     lv_obj_set_style_pad_all(detail_box, 6, 0);
     lv_obj_set_scroll_dir(detail_box, LV_DIR_VER);
@@ -487,19 +711,15 @@ void ui_start(void)
     lv_obj_set_width(detail_label, lv_pct(100));
     lv_label_set_long_mode(detail_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(detail_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(detail_label, lv_color_white(), 0);
     lv_obj_align(detail_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
     status_bar = lv_obj_create(screen);
     lv_obj_remove_style_all(status_bar);
-    lv_obj_set_size(status_bar, board->width, STATUS_HEIGHT);
-    lv_obj_align(status_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+
     lv_obj_set_style_bg_opa(status_bar, LV_OPA_COVER, 0);
 
     status_label = lv_label_create(status_bar);
-    lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
     lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(status_label, lv_color_hex(COLOR_TEXT), 0);
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
     lv_obj_align(status_label, LV_ALIGN_LEFT_MID, GRID_GAP, 0);
 
@@ -507,17 +727,21 @@ void ui_start(void)
     lv_obj_remove_style_all(pager);
     lv_obj_set_size(pager, PAGER_WIDTH, STATUS_HEIGHT);
     lv_obj_align(pager, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_style_bg_color(pager, lv_color_hex(COLOR_PRESSED), LV_STATE_PRESSED);
     lv_obj_set_style_bg_opa(pager, LV_OPA_COVER, LV_STATE_PRESSED);
     lv_obj_add_flag(pager, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(pager, pager_event, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(pager, LV_OBJ_FLAG_HIDDEN);
     pager_label = lv_label_create(pager);
     lv_obj_set_style_text_font(pager_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(pager_label, lv_color_white(), 0);
     lv_obj_center(pager_label);
 
+    theme = theme_for(display_settings()->theme);
+    apply_theme_locked();
+    board_set_turn(display_settings()->turn);
+    size_screen_locked();
+    load_key_font_locked();
     draw_keys_locked();
+    show_splash_locked();
     update_status_locked();
     lv_timer_create(status_timer, 250, NULL);
     lvgl_port_unlock();

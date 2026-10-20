@@ -39,6 +39,8 @@ function show(view) {
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.view === view));
   if (view === "setup" && setup.step === 1) scanPorts();
   if (view === "edit") loadEdit();
+  showTip();
+  if (!$("assistant").hidden) renderSuggestions();
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.view === "setup" && setup.task !== "setup") { setTask("setup"); step(1); }
@@ -54,6 +56,7 @@ document.addEventListener("click", (e) => {
 // ---- dashboard ----
 
 function renderStatus(s) {
+  renderStatus.last = s;
   const pill = $("link-pill");
   const text = { connected: "Board connected", searching: "Looking for the board", "no-pairing": "No board paired" }[s.link] || "Starting";
   pill.textContent = text;
@@ -67,6 +70,12 @@ function renderStatus(s) {
     $("f-address").textContent = s.board.address;
     $("f-id").textContent = s.board.id;
   }
+  // A new board connection (a restart for a new look, other firmware): the choices follow it.
+  const look = s.board ? JSON.stringify([s.board.firmware, s.board.display]) : "";
+  if (look !== renderStatus.look) {
+    renderStatus.look = look;
+    loadDisplay().catch(() => {});
+  }
   $("now-app").textContent = s.app || "-";
   const layout = s.link === "connected" ? s.layout : null;
   $("now-layout").textContent = layout ? layout.name + (layout.pages > 1 ? ` (page ${layout.page} of ${layout.pages})` : "") : "-";
@@ -74,21 +83,52 @@ function renderStatus(s) {
   badge.hidden = !layout || layout.reviewed;
   badge.textContent = "AI draft, unreviewed";
 
-  const keys = $("keys-preview");
-  keys.replaceChildren();
-  const grid = (layout && layout.grid) || { cols: 3, rows: 3 };
-  keys.style.gridTemplateColumns = `repeat(${grid.cols}, 1fr)`;
-  keys.style.gridTemplateRows = `repeat(${grid.rows}, 1fr)`;
-  for (let slot = 1; slot <= grid.cols * grid.rows; slot++) {
-    const div = document.createElement("div");
-    const key = layout && layout.keys.find((k) => k.key === slot);
-    div.textContent = key ? key.label : "";
-    if (!key) div.className = "blank";
-    keys.append(div);
-  }
+  renderStatus.layout = layout;
+  drawScreen($("keys-preview"), layout, displayState);
+  drawScreen($("setup-preview"), layout, displayState);
   const conf = $("configuring");
   conf.hidden = !s.configuring;
   conf.textContent = s.configuring ? `The AI agent is drafting keys for ${s.configuring}...` : "";
+}
+
+/** The person's display choices as last saved (or being tried in setup). */
+let displayState = { key_size: "medium", theme: "dark", turn: 0 };
+
+/**
+ * Draws the board's screen into `el`: the keys of `layout` (as the board shows them now) in the
+ * chosen theme and way round, with the status bar. Portrait reflows to the 3 columns it has.
+ */
+function drawScreen(el, layout, look) {
+  if (!el) return;
+  const portrait = look.turn % 2 === 1;
+  el.className = `screen ${["white", "sepia"].includes(look.theme) ? look.theme : ""} ${portrait ? "portrait" : ""}`;
+  // The keys as the board shows them now (it already follows the key size); turned to portrait, the
+  // same slots in at most 3 columns and 4 rows.
+  const sizes = { big: { cols: 2, rows: 2 }, medium: { cols: 3, rows: 3 }, small: { cols: 4, rows: 4 } };
+  const shown = (layout && layout.grid) || sizes[look.key_size] || sizes.medium;
+  const cols = portrait ? Math.min(shown.cols, 3) : shown.cols;
+  const rows = portrait ? Math.min(Math.ceil((shown.cols * shown.rows) / cols), 4) : shown.rows;
+  const keys = document.createElement("div");
+  keys.className = "keys";
+  keys.style.fontFamily = fontStack(look.key_font);
+  keys.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  keys.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  const labels = layout ? [...layout.keys].sort((a, b) => a.key - b.key).map((k) => k.label) : [];
+  for (let i = 0; i < cols * rows; i++) {
+    const div = document.createElement("div");
+    div.textContent = labels[i] || "";
+    if (!labels[i]) div.className = "blank";
+    keys.append(div);
+  }
+  const bar = document.createElement("div");
+  bar.className = "bar";
+  bar.textContent = layout ? `${layout.name}${layout.pages > 1 ? `   ${layout.page}/${layout.pages} >` : ""}` : "No board connected";
+  el.replaceChildren(keys, bar);
+}
+
+function redrawScreens() {
+  drawScreen($("keys-preview"), renderStatus.layout, displayState);
+  drawScreen($("setup-preview"), renderStatus.layout, displayState);
 }
 
 async function loadDrafts() {
@@ -126,6 +166,8 @@ function connectEvents() {
     if (event.kind === "configured") loadDrafts();
     if (event.kind === "edit") onEditEvent(d);
     if (event.kind === "edit.tap") onEditTap(d);
+    if (event.kind === "noticed") onNoticed(d);
+    if (event.kind === "display") { loadDisplay().catch(() => {}); if (setup.step === 5) keySizeStep(); }
     if (d.text && event.kind !== "status") logTo($("activity"), d.text.trim(), event.kind === "configure-failed" ? "error" : "");
   };
   source.onerror = () => {
@@ -554,7 +596,7 @@ function setTask(task) {
   setup.task = task;
   const wifi = task === "wifi";
   // Firmware and Install are not part of changing Wi-Fi (step() rewrites the class names, so by number).
-  document.querySelectorAll('.steps li[data-step="2"], .steps li[data-step="3"]').forEach((el) => (el.hidden = wifi));
+  document.querySelectorAll('.steps li[data-step="2"], .steps li[data-step="3"], .steps li[data-step="5"]').forEach((el) => (el.hidden = wifi));
   $("mode-card").hidden = wifi;
   $("step4-name").textContent = wifi ? "Wi-Fi" : "Pair and Wi-Fi";
   $("step4-title").textContent = wifi ? "Change Wi-Fi" : "Pair and Wi-Fi";
@@ -576,6 +618,8 @@ $("change-wifi").addEventListener("click", () => {
 
 function step(n) {
   setup.step = n;
+  const flow = document.querySelector(".setup-flow");
+  if (flow) flow.dataset.step = n;
   document.querySelectorAll(".step").forEach((s) => (s.hidden = Number(s.dataset.step) !== n));
   document.querySelectorAll(".steps li").forEach((li) => {
     const i = Number(li.dataset.step);
@@ -603,6 +647,161 @@ function choice(name, value, title, sub, disabled) {
   li.append(label);
   return { li, input };
 }
+
+// ---- key size (display.rs): how many keys a page may have at most ----
+
+const KEY_SIZES = [
+  ["big", "Big: 2x2", "Four large keys a page. Easiest to read and tap; most apps need several pages."],
+  ["medium", "Medium: 3x3 (recommended)", "Nine keys a page. Comfortable on a 2.8-inch screen."],
+  ["small", "Small: 4x4", "Sixteen keys a page. Short labels, or icons only; fewer pages to swipe."],
+];
+
+const THEMES = [
+  ["dark", "Dark, in colour", "Light text on dark keys; colour shows a pressed key, a key waiting for its second tap, and messages."],
+  ["white", "White: black on white", "An e-ink look with high contrast, easy to read in daylight. App pictures turn grey."],
+  ["sepia", "Sepia: brown ink on warm paper", "An e-ink look, softer on the eyes than white. App pictures turn sepia."],
+];
+
+const TURNS = [
+  ["0", "Landscape", "Wide, as the board comes."],
+  ["1", "Portrait", "Tall: the board turned a quarter clockwise. Three keys across at most."],
+  ["2", "Landscape, upside down", "Wide, turned half way round: for a cable that has to come out of the other side."],
+  ["3", "Portrait, upside down", "Tall, turned a quarter anticlockwise."],
+];
+
+// ---- fonts from Google Fonts: the list live from the service, previews loaded by the browser ----
+
+let fontFamilies = null;
+
+/** Fills the font search list from Google's catalogue (once per page). */
+async function loadFontFamilies() {
+  if (fontFamilies) return;
+  fontFamilies = [];
+  try {
+    ({ families: fontFamilies } = await api("/fonts"));
+    $("font-families").replaceChildren(...fontFamilies.map((f) => new Option(f.category ? `${f.family} (${f.category})` : f.family, f.family)));
+  } catch (err) {
+    fontFamilies = null;
+    logTo($("activity"), `Could not load the list of Google Fonts: ${err.message}`, "error");
+  }
+}
+
+/** Lets the browser draw `family` (for the previews), with the characters the board shows. */
+function previewFont(family) {
+  if (!family || document.querySelector(`link[data-font="${CSS.escape(family)}"]`)) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.dataset.font = family;
+  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}&display=swap`;
+  document.head.append(link);
+}
+
+function fontStack(family) {
+  return family ? `"${family}", Montserrat, sans-serif` : "";
+}
+
+/** The font fields and the start-up previews, from the saved choice. */
+function showFonts(d) {
+  for (const id of ["key-font", "key-font-setup"]) if ($(id) && document.activeElement !== $(id)) $(id).value = d.key_font || "";
+  for (const id of ["start-font", "start-font-setup"]) if ($(id) && document.activeElement !== $(id)) $(id).value = d.start_font || "";
+  previewFont(d.key_font);
+  previewFont(d.start_font);
+  for (const id of ["start-size", "start-size-setup"]) if ($(id) && document.activeElement !== $(id)) $(id).value = d.start_size || 64;
+  // The preview at the board's size, scaled as the screen previews are (320 px wide shown about 360).
+  for (const id of ["start-preview", "start-preview-setup"]) {
+    if (!$(id)) continue;
+    $(id).style.fontFamily = fontStack(d.start_font);
+    $(id).style.fontSize = `${Math.round((d.start_size || 64) * 1.1)}px`;
+  }
+}
+
+for (const id of ["start-size", "start-size-setup"]) {
+  $(id).addEventListener("change", (e) => {
+    const size = Number(e.target.value);
+    if (!Number.isInteger(size) || size < 24 || size > 96) { e.target.reportValidity(); return; }
+    saveDisplay({ start_size: size }).catch((err) => alert(`Could not change the size: ${err.message}`));
+  });
+}
+
+for (const [id, field] of [["key-font", "key_font"], ["key-font-setup", "key_font"], ["start-font", "start_font"], ["start-font-setup", "start_font"]]) {
+  $(id).addEventListener("focus", loadFontFamilies);
+  $(id).addEventListener("change", (e) => {
+    const family = e.target.value.trim();
+    if (family && fontFamilies && !fontFamilies.some((f) => f.family === family)) {
+      e.target.setCustomValidity("Pick a family from the list");
+      e.target.reportValidity();
+      return;
+    }
+    e.target.setCustomValidity("");
+    saveDisplay({ [field]: family }).catch((err) => alert(`Could not change the font: ${err.message}`));
+  });
+}
+
+async function saveDisplay(change) {
+  displayState = { ...displayState, ...change };
+  redrawScreens();
+  const saved = await api("/display", change);
+  displayState = { ...displayState, ...saved };
+  $("key-size").value = saved.key_size;
+  $("theme").value = saved.theme;
+  $("turn").value = String(saved.turn);
+  showFonts(saved);
+  redrawScreens();
+  return saved;
+}
+
+/** Fills the dashboard's choices; the look only when the board's firmware can change it. */
+async function loadDisplay() {
+  const d = await api("/display");
+  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font };
+  showFonts(d);
+  redrawScreens();
+  $("key-size").value = d.key_size;
+  $("theme").value = d.theme;
+  $("turn").value = String(d.turn);
+  // Kept and shown in the preview either way; the board takes it once its firmware can.
+  $("theme").title = d.board_can_change_look ? "" : "This board's firmware has one look only: the preview shows it, and the board takes it after a firmware update.";
+  return d;
+}
+
+/** Setup step 5: the key size, chosen once after pairing (the current choice ticked). */
+async function keySizeStep() {
+  step(5);
+  $("setup-done").hidden = true;
+  const current = await api("/display").catch(() => ({ key_size: "medium", theme: "dark", board_can_change_look: false }));
+  const fill = (list, name, choices, value, disabled) => {
+    list.replaceChildren();
+    for (const [v, title, sub] of choices) {
+      const { li, input } = choice(name, v, title, sub, disabled && v !== value);
+      input.checked = v === value;
+      list.append(li);
+    }
+  };
+  fill($("key-size-setup"), "key-size-choice", KEY_SIZES, current.key_size);
+  // The preview shows every look; the board follows when its firmware can.
+  fill($("theme-setup"), "theme-choice", THEMES, current.theme);
+  fill($("turn-setup"), "turn-choice", TURNS, String(current.turn || 0));
+  $("theme-note").hidden = current.board_can_change_look;
+  displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0, key_font: current.key_font, start_font: current.start_font };
+  showFonts(current);
+  redrawScreens();
+  // Each choice applies at once: on the board, and in the preview.
+  const field = { "key-size-choice": (v) => ({ key_size: v }), "theme-choice": (v) => ({ theme: v }), "turn-choice": (v) => ({ turn: Number(v) }) };
+  for (const name of Object.keys(field)) {
+    document.querySelectorAll(`input[name="${name}"]`).forEach((input) => input.addEventListener("change", () => {
+      const change = field[name](input.value);
+      saveDisplay(change).catch((err) => logTo($("pair-log"), `Could not apply that: ${err.message}`, "error"));
+    }));
+  }
+}
+
+// Every choice is applied as it is made; Done only finishes setup.
+$("key-size-save").addEventListener("click", () => { $("setup-done").hidden = false; });
+
+$("key-size").addEventListener("change", (e) => saveDisplay({ key_size: e.target.value }).catch((err) => alert(`Could not save the key size: ${err.message}`)));
+$("theme").addEventListener("change", (e) => saveDisplay({ theme: e.target.value }).catch((err) => alert(`Could not change the look: ${err.message}`)));
+$("turn").addEventListener("change", (e) => saveDisplay({ turn: Number(e.target.value) }).catch((err) => alert(`Could not turn the screen: ${err.message}`)));
+loadDisplay().catch(() => {});
 
 /** What the last port scan saw, so watching only redraws (and asks the assistant) on a change. */
 let lastPorts = null;
@@ -767,6 +966,8 @@ $("install").addEventListener("click", async () => {
   $("flash-stage").className = "note";
   $("flash-stage").textContent = "Downloading and checking the firmware...";
   try {
+    delete $("to-pair").dataset.next;
+    $("to-pair").textContent = "Next";
     await api("/flash", { port: setup.port, board: setup.board, erase: $("erase").checked });
   } catch (e) {
     onFlash({ stage: "failed", error: e.message });
@@ -790,7 +991,11 @@ function onFlash(p) {
     $("bar").style.width = "100%";
     stage.className = "note success";
     stage.textContent = `Installed KnoEnd ${p.version}. The board restarted.`;
-    $("to-pair").disabled = false;
+    if ($("erase").checked) {
+      $("to-pair").disabled = false;
+    } else {
+      afterKeptSettings();
+    }
   } else if (p.stage === "failed") {
     stage.className = "note error";
     stage.textContent = `Install failed: ${p.error}`;
@@ -800,7 +1005,39 @@ function onFlash(p) {
   if (p.text) logTo($("flash-log"), p.text);
 }
 
-$("to-pair").addEventListener("click", () => { step(4); scanWifi(); });
+$("to-pair").addEventListener("click", () => {
+  if ($("to-pair").dataset.next === "look") keySizeStep();
+  else { step(4); scanWifi(); }
+});
+
+/**
+ * After an install that kept the board's settings: a board paired with this computer comes back on
+ * its Wi-Fi by itself, so pairing and Wi-Fi are skipped when it does (within 40 s).
+ */
+async function afterKeptSettings() {
+  const button = $("to-pair");
+  const stage = $("flash-stage");
+  const paired = renderStatus.last && renderStatus.last.link !== "no-pairing";
+  if (!paired) {
+    button.disabled = false;
+    return;
+  }
+  stage.textContent += " It keeps its pairing and Wi-Fi: waiting for it to come back on your network...";
+  const deadline = Date.now() + 40000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1000));
+    if (renderStatus.last && renderStatus.last.link === "connected") {
+      stage.textContent = "Installed. The board kept its pairing and Wi-Fi and is connected again: nothing to pair.";
+      button.dataset.next = "look";
+      button.textContent = "Next: keys and look";
+      button.disabled = false;
+      return;
+    }
+  }
+  stage.className = "note";
+  stage.textContent = "Installed, but the board has not come back on the network after 40 seconds. Pair it and give it Wi-Fi again.";
+  button.disabled = false;
+}
 
 // ---- Wi-Fi networks, as the board hears them ----
 
@@ -920,7 +1157,7 @@ $("pair-form").addEventListener("submit", async (e) => {
   try {
     const result = await api("/provision", { port: setup.port, ssid: ssid || null, password: ssid ? password : null });
     logTo($("pair-log"), `Paired with board ${result.board}${result.ip ? ` on ${result.ip}` : ""}`);
-    $("pair-done").hidden = false;
+    keySizeStep();
   } catch (err) {
     logTo($("pair-log"), `Pairing failed: ${err.message}`, "error");
     autoAssist(`Pairing failed: ${err.message}`);
@@ -1208,9 +1445,9 @@ function watchTyping() {
   }, 3000);
 }
 
-/** One line per change in a suggested fix. */
-function describeFix(fix) {
-  const lines = [];
+/** One line per change in a suggested fix; `settings` are labelled by the service. */
+function describeFix(fix, settings = []) {
+  const lines = settings.map((s) => `${s.title}: ${s.label}`);
   if (fix.model) lines.push(`Model: ${fix.model}`);
   if (fix.base_url !== undefined) lines.push(fix.base_url ? `API address: ${fix.base_url}` : "API address: the provider's usual one");
   for (const [name, value] of Object.entries(fix.options || {})) {
@@ -1244,6 +1481,17 @@ async function applyFix(fix) {
     if (setup.step !== 2) step(2);
     done.push(`chose ${c.name}`);
   }
+  if (fix.settings) {
+    try {
+      const r = await api("/settings", { changes: fix.settings });
+      await loadDisplay().catch(() => {});
+      done.push(r.done.join(", "));
+    } catch (e) {
+      status.className = "note error";
+      status.textContent = `Could not apply it: ${e.message}`;
+      return;
+    }
+  }
   if (fix.model || fix.base_url !== undefined || fix.options || fix.timeout_secs) {
     status.textContent = "Saving the change and sending a one-word test request...";
     try {
@@ -1272,48 +1520,201 @@ async function applyFix(fix) {
   $("advice-fix-apply").disabled = true;
 }
 
+/**
+ * Shows an answer from the assistant in the floating panel: asked here, or raised by the service's
+ * watcher (`noticed`: what it noticed, shown first).
+ */
+function showAdvice(r) {
+  assistantPanel(true);
+  $("advice").hidden = false;
+  $("advice-text").classList.remove("thinking");
+  if (r.noticed) { keepInThread(); $("advice-q").textContent = "Noticed by KnoEnd"; $("advice-q").hidden = false; }
+  $("advice-actions").replaceChildren();
+  $("advice-fix").hidden = true;
+  const looked = (r.checked || []).map((c) => c.check.replaceAll("_", " "));
+  const noticed = r.noticed ? `KnoEnd noticed, without being asked:\n- ${r.noticed.join("\n- ")}\n\n` : "";
+  $("advice-text").textContent = noticed + (looked.length ? `(Checked: ${looked.join(", ")}.)\n` : "") + (r.answer || "");
+  $("advice-sent").textContent = r.sent ? JSON.stringify(r.sent, null, 2) : "";
+  for (const id of r.actions || []) {
+    if (!ACTIONS[id]) continue;
+    const b = document.createElement("button");
+    b.className = "secondary";
+    b.textContent = ACTIONS[id][0];
+    b.addEventListener("click", ACTIONS[id][1]);
+    $("advice-actions").append(b);
+  }
+  if (r.fix) {
+    $("advice-fix-list").replaceChildren(...describeFix(r.fix, r.settings_described || []).map((line) => { const li = document.createElement("li"); li.textContent = line; return li; }));
+    $("advice-fix-status").hidden = true;
+    const apply = $("advice-fix-apply");
+    apply.disabled = false;
+    apply.onclick = () => applyFix(r.fix);
+    $("advice-fix").hidden = false;
+  }
+}
+
+/** Something the watcher raised: shown once per raise (remembered in this browser). */
+function onNoticed(r) {
+  if (!r) return;
+  const key = JSON.stringify(r.noticed || []);
+  try { if (localStorage.getItem("knoend-noticed") === key) return; localStorage.setItem("knoend-noticed", key); } catch {}
+  showAdvice(r);
+}
+
 async function ask(question, error) {
   if (!aiReady) {
+    assistantPanel(true);
     $("assistant-off").hidden = false;
     return;
   }
+  assistantPanel(true);
+  keepInThread();
   const box = $("advice");
   box.hidden = false;
-  $("advice-text").textContent = "Thinking...";
+  const shown = question.trim() || (error ? `Something went wrong: ${error}` : "What should I do next?");
+  $("advice-q").textContent = shown;
+  $("advice-q").hidden = false;
+  $("advice-text").textContent = "Looking";
+  $("advice-text").classList.add("thinking");
   $("advice-actions").replaceChildren();
   $("advice-fix").hidden = true;
-  const context = { wizard_task: setup.task, wizard_step: setup.step, port: setup.port, chosen_board: setup.board,
+  $("ask-input").value = "";
+  const page = currentView();
+  const context = { page, wizard_task: setup.task, wizard_step: setup.step, port: setup.port, chosen_board: setup.board,
                     identify_result: setup.identified, error: error || null, setup_mode: setup.mode,
                     ai_models_available: models.slice(0, 200) };
   try {
-    const r = await api("/assist", { question, context });
-    $("advice-text").textContent = r.answer;
-    $("advice-sent").textContent = JSON.stringify(r.sent, null, 2);
-    for (const id of r.actions) {
-      if (!ACTIONS[id]) continue;
-      const b = document.createElement("button");
-      b.className = "secondary";
-      b.textContent = ACTIONS[id][0];
-      b.addEventListener("click", ACTIONS[id][1]);
-      $("advice-actions").append(b);
-    }
-    if (r.fix) {
-      $("advice-fix-list").replaceChildren(...describeFix(r.fix).map((line) => { const li = document.createElement("li"); li.textContent = line; return li; }));
-      $("advice-fix-status").hidden = true;
-      const apply = $("advice-fix-apply");
-      apply.disabled = false;
-      apply.onclick = () => applyFix(r.fix);
-      $("advice-fix").hidden = false;
-    }
+    showAdvice(await api("/assist", { question, context }));
   } catch (e) {
+    $("advice-text").classList.remove("thinking");
     $("advice-text").textContent = `The assistant could not answer: ${e.message}`;
   }
 }
+
+function currentView() {
+  return [...document.querySelectorAll("main .view")].find((v) => !v.hidden)?.id.replace("view-", "") || null;
+}
+
+/** The answer on show goes into the conversation above, as text, before the next one. */
+function keepInThread() {
+  if ($("advice").hidden || !$("advice-text").textContent || $("advice-text").classList.contains("thinking")) return;
+  const li = document.createElement("li");
+  li.className = "exchange";
+  const q = document.createElement("p");
+  q.className = "q";
+  q.textContent = $("advice-q").textContent;
+  const a = document.createElement("p");
+  a.className = "advice";
+  a.textContent = $("advice-text").textContent;
+  li.append(q, a);
+  $("thread").append(li);
+  while ($("thread").children.length > 12) $("thread").firstElementChild.remove();
+}
+
+// ---- help across the app: suggested questions, an "ask about this" on every section, tips ----
+
+/** Questions worth asking on each page, given what is going on. */
+function suggestionsFor(page) {
+  const s = renderStatus.last || {};
+  const out = [];
+  if (s.link && s.link !== "connected") out.push(s.link === "no-pairing" ? "How do I set up my board?" : "Why can't KnoEnd find my board?");
+  if (page === "dashboard") out.push("Why don't my keys change with the app?", "Make the keys easier to read", "Is my board healthy?", "Suggest a font for the keys");
+  if (page === "edit") out.push("How do I add another page of keys?", "What does Primary mean in a shortcut?", "Which version of these keys is the board using?");
+  if (page === "setup") out.push("What should I do next?", "My board is not found over USB", "Which board do I have?");
+  return out.slice(0, 4);
+}
+
+function renderSuggestions() {
+  const box = $("ask-suggestions");
+  box.replaceChildren(...suggestionsFor(currentView()).map((q) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.textContent = q;
+    b.addEventListener("click", () => ask(q));
+    return b;
+  }));
+}
+
+/** A small ° on every section title: ask the assistant about that part of the page. */
+function addAskButtons() {
+  for (const h2 of document.querySelectorAll("main .card h2")) {
+    if (h2.querySelector(".ask-about")) continue;
+    const title = [...h2.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join(" ").trim();
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ask-about";
+    b.title = `Ask the assistant about ${title}`;
+    b.setAttribute("aria-label", `Ask the assistant about ${title}`);
+    b.textContent = "°";
+    b.addEventListener("click", () => ask(`About "${title}" on the ${currentView()} page: explain what I am looking at, and tell me if anything there should change.`));
+    h2.append(b);
+  }
+}
+
+const TIPS = {
+  dashboard: [
+    "Open an app without keys of its own, then tap Configure on the board: the AI drafts keys for it in seconds.",
+    "Swipe the board sideways, or tap the page number on its status bar, for more keys.",
+    "The ° in Kn°End lights up while the board is connected.",
+    "When Claude asks a question, the board shows it with the answers on its keys.",
+    "Something odd? The assistant watches in the background and tells you what it noticed.",
+  ],
+  edit: [
+    "Tap a key on the board to select it here.",
+    "Drag a key onto another place to move it; nothing changes on the board's real keys until you Save.",
+    "Press Record and then the keys, instead of typing a shortcut.",
+  ],
+  setup: [
+    "Guided by AI: when a step fails, the assistant reads what happened and tells you the next step.",
+    "Installing without erasing keeps the board's Wi-Fi and pairing.",
+    "The board hears 2.4 GHz Wi-Fi only.",
+  ],
+};
+let tipIndex = 0;
+
+function showTip() {
+  const page = currentView();
+  const tips = TIPS[page] || [];
+  const el = document.querySelector(`#view-${page} .tip`);
+  if (!el || !tips.length) return;
+  el.querySelector(".tip-text").textContent = tips[tipIndex % tips.length];
+}
+
+function addTips() {
+  for (const page of Object.keys(TIPS)) {
+    const view = $(`view-${page}`);
+    if (!view || view.querySelector(".tip")) continue;
+    const tip = document.createElement("p");
+    tip.className = "tip";
+    tip.innerHTML = `<span class="tip-label">Tip</span><span class="tip-text"></span>`;
+    const next = document.createElement("button");
+    next.type = "button";
+    next.className = "tip-next";
+    next.textContent = "Next";
+    next.addEventListener("click", () => { tipIndex++; showTip(); });
+    tip.append(next);
+    view.prepend(tip);
+  }
+  showTip();
+}
+setInterval(() => { tipIndex++; showTip(); }, 20000);
 
 /** In guided mode, every failure goes to the assistant with what was happening. */
 function autoAssist(error) {
   if (setup.mode === "ai" && aiReady) ask("", error);
 }
+
+/** Opens or closes the floating assistant; it keeps its last answer while closed. */
+function assistantPanel(open) {
+  $("assistant").hidden = !open;
+  $("assistant-open").hidden = open;
+  $("assistant-open").setAttribute("aria-expanded", String(open));
+  if (open) { renderSuggestions(); $("ask-input").focus(); }
+}
+$("assistant-open").addEventListener("click", () => assistantPanel(true));
+$("assistant-close").addEventListener("click", () => assistantPanel(false));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("assistant").hidden) assistantPanel(false); });
 
 $("ask-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -1323,7 +1724,10 @@ $("ask-form").addEventListener("submit", (e) => {
 // ---- start ----
 
 (async function start() {
+  addAskButtons();
+  addTips();
   connectEvents();
+  api("/assist/noticed").then((r) => onNoticed(r.noticed)).catch(() => {});
   try {
     const { status } = await api("/state");
     renderStatus(status);

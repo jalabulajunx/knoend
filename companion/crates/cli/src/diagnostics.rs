@@ -138,6 +138,9 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
         "browser_extension_connected": shared.browser.connected(),
         "ai_provider": agent.map(|a| a.describe()),
         "ai_tools_on_this_computer": knoend_agents::cli_tool::tools_on_this_computer().await,
+        // What the person can change (a fix may set any of them) and what the assistant may check.
+        "settings": crate::settings::all(shared).await,
+        "checks_available": crate::checks::describe(),
         "from_the_web_app": ui_context,
     })
 }

@@ -26,6 +26,11 @@ CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_28=y
 CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+# Fonts the person chooses (Google Fonts, sent by the companion, kept in the fonts partition) are
+# TrueType, drawn by LVGL's tiny_ttf. LVGL allocates with malloc (PSRAM) instead of its own 32 KB
+# pool, which a few TrueType fonts and their glyph caches would fill.
+CONFIG_LV_USE_TINY_TTF=y
+CONFIG_LV_MEM_CUSTOM=y
 
 # Bluetooth LE keyboard (Bluedroid, BLE only: the ESP32-S3 has no Classic Bluetooth).
 CONFIG_BT_ENABLED=y

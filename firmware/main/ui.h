@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "display.h"
+
 #define UI_KEYS        16 // the largest grid, 4x4
 #define UI_LABEL_BYTES 97 // 24 characters of UTF-8, plus NUL
 #define UI_ICON_BYTES  66 // a Material Icons name (spec/icons.txt) or a sent image ("app:firefox"), plus NUL
@@ -38,6 +40,22 @@ typedef struct {
 } ui_layout_t;
 
 typedef enum { UI_STATUS_INFO, UI_STATUS_ATTENTION, UI_STATUS_ALERT } ui_status_level_t;
+
+// Turns the screen (0-3 quarter turns from the usual landscape) and redraws. Safe to call from any
+// task.
+void ui_set_turn(int turn);
+
+// Shows the start-up name for a moment, as at start-up (a preview of its font and size). Safe to
+// call from any task.
+void ui_show_start(void);
+
+// Stops using the person's key font (before it is replaced) / starts using what is stored now.
+// Safe to call from any task.
+void ui_fonts_release(void);
+void ui_fonts_reload(void);
+
+// Redraws everything in `theme` (a display_theme_t). Safe to call from any task.
+void ui_set_theme(display_theme_t theme);
 
 // Draws the grid with the default layout. Call once after board_init().
 void ui_start(void);

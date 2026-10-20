@@ -1,9 +1,10 @@
 # What's on main
 
-As of 2026-10-19. A one-page map for anyone (person or coding agent) picking the project up.
+As of 2026-10-20. A one-page map for anyone (person or coding agent) picking the project up.
 How to set it up: [`setup.md`](setup.md). Day-by-day detail, including what was tested and how:
 [`log.md`](log.md). Working rules: [`../AGENTS.md`](../AGENTS.md). Picking up dynamic layouts or
-terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-18 log entry first.
+terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-18 log entry first;
+for the setup assistant, settings, fonts and the board's look, the 2026-10-20 handoff section.
 
 ## Works today (tested on an ONX2432G028 with Arch Linux, i3/X11, and with macOS 26.6 on Apple silicon)
 
@@ -44,10 +45,28 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | Background service (systemd user unit / LaunchAgent) | `cli/src/background.rs` | `knoend service install` |
 | Recipes: apps, sites and Claude Code's screens as data, each with who tested it on which OS | `recipes/`, `spec/protocol.md` section 5 | `python3 tools/validate_spec.py` |
 
+## How the board looks, fonts, and the assistant that listens (added 2026-10-20; ONX + Linux tested)
+
+| Piece | Where | Try it |
+| --- | --- | --- |
+| Key size (2x2, 3x3 default, 4x4): every page uses that grid, keys packed in order | `cli/src/display.rs`, `core/src/layout.rs` (`packed`) | dashboard > Look |
+| Look (Dark, White, Sepia) and way round (landscape, portrait, upside down), kept on the board and changed live (`knoend.display`, spec 3.6d) | `firmware/main/display.c`, `ui.c`, `board_generic.c` (`board_set_turn`) | dashboard > Look |
+| Fonts from Google Fonts for key labels and the start-up "Kn°End", kept in a fonts partition, start-up size (`knoend.font`, spec 3.6e) | `firmware/main/fonts.c`, `cli/src/fonts.rs` | dashboard > Key font / Start-up font |
+| AI providers without an API key: Claude Code, Antigravity CLI found on this computer | `agents/src/cli_tool.rs` | AI settings |
+| The service describes itself to the setup assistant: every setting, read-only checks it runs, everything the service prints | `cli/src/settings.rs`, `checks.rs`, `journal.rs` | ask "make the keys bigger" |
+| The assistant listens all the time: faults (`problem!`) are put to it without being asked; its answer opens in the web app | `cli/src/watch.rs`, `consult.rs` | unplug the board for 2 minutes |
+| Board reports why it last started (`lastStart`), drops a font it crashed with, and never hangs on a lost display update | `firmware/main/protocol.c`, `fonts.c`, `board_generic.c` | serial log |
+| Web app redesign: drawn board with its real screen (FIG. 01), tips, an "ask about this" ° on every section, an assistant panel with a conversation and suggestions, a setup rail with a board acting out each step | `web/` | `knoend serve` |
+
 ## Built, not yet tested
 
 - GT911 touch, display start-up commands, active-high reset; the ESP32-S3-BOX-3 and Waveshare
   ESP32-S3-Touch-LCD-2 definitions (status "unverified").
+- The 2026-10-20 additions on the FNK0104B and on macOS (display settings, fonts, the watcher's
+  checks; `board_serial_log` assumes a USB-serial port).
+- The display hang seen once on the ONX (LVGL waiting in `draw_buf_flush`): guarded since
+  v0.1.1-115 (gives up after 300 ms, logs "display: an update never reported done"); the cause is
+  not found yet.
 - macOS: site icons, LaunchAgent. Compiled in CI only. "Go to Claude" never appears on macOS:
   it comes from desktop notifications, which are read only on Linux.
 - The assistant's macOS buttons (open Accessibility, open Driver Extensions, install WCH's USB

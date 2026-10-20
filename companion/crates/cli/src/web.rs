@@ -62,7 +62,11 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/ai", get(ai_settings).post(save_ai_settings))
         .route("/ai/models", post(ai_models))
         .route("/ai/tools", get(ai_tools))
+        .route("/display", get(display_settings).post(save_display))
+        .route("/settings", get(settings).post(change_settings))
+        .route("/fonts", get(font_catalogue))
         .route("/assist", post(assist))
+        .route("/assist/noticed", get(noticed))
         .route("/open", post(open_help))
         .route("/typing", get(typing))
         .route("/edit", post(edit))
@@ -77,7 +81,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .with_state(app);
 
     let url = format!("http://127.0.0.1:{port}/");
-    println!("KnoEnd is at {url}");
+    say!("KnoEnd is at {url}");
     if open {
         let opener = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
         let _ = std::process::Command::new(opener).arg(&url).spawn();
@@ -300,7 +304,10 @@ async fn flash(State(app): State<App>, Json(request): Json<FlashRequest>) -> Api
         });
         match result {
             Ok(()) => shared.emit("flash", json!({"stage": "finished", "version": version, "text": "Flashed and restarted"})),
-            Err(e) => shared.emit("flash", json!({"stage": "failed", "error": e, "text": format!("Flashing failed: {e}")})),
+            Err(e) => {
+                raise!("flash", "Installing the firmware failed: {e}");
+                shared.emit("flash", json!({"stage": "failed", "error": e, "text": format!("Flashing failed: {e}")}));
+            }
         }
     });
     Ok(Json(json!({"started": true})))
@@ -369,6 +376,69 @@ async fn ai_settings() -> ApiResult {
         }))),
         Err(e) => Ok(Json(json!({"configured": false, "error": e}))),
     }
+}
+
+/// How the keys look: the key size (and the grid it allows) and the choices.
+async fn display_settings(State(app): State<App>) -> ApiResult {
+    let display = crate::display::load();
+    let board = app_board(&app).await;
+    Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn,
+                   "key_font": display.key_font, "start_font": display.start_font, "start_size": display.start_size,
+                   "board_can_change_fonts": board.as_ref().is_some_and(|b| b.fonts.is_some()),
+                   // False when the board's firmware has one look only (or no board is connected).
+                   "board_can_change_look": board.is_some_and(|b| b.display.is_some())})))
+}
+
+async fn app_board(app: &App) -> Option<crate::service::BoardStatus> {
+    app.shared.status.read().await.board.clone()
+}
+
+/// Any of the three; what is left out stays as it is.
+#[derive(Deserialize)]
+struct DisplayRequest {
+    key_size: Option<Value>,
+    theme: Option<Value>,
+    turn: Option<Value>,
+    key_font: Option<Value>,
+    start_font: Option<Value>,
+    start_size: Option<Value>,
+}
+
+/// Saves the choice and applies it at once, through the settings list (settings.rs).
+async fn save_display(State(app): State<App>, Json(request): Json<DisplayRequest>) -> ApiResult {
+    let mut changes = serde_json::Map::new();
+    for (id, value) in [("key_size", request.key_size), ("theme", request.theme), ("turn", request.turn),
+                        ("key_font", request.key_font), ("start_font", request.start_font), ("start_size", request.start_size)] {
+        if let Some(value) = value {
+            changes.insert(id.into(), value);
+        }
+    }
+    crate::settings::apply(&app.shared, &changes).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
+    let display = crate::display::load();
+    Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn,
+                   "key_font": display.key_font, "start_font": display.start_font, "start_size": display.start_size})))
+}
+
+/// Google Fonts' families with Latin letters, live (fonts.rs), for the font picker.
+async fn font_catalogue() -> ApiResult {
+    let families = crate::fonts::catalogue().await.map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(json!({"families": families})))
+}
+
+/// Every setting the person can change, described (settings.rs).
+async fn settings(State(app): State<App>) -> ApiResult {
+    Ok(Json(json!({"settings": crate::settings::all(&app.shared).await})))
+}
+
+#[derive(Deserialize)]
+struct SettingsRequest {
+    changes: serde_json::Map<String, Value>,
+}
+
+/// Applies changes `{id: value}` (an assistant fix the person applied, or the web app's own).
+async fn change_settings(State(app): State<App>, Json(request): Json<SettingsRequest>) -> ApiResult {
+    let done = crate::settings::apply(&app.shared, &request.changes).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(json!({"done": done})))
 }
 
 /// The AI tools on this computer (Claude Code, Antigravity, Codex), looked up now.
@@ -451,11 +521,13 @@ struct AssistRequest {
 
 /// Asks the setup assistant. Returns its advice, the buttons it suggests, and exactly what was sent.
 async fn assist(State(app): State<App>, Json(request): Json<AssistRequest>) -> ApiResult {
-    let config = crate::agent_config().map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
-    let snapshot = crate::diagnostics::snapshot(&app.shared, request.context).await;
-    let advice = knoend_agents::assistant::advise(&config, &request.question, &snapshot).await
-        .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
-    Ok(Json(json!({"answer": advice.answer, "actions": advice.actions, "fix": advice.fix, "sent": snapshot, "by": config.describe()})))
+    let answer = crate::consult::ask(&app.shared, &request.question, request.context).await.map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(answer))
+}
+
+/// What the assistant last raised by itself (the watcher), for a web app opened afterwards.
+async fn noticed() -> ApiResult {
+    Ok(Json(json!({"noticed": crate::watch::latest()})))
 }
 
 /// Whether this computer lets knoend type for the board (macOS asks for Accessibility; elsewhere
@@ -476,7 +548,7 @@ struct OpenRequest {
 /// still approves everything there).
 async fn open_help(Json(request): Json<OpenRequest>) -> ApiResult {
     let done = crate::macos_help::open(&request.target).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
-    println!("{done}");
+    say!("{done}");
     Ok(Json(json!({"done": done})))
 }
 

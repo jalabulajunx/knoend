@@ -78,6 +78,10 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `knoend.wifi.ack` | B→C | Credentials stored; the board joins the network |
 | `knoend.wifi.scan` | C→B | Serial only: list the Wi-Fi networks the board can hear (empty body) |
 | `knoend.wifi.networks` | B→C | Up to 20 networks, strongest first: `ssid`, `rssi` (dBm), `channel`, `secured`. The ESP32-S3 hears 2.4 GHz only |
+| `knoend.display` | C→B | How the board looks: its theme and which way it sits (section 3.6d) |
+| `knoend.display.ack` | B→C | Stored and shown; the screen's size and largest grid as it now sits |
+| `knoend.font` | C→B | A font for the key labels or the start-up name, in slices (section 3.6e) |
+| `knoend.font.ack` | B→C | Font kept and in use, or why not |
 | `knoend.ping` | both | Liveness check; answer with `knoend.ping` and `re` set |
 | `knoend.error` | both | A packet could not be handled |
 
@@ -91,7 +95,10 @@ arrives.
     "deviceId": "a0b1c2d3e4f5", "deviceName": "KnoEnd", "deviceType": "board",
     "protocolVersion": 0, "firmware": "a1ea8a8",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
-               "grid": { "cols": 4, "rows": 4 }, "statusBar": true },
+               "grid": { "cols": 4, "rows": 4 }, "statusBar": true,
+               "display": { "theme": "dark", "turn": 0 },
+               "fonts": { "capacity": 483328, "keys": null,
+                          "start": { "name": "Edu AU VIC WA NT Dots", "crc": 2271390218 } } },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
                   "transports": ["ble-hid", "ble-data", "serial", "wifi"] },
     "incoming": ["knoend.layout", "knoend.status", "knoend.ping"],
@@ -100,6 +107,16 @@ arrives.
 
 - `board.grid`: the largest grid the board draws legibly (cols and rows 1-4), from its screen size.
   The companion splits a page with a bigger grid onto pages of this size.
+- `board.width`, `board.height` and `board.grid` are as the board sits now: turned to portrait, the
+  ONX is 240x320 and its largest grid 3x4.
+- `lastStart` (boards): why the board last started: `power-on`, `restart`, `crash`, `watchdog`,
+  `brownout` (the power dipped), `wake` or `other`. The companion raises `crash`, `watchdog` and
+  `brownout` as problems.
+- `board.fonts`: the fonts the person chose that the board holds (section 3.6e): `capacity`, the
+  largest font a slot takes in bytes, and per slot (`keys`, `start`) the font's `name` and CRC-32,
+  or null for the built-in font. Absent on firmware without fonts.
+- `board.display`: the theme and turn the board uses now (section 3.6d). Absent on firmware older
+  than this message, which is always `dark`, turn 0.
 - `deviceId`: stable per device (boards: base MAC, lowercase hex, no separators).
 - `deviceType`: `board`, `companion` or `sim` (the simulator identifies as `sim` but otherwise
   behaves exactly like a board).
@@ -218,6 +235,66 @@ companion sends a picture again on each new connection, before the layout that u
 - Nothing focused (empty desktop): the launcher (`system.launcher`): up to 9 apps and sites the
   person used most and most recently, with their own icons; a tap opens one. Usage (seconds in front
   per app and site) is kept on the computer only.
+
+### 3.6d `knoend.display` / `knoend.display.ack`
+
+How the board looks, chosen by the person at setup and changeable from the web app. The board
+keeps both values with its pairing and Wi-Fi settings, so it starts that way before any companion
+connects.
+
+```json
+{ "id": 12, "type": "knoend.display", "body": { "theme": "sepia", "turn": 1 } }
+{ "id": 4, "re": 12, "type": "knoend.display.ack", "body": { "theme": "sepia", "turn": 1,
+    "width": 240, "height": 320, "grid": { "cols": 3, "rows": 4 } } }
+```
+
+- `theme`: `dark` (the usual: light text on dark keys, colour for pressed, confirm and the status
+  levels), `white` or `sepia` (e-ink looks: dark ink on white, or on warm paper; high contrast,
+  keys outlined; pressed keys are a lighter shade of the ink, a key waiting for confirmation and
+  the `attention` and `alert` bars are filled with the ink, Material icons are in the ink colour).
+  Pictures the companion sends (3.6b) are drawn as sent; for `white` the companion sends them in
+  grey, for `sepia` in sepia tones.
+- `turn`: quarter turns clockwise from the board's usual landscape (its definition's
+  `display.rotation`): 0 landscape, 1 portrait, 2 landscape upside down, 3 portrait upside down.
+  Touch follows the turn.
+- `startSize`: pixels (24-96, 64 by default) of the name the board shows for a moment at start-up
+  (section 3.6e). A change shows the name at the new size at once for 2 s, as a preview; so does a
+  new `start` font.
+- Any field may be left out to keep its current value.
+- The board stores the values and shows them at once, without restarting, so the person sees each
+  choice as they make it. Its answer gives the screen's `width`, `height` and largest `grid` as it
+  now sits (they change with a turn); the companion uses them as it would the identity's, and sends
+  the layout again in a grid that fits.
+- The companion sends `knoend.display` after the identities when the person's choice differs from
+  the identity's `board.display`, and when the person changes it.
+
+### 3.6e `knoend.font` / `knoend.font.ack`
+
+A font the person chose (from Google Fonts, in the web app), for one of two slots: `keys` (the key
+labels) or `start` (the name the board shows for a moment at start-up). The board keeps it in flash
+and uses it at once and after every restart, drawing it at whatever size it needs; a character the
+font lacks is drawn in the built-in font.
+
+```json
+{ "id": 30, "type": "knoend.font", "body": { "slot": "start", "name": "Edu AU VIC WA NT Dots",
+    "total": 84956, "offset": 0, "crc": 2271390218, "data": "<base64, at most 2048 bytes>" } }
+{ "id": 9, "re": 71, "type": "knoend.font.ack", "body": { "slot": "start", "name": "Edu AU VIC WA NT Dots", "ok": true } }
+{ "id": 31, "type": "knoend.font", "body": { "slot": "keys", "clear": true } }
+```
+
+- The font is TrueType (`glyf` outlines), at most `board.fonts.capacity` bytes. The companion asks
+  Google Fonts for it trimmed to the characters the board shows (printable ASCII and a few marks).
+- Slices go in order (`offset` 0 first); every slice repeats `slot`, `name`, `total` and `crc`, the
+  CRC-32 (IEEE) of the whole font. The board answers once: after the last slice (`ok` true when
+  the CRC matched and the font is in use), or at the first slice it cannot take (`ok` false and
+  `error`). Until then the slot holds no font.
+- `"clear": true` empties the slot: the built-in font again. The answer has no `name`.
+- A board that crashes while starting with its stored fonts drops them at the next start and
+  names them in `board.fonts.refused`; the companion does not send a refused font again by itself.
+  The board hides a font's kerning tables (`GPOS`, `kern`) from its renderer: a font whose kerning
+  points past its end crashed it.
+- The companion sends a font after the identities when the person's choice differs from
+  `board.fonts`, and when the person changes it.
 
 ### 3.7 `knoend.error`
 
@@ -345,8 +422,12 @@ action looks like buy/submit/send/delete without it.
 grid of every page; a `[[page]]` entry overrides it for one page (one entry per page number). A key's `page` (1-8, default 1) and
 `slot` (1 to cols×rows of its page) are optional: a key with neither takes the next free slot,
 running onto the next page when one is full; a key with only `page` takes the next free slot on
-that page. At most 64 keys. On a board whose `grid` is smaller, the companion splits each page onto
-pages of the board's size, keys in slot order. The media row is the bottom row of the page shown
+that page. At most 64 keys. The library's grids and pages are how it was made, and how the web
+app's editor shows it. On the board, the companion shows every page in the person's **key size**
+(2x2, 3x3 by default, or 4x4, within the board's `grid`): the keys in order (page, then slot),
+blank slots left out, packed into as many pages of that grid as they need. So a 9-key 3x3 layout
+fills one 4x4 page, and a 16-key 4x4 layout becomes two 3x3 pages. Agent screens keep their own
+grid. The media row is the bottom row of the page shown
 (only on grids of 3 rows or more); "Go to Claude" takes its last key, except on a page of fewer than
 4 keys, where the status line says "Claude needs you" instead. AI drafts get their grid from
 their number of keys, on one page: 1 key 1x1, 2 1x2, 3-4 2x2, 5-9 3x3, 10-16 4x4.

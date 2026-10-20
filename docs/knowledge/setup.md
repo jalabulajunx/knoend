@@ -114,6 +114,17 @@ C3, C6) are not supported.
     over Bluetooth).
   - `event-sent`: the action needs the companion (open a page, run a command).
 
+- **Asked to pair and join Wi-Fi again after installing new firmware.** Not needed when the board
+  was installed without erasing: it keeps its pairing, Wi-Fi and settings, restarts and joins its
+  network by itself within about 20 s. Setup now waits for it and skips pairing when it comes back
+  (`find_boards_on_network` shows it with `paired_with_this_computer`). Only an erase, or a board
+  paired from another computer, needs pairing again. Confirmed on the ONX, Linux, 2026-10-20.
+- **"no knoend.wifi.ack from the board within 3s" seconds after installing.** The pairing step
+  worked, then the board did not answer the Wi-Fi step in time: it had just restarted and was still
+  joining its stored network. Doing it again a little later worked (ONX, Linux, 2026-10-20). The
+  Wi-Fi step now waits 10 s and tries once more by itself. If it still fails: wait half a minute and
+  check whether the board came back by itself before pairing again.
+
 ### Wi-Fi and pairing
 
 - **Board never joins Wi-Fi.** The ESP32-S3 joins **2.4 GHz only**; a 5 GHz-only network, or a band
@@ -133,6 +144,48 @@ C3, C6) are not supported.
   hold different keys (board erased, or paired from another computer). Pair again over USB.
 - **Board restarted and the dashboard still says connected.** The companion pings every 10 s and
   reconnects after 25 s of silence; wait half a minute.
+
+### How the board looks
+
+- **Key size, Look and Way round** are settings (dashboard, setup's "Keys and look" step, and the
+  assistant's settings list). Key size is the grid every page uses (Big 2x2, Medium 3x3 by default,
+  Small 4x4); an app's keys fill it in order and the rest go on further pages. The look (Dark,
+  White, Sepia) and the way round (landscape, portrait, either upside down) are kept on the board
+  and change at once, without a restart. Portrait on the ONX fits 3 keys across and 4 down.
+- **"this firmware draws landscape only" or "has one look only".** The board's firmware is older
+  than the setting: install the latest firmware (without erasing). The web app puts the choice back
+  to what the board shows and says so.
+- **Sepia looks like dimmed white.** The first sepia (a pale cream) did on the ONX's 16-bit panel;
+  firmware from 2026-10-20 on uses a stronger tan and brown. Install the latest firmware.
+- **Keys too small to read or hit.** Choose a bigger key size (Medium or Big), or White or Sepia
+  for contrast.
+- **Fonts** (settings `key_font`, `start_font`): any Google Fonts family, by its exact name. The
+  service downloads it from Google when chosen (trimmed to the characters the board shows, as
+  TrueType; no account or key; nothing stored on the computer) and sends it to the board, which
+  keeps it in its own flash, so the start-up name shows before the computer connects. Each font
+  must be under about 470 KB after trimming (`board.fonts.capacity`). A character the font lacks
+  is drawn in Montserrat (Edu AU VIC WA NT Dots has no ° for "Kn°End"). Decorative or dotted fonts
+  are hard to read on keys at 12-20 px: suggest them for the start-up name, plain ones
+  (Atkinson Hyperlegible, Lexend) for keys. Fonts need firmware from 2026-10-20 on, flashed with
+  the new partition table (any web-app install writes it; no erase needed).
+- **The board restarts over and over after a font was chosen.** Seen 2026-10-20 with WDXL Lubrifont
+  SC for keys: its kerning table points past the end of the font, and the renderer crashed reading
+  it at every start (serial log: "Cache disabled but cached memory region accessed", backtrace in
+  stb_truetype `GetGlyphKernAdvance`). Fixed in firmware after v0.1.1-110: kerning tables are hidden
+  from the renderer, fonts are read from a copy in PSRAM, and a font the board did not get through
+  a start with is dropped at the next start (`board.fonts.refused`; the service then does not send
+  it again and says so). With firmware v0.1.1-110 itself: install the latest firmware (no erase).
+- **Board stops answering on Wi-Fi but its screen stays on; serial shows repeated
+  "task_wdt: Task watchdog got triggered ... IDLE0 ... CPU 0: taskLVGL".** The board has not
+  restarted (the number in brackets is milliseconds since it started, and keeps growing): the
+  display task is stuck, and Wi-Fi starves. Seen 2026-10-20 on the ONX after 14 minutes, on
+  firmware v0.1.1-111: LVGL waited forever for the screen to report an update done
+  (`draw_buf_flush`). Unplug and plug the board in to get it back; firmware after v0.1.1-113 gives
+  up waiting after 300 ms and logs "display: an update never reported done". A watchdog line is not
+  a crash; "Guru Meditation" or `rst:` with a panic is.
+- **"Could not get the font" or "could not reach Google Fonts".** The computer is offline or
+  Google Fonts is blocked (some offices and schools); the name may also be misspelt: pick it from
+  the list.
 
 ### Bluetooth keyboard
 
@@ -311,6 +364,16 @@ devices and whether each has a port, the WCH driver state, and whether knoend ma
    and the pins, then draft a definition (`spec/schemas/board.schema.json`) and test it. Never use
    GPIO 26-37 on the ESP32-S3 (flash and PSRAM).
 7. Say plainly what is known, what is a guess, and what to check next.
-8. Look below the port list. A board can be on the USB bus with no driver (macOS), or a permission
+8. Use what the service can tell you before asking the person: the settings list (what can be
+   changed, and to what), the checks it can run (the board on the network now, the full service
+   log, the USB ports now) and the service log, which holds every line the service printed. These
+   grow as KnoEnd grows; read them each time.
+9. A board that keeps restarting: its identity says why it last started (`lastStart`: crash,
+   watchdog, brownout), and the `board_serial_log` check reads its own serial output (the crash,
+   its cause and backtrace) while it is not connected. The service's watcher raises such problems
+   by itself and asks the assistant without the person asking ("noticed_by_the_service").
+10. Before sending the person back to a step, find out whether it is needed (a board that kept its
+   pairing needs none), and after a fix, check again that it worked.
+11. Look below the port list. A board can be on the USB bus with no driver (macOS), or a permission
    can stop keys with every board-side step working: the companion log is the first place where
    the failing layer shows ("could not type", "no paired board", focus lines).

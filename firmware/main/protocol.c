@@ -7,6 +7,9 @@
 
 #include "board.h"
 #include "cJSON.h"
+#include "display.h"
+#include "fonts.h"
+#include "esp_system.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -28,11 +31,11 @@ static const char *TAG = "protocol";
 // Only what this firmware actually handles is advertised.
 static const char *const incoming_types[] = {
     "identity", "layout", "status", "pair", "wifi",
-    "wifi.scan", "ping", "image",
+    "wifi.scan", "ping", "image", "display", "font",
 };
 static const char *const outgoing_types[] = {
     "identity", "key", "page", "layout.ack", "pair.ack",
-    "wifi.ack", "wifi.networks", "ping", "error", "image.ack",
+    "wifi.ack", "wifi.networks", "ping", "error", "image.ack", "display.ack", "font.ack",
 };
 static const char *const transports[] = { "ble-hid", "serial", "wifi" };
 
@@ -137,6 +140,17 @@ static void send_identity(int64_t re, transport_t to)
     cJSON_AddStringToObject(body, "deviceType", "board");
     cJSON_AddNumberToObject(body, "protocolVersion", PROTOCOL_VERSION);
     cJSON_AddStringToObject(body, "firmware", esp_app_get_description()->version);
+    // Why the board last started: a crash is reported, so the companion (and its assistant) can see
+    // a board that keeps restarting without reading the serial line.
+    const esp_reset_reason_t reason = esp_reset_reason();
+    cJSON_AddStringToObject(body, "lastStart",
+                            reason == ESP_RST_POWERON ? "power-on"
+                            : reason == ESP_RST_SW ? "restart"
+                            : reason == ESP_RST_PANIC ? "crash"
+                            : reason == ESP_RST_INT_WDT || reason == ESP_RST_TASK_WDT || reason == ESP_RST_WDT ? "watchdog"
+                            : reason == ESP_RST_BROWNOUT ? "brownout"
+                            : reason == ESP_RST_DEEPSLEEP ? "wake"
+                            : "other");
 
     cJSON *b = cJSON_AddObjectToObject(body, "board");
     cJSON_AddStringToObject(b, "profile", board->id);
@@ -149,6 +163,28 @@ static void send_identity(int64_t re, transport_t to)
     cJSON_AddNumberToObject(grid, "cols", max_cols);
     cJSON_AddNumberToObject(grid, "rows", max_rows);
     cJSON_AddBoolToObject(b, "statusBar", true);
+    const display_settings_t *look = display_settings();
+    cJSON *display = cJSON_AddObjectToObject(b, "display");
+    cJSON_AddStringToObject(display, "theme", display_theme_name(look->theme));
+    cJSON_AddNumberToObject(display, "turn", look->turn);
+    cJSON_AddNumberToObject(display, "startSize", look->start_size);
+    // The fonts the person chose that this board holds (spec/protocol.md 3.6e).
+    cJSON *fonts = cJSON_AddObjectToObject(b, "fonts");
+    cJSON_AddNumberToObject(fonts, "capacity", fonts_slot_capacity());
+    if (fonts_refused()[0] != '\0') {
+        cJSON_AddStringToObject(fonts, "refused", fonts_refused());
+    }
+    for (int slot = 0; slot < FONT_SLOTS; slot++) {
+        const char *font_name;
+        uint32_t crc;
+        if (fonts_data(slot, NULL, &font_name, &crc) != NULL) {
+            cJSON *held = cJSON_AddObjectToObject(fonts, fonts_slot_name(slot));
+            cJSON_AddStringToObject(held, "name", font_name);
+            cJSON_AddNumberToObject(held, "crc", crc);
+        } else {
+            cJSON_AddNullToObject(fonts, fonts_slot_name(slot));
+        }
+    }
 
     cJSON *features = cJSON_AddObjectToObject(body, "features");
     cJSON_AddBoolToObject(features, "speaker", board->has_speaker);
@@ -591,6 +627,144 @@ static bool message_name(const char *type, transport_t transport)
     return true;
 }
 
+// The person's theme and turn (spec/protocol.md 3.6d): stored, drawn at once and answered with the
+// screen's new size and largest grid.
+static void handle_display(const cJSON *body, int64_t re, transport_t transport)
+{
+    display_settings_t wanted = *display_settings();
+    const cJSON *theme = cJSON_GetObjectItemCaseSensitive(body, "theme");
+    const cJSON *turn = cJSON_GetObjectItemCaseSensitive(body, "turn");
+    const cJSON *start = cJSON_GetObjectItemCaseSensitive(body, "startSize");
+    if (theme == NULL && turn == NULL && start == NULL) {
+        send_error(re, "bad-packet", "theme, turn or startSize is required", transport);
+        return;
+    }
+    if (start != NULL && !get_int(body, "startSize", DISPLAY_START_MIN, DISPLAY_START_MAX, &wanted.start_size)) {
+        send_error(re, "bad-packet", "startSize must be 24-96", transport);
+        return;
+    }
+    if (theme != NULL && !display_theme_parse(cJSON_GetStringValue(theme), &wanted.theme)) {
+        send_error(re, "bad-packet", "theme must be dark, white or sepia", transport);
+        return;
+    }
+    if (turn != NULL && !get_int(body, "turn", 0, 3, &wanted.turn)) {
+        send_error(re, "bad-packet", "turn must be 0-3", transport);
+        return;
+    }
+    display_settings_t *now = display_settings_mut();
+    const bool new_theme = wanted.theme != now->theme;
+    const bool new_turn = wanted.turn != now->turn;
+    const bool new_start = wanted.start_size != now->start_size;
+    if ((new_theme || new_turn || new_start) && display_settings_store(&wanted) != ESP_OK) {
+        send_error(re, "busy", "could not store the display settings", transport);
+        return;
+    }
+    if (new_theme) {
+        now->theme = wanted.theme;
+        ui_set_theme(wanted.theme);
+        ESP_LOGI(TAG, "display: %s", display_theme_name(wanted.theme));
+    }
+    if (new_turn) {
+        now->turn = wanted.turn;
+        ui_set_turn(wanted.turn);
+    }
+    if (new_start) {
+        now->start_size = wanted.start_size;
+        ui_show_start(); // the person sees the new size at once
+    }
+    const board_info_t *board = board_info();
+    int cols, rows;
+    ui_max_grid(&cols, &rows);
+    cJSON *ack = cJSON_CreateObject();
+    cJSON_AddStringToObject(ack, "theme", display_theme_name(wanted.theme));
+    cJSON_AddNumberToObject(ack, "turn", wanted.turn);
+    cJSON_AddNumberToObject(ack, "startSize", wanted.start_size);
+    cJSON_AddNumberToObject(ack, "width", board->width);
+    cJSON_AddNumberToObject(ack, "height", board->height);
+    cJSON *grid = cJSON_AddObjectToObject(ack, "grid");
+    cJSON_AddNumberToObject(grid, "cols", cols);
+    cJSON_AddNumberToObject(grid, "rows", rows);
+    send_packet("display.ack", ack, re, transport);
+}
+
+static void font_ack(const char *slot, const char *name, const char *error, int64_t re, transport_t transport)
+{
+    cJSON *ack = cJSON_CreateObject();
+    cJSON_AddStringToObject(ack, "slot", slot != NULL ? slot : "");
+    if (name != NULL) {
+        cJSON_AddStringToObject(ack, "name", name);
+    }
+    cJSON_AddBoolToObject(ack, "ok", error == NULL);
+    if (error != NULL) {
+        cJSON_AddStringToObject(ack, "error", error);
+    }
+    send_packet("font.ack", ack, re, transport);
+}
+
+// A font the person chose (spec/protocol.md 3.6e): slices in order, kept in the fonts partition,
+// then used at once. {"slot", "clear": true} goes back to the built-in font.
+static void handle_font(const cJSON *body, int64_t re, transport_t transport)
+{
+    const char *slot_name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(body, "slot"));
+    font_slot_t slot;
+    if (!fonts_slot_parse(slot_name, &slot)) {
+        font_ack(slot_name, NULL, "slot must be keys or start", re, transport);
+        return;
+    }
+    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "clear"))) {
+        if (slot == FONT_SLOT_KEYS) {
+            ui_fonts_release();
+        }
+        const esp_err_t err = fonts_clear(slot);
+        font_ack(slot_name, NULL, err == ESP_OK ? NULL : esp_err_to_name(err), re, transport);
+        return;
+    }
+    const char *name = get_string(body, "name", FONT_NAME_BYTES - 1);
+    const char *data = get_string(body, "data", 4000);
+    const cJSON *crc = cJSON_GetObjectItemCaseSensitive(body, "crc");
+    int offset, total;
+    if (name == NULL || data == NULL || !cJSON_IsNumber(crc) || !get_int(body, "offset", 0, 0x7FFFFFFF, &offset) ||
+        !get_int(body, "total", 1, 0x7FFFFFFF, &total)) {
+        font_ack(slot_name, name, "name, total, offset, crc and data are required", re, transport);
+        return;
+    }
+    if ((size_t)total > fonts_slot_capacity()) {
+        font_ack(slot_name, name, "too big for the board: choose another font", re, transport);
+        return;
+    }
+    if (offset == 0) {
+        if (slot == FONT_SLOT_KEYS) {
+            ui_fonts_release(); // the keys may not use a font being replaced
+        }
+        const esp_err_t err = fonts_begin(slot, total, name);
+        if (err != ESP_OK) {
+            font_ack(slot_name, name, esp_err_to_name(err), re, transport);
+            return;
+        }
+    }
+    static uint8_t piece[3000]; // not on the network task's stack
+    size_t written = 0;
+    if (mbedtls_base64_decode(piece, sizeof(piece), &written, (const unsigned char *)data, strlen(data)) != 0) {
+        font_ack(slot_name, name, "data is not base64 or too long", re, transport);
+        return;
+    }
+    if (fonts_write(slot, offset, piece, written) != ESP_OK) {
+        font_ack(slot_name, name, "slice out of order", re, transport);
+        return;
+    }
+    if ((size_t)offset + written < (size_t)total) {
+        return; // more slices to come
+    }
+    const esp_err_t err = fonts_finish(slot, (uint32_t)crc->valuedouble);
+    if (slot == FONT_SLOT_KEYS) {
+        ui_fonts_reload();
+    } else if (err == ESP_OK) {
+        ui_show_start(); // the new start-up font, at once
+    }
+    ESP_LOGI(TAG, "font %s: %s %s", slot_name, name, err == ESP_OK ? "kept" : esp_err_to_name(err));
+    font_ack(slot_name, name, err == ESP_OK ? NULL : "the font arrived damaged; send it again", re, transport);
+}
+
 static void handle_line(const char *line, transport_t transport)
 {
     cJSON *packet = cJSON_Parse(line);
@@ -623,6 +797,10 @@ static void handle_line(const char *line, transport_t transport)
         handle_wifi(body, re, transport);
     } else if (strcmp(name_of(type->valuestring), "wifi.scan") == 0) {
         handle_wifi_scan(re, transport);
+    } else if (strcmp(name_of(type->valuestring), "display") == 0) {
+        handle_display(body, re, transport);
+    } else if (strcmp(name_of(type->valuestring), "font") == 0) {
+        handle_font(body, re, transport);
     }
     // Anything else is ignored, as the spec requires for unknown types.
     cJSON_Delete(packet);

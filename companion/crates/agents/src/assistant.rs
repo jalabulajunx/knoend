@@ -12,14 +12,43 @@ use crate::provider::{self, AgentConfig, Message};
 
 const KNOWLEDGE: &str = include_str!("../../../../docs/knowledge/setup.md");
 
-/// Actions the web app can offer as buttons.
-pub const ACTIONS: &[&str] = &["rescan", "identify", "install", "install_erase", "pair", "change_wifi", "dashboard",
-                                "open_accessibility_settings", "open_driver_settings", "install_usb_driver"];
+/// Buttons the web app can offer, and what each does: the prompt is written from this list, so a
+/// button added here (and in the web app's ACTIONS) is one the assistant knows.
+pub const ACTIONS: &[(&str, &str)] = &[
+    ("rescan", "look for USB ports again"),
+    ("identify", "ask the board on the chosen port what it is; restarts it briefly"),
+    ("install", "install the firmware, keeping the board's Wi-Fi, pairing and settings"),
+    ("install_erase", "erase the board first, then install: removes Wi-Fi, pairing and settings"),
+    ("pair", "pair the board with this computer over USB and give it Wi-Fi"),
+    ("change_wifi", "move a board that is already set up to another network over USB, keeping its pairing: for a new \
+                     router, a changed password or another place"),
+    ("dashboard", "go to the dashboard"),
+    ("open_accessibility_settings", "macOS only: opens Privacy & Security > Accessibility, where the person switches on \
+                                     the app named in system_checks.accessibility.app_to_allow"),
+    ("open_driver_settings", "macOS only: opens Login Items & Extensions, where the person switches on a driver under \
+                              Driver Extensions"),
+    ("install_usb_driver", "macOS only: downloads WCH's USB-serial driver, checks Apple has notarized it and WCH signed \
+                            it, then opens its installer; the person clicks through and enters their Mac password there"),
+];
+
+fn is_action(name: &str) -> bool {
+    ACTIONS.iter().any(|(a, _)| *a == name)
+}
+
+/// Rounds of checks the assistant may ask for before it must answer.
+pub const CHECK_ROUNDS: usize = 2;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Advice {
     pub answer: String,
     pub actions: Vec<String>,
+    /// Checks the assistant asked for (ids from the snapshot's checks_available): run them and ask
+    /// again with the results (`advise`, `earlier`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<String>,
+    /// The model's reply as it came, to carry the conversation into the next round.
+    #[serde(skip)]
+    pub raw: String,
     /// A concrete change the person can apply with one click (checked here; shown in full first).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fix: Option<Fix>,
@@ -42,6 +71,10 @@ pub struct Fix {
     /// A board id from the identify result's candidates (the web app checks it is one).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
+    /// Settings to change, by id, from the snapshot's settings list (the service checks each value
+    /// against that setting's choices before anything changes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings: Option<serde_json::Map<String, Value>>,
 }
 
 fn plain_name(s: &str, max: usize) -> bool {
@@ -69,6 +102,16 @@ fn check_fix(value: &Value) -> Option<Fix> {
             .filter(|o| !o.is_empty()),
         timeout_secs: value["timeout_secs"].as_u64().filter(|t| (10..=3600).contains(t)),
         board: value["board"].as_str().filter(|b| plain_name(b, 60) && !b.contains(['/', ':', '@'])).map(str::to_string),
+        settings: value["settings"].as_object().map(|o| o.iter()
+            .filter(|(k, v)| plain_name(k, 40) && match v {
+                Value::Bool(_) | Value::Number(_) => true,
+                Value::String(s) => s.len() <= 60,
+                _ => false,
+            })
+            .take(10)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<serde_json::Map<_, _>>())
+            .filter(|o| !o.is_empty()),
     };
     (fix != Fix::default()).then_some(fix)
 }
@@ -95,28 +138,35 @@ How to work:
   words unless the person asks for detail. Commands go in their own line, exactly as typed.
 
 Reply with ONLY a JSON object, no code fences:
-{{"answer": "<your reply to the person>", "actions": [<zero or more of: {actions}>], "fix": <optional, see below>}}
-Actions are buttons the person can press in the setup wizard: "rescan" (look for ports again),
-"identify" (ask the board what it is; restarts it briefly), "install" (install the firmware),
-"install_erase" (erase first, then install), "pair" (pair over USB and give it Wi-Fi), "change_wifi"
-(move a board that is already set up to another network over USB, keeping its pairing; for a new
-router, a changed password or another place), "dashboard".
-On macOS only: "open_accessibility_settings" (opens Privacy & Security > Accessibility, where the
-person switches on the app named in system_checks.accessibility.app_to_allow), "open_driver_settings"
-(opens Login Items & Extensions, where the person switches on a driver under Driver Extensions), and
-"install_usb_driver" (downloads WCH's USB-serial driver, checks Apple has notarized it and WCH signed
-it, then opens its installer; the person clicks through and enters their Mac password there).
-Offer only actions that are the right next step.
+{{"answer": "<your reply to the person>", "actions": [<zero or more button ids>], "fix": <optional>,
+ "checks": [<optional: check ids, see below>]}}
 
-"fix" is a change the person can apply with one click; the web app shows it and, for AI settings,
-saves it and runs the test again. Include it only when the evidence points to that exact change.
-Fields (all optional): "model" (a name from from_the_web_app.ai_models_available when that list is
-given), "base_url" (an http(s) address, or "" for the provider's usual one), "options" (request
-settings to add; null leaves a setting out, e.g. {{"temperature": null}}), "timeout_secs" (10 to
-3600, e.g. longer for a slow local model), "board" (a board id from identify_result.candidates,
-when the person has told you which board they have). Never put keys or passwords in it. Say in
-"answer" what the fix would change and why, and that pressing Apply makes the change: nothing has
-changed until the person presses it, so never write that you changed or selected anything.
+Buttons ("actions") the person can press in the web app; offer only the right next step:
+{actions}
+
+"fix" is a change the person can apply with one click: the web app shows it in full, and nothing
+changes until they press Apply. Include it only when the evidence points to that exact change, say in
+"answer" what it would change and why, and never write that you changed or selected anything. Fields
+(all optional):
+- "settings": {{"<id>": <value>}} for any setting in the snapshot's "settings" list, with a value from
+  that setting's "choices". That list is everything the person can change and says what each one
+  means, what it is now and when a change shows; read it rather than assuming what exists. For
+  example keys too small or too hard to read: "key_size"; a screen hard to read in daylight: "theme".
+- For the AI settings: "model" (a name from from_the_web_app.ai_models_available when that list is
+  given), "base_url" (an http(s) address, or "" for the provider's usual one), "options" (request
+  settings to add; null leaves a setting out, e.g. {{"temperature": null}}), "timeout_secs" (10 to
+  3600, e.g. longer for a slow local model).
+- "board": a board id from identify_result.candidates, when the person has told you which board they
+  have.
+Never put keys or passwords in a fix.
+
+You have no tools and cannot call functions. The only way to run a check is the "checks" field of
+your JSON reply; never write a function call, and never write a check's result you have not been
+given: the person must be able to trust that what you say you checked was checked.
+"checks": when the snapshot does not settle what is wrong, ask the service to run checks from the
+snapshot's "checks_available" (each says what it finds out; all are read-only and touch no board).
+Reply then with "checks" and a short "answer" saying what you are checking; you get the results and
+answer again. At most {rounds} rounds: after that, answer with what you know.
 
 Do the work for the person. Read system_checks before asking them anything: it shows what the
 computer itself reports (usb_serial_devices: each USB-serial chip and whether it has a port, on Linux
@@ -129,6 +179,20 @@ On Linux, read system_checks.desktop_session first when keys do not change with 
 typed: on a Wayland session say plainly that KnoEnd does not follow apps or type keys there yet
 (X11 and macOS only), that the board, Bluetooth typing and Claude questions still work, and that
 choosing an X11 (Xorg) session at login makes everything work. Do not send them hunting for a fault.
+
+Resolve, not only explain. If the snapshot or a check can settle a question, settle it before you
+answer: never write that you "can check" something later, and never ask the person to retry a step
+whose outcome a check can show. service_status.link "connected" with a service_status.board means the
+board is paired with this computer and on the network right now. Use the checks to find out instead
+of asking the person, offer the
+button or fix that makes the change, and afterwards check again (a check, or ask them to press the
+step) to confirm it worked. Before sending the person back to a step, find out whether it is needed:
+a board flashed without erasing keeps its pairing and Wi-Fi, so if it comes back on the network
+(find_boards_on_network: paired_with_this_computer) there is nothing to pair or join again. A step
+that fails seconds after the board restarted (after a flash or identify) is often only early: the
+board may still be joining Wi-Fi; say to wait a few seconds and try once more before anything else.
+The settings list, the checks and the service log grow as KnoEnd grows: read them each time rather
+than relying on what this prompt names.
 
 Never tell the person to edit source code, rebuild or reinstall knoend to get past a problem.
 When the provider is claude-code (Claude Code) or antigravity (Antigravity's `agy` command), the
@@ -146,10 +210,29 @@ before installing.
 
 What the project knows:
 
-{KNOWLEDGE}"#, actions = ACTIONS.iter().map(|a| format!("\"{a}\"")).collect::<Vec<_>>().join(", "))
+{KNOWLEDGE}"#, actions = ACTIONS.iter().map(|(a, what)| format!("- \"{a}\": {what}")).collect::<Vec<_>>().join("\n"),
+            rounds = CHECK_ROUNDS)
+}
+
+/// Check ids in a made-up function call ("<invoke name=...>", "<parameter ...>find_boards...</...>"):
+/// some models write one instead of the JSON asked for, and then invent its result.
+fn invented_calls(reply: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    for piece in reply.split(['<', '>', '"']) {
+        let piece = piece.trim();
+        if plain_name(piece, 40) && piece.contains('_') && !piece.contains(['/', ':', '.', '@']) && !ids.iter().any(|i| i == piece) {
+            ids.push(piece.to_string());
+        }
+    }
+    ids
 }
 
 fn parse(reply: &str) -> Advice {
+    // A made-up call: its "result" is invented, so the answer is dropped and the named checks (the
+    // service keeps only real ones) are run; the model is asked again with what they find.
+    if reply.contains("<invoke") || reply.contains("<function_calls") {
+        return Advice { answer: String::new(), actions: Vec::new(), checks: invented_calls(reply), raw: reply.to_string(), fix: None };
+    }
     let start = reply.find('{');
     let end = reply.rfind('}');
     if let (Some(start), Some(end)) = (start, end) {
@@ -157,25 +240,42 @@ fn parse(reply: &str) -> Advice {
             if let Some(answer) = value["answer"].as_str() {
                 let actions = value["actions"].as_array().into_iter().flatten()
                     .filter_map(Value::as_str)
-                    .filter(|a| ACTIONS.contains(a))
+                    .filter(|a| is_action(a))
                     .map(str::to_string)
                     .collect();
-                return Advice { answer: answer.to_string(), actions, fix: check_fix(&value["fix"]) };
+                // Ids only; the service runs only those it lists.
+                let checks = value["checks"].as_array().into_iter().flatten()
+                    .filter_map(Value::as_str)
+                    .filter(|c| plain_name(c, 40))
+                    .take(4)
+                    .map(str::to_string)
+                    .collect();
+                return Advice { answer: answer.to_string(), actions, checks, raw: reply.to_string(), fix: check_fix(&value["fix"]) };
             }
         }
     }
     // Not the JSON we asked for: show the text, offer no buttons.
-    Advice { answer: reply.trim().to_string(), actions: Vec::new(), fix: None }
+    Advice { answer: reply.trim().to_string(), actions: Vec::new(), checks: Vec::new(), raw: reply.to_string(), fix: None }
 }
 
-/// Asks the model for advice on `question`, given the `snapshot` the service collected.
-pub async fn advise(config: &AgentConfig, question: &str, snapshot: &Value) -> Result<Advice, String> {
+/// Asks the model for advice on `question`, given the `snapshot` the service collected. `earlier`:
+/// the rounds so far, each the model's reply and the results of the checks it asked for.
+pub async fn advise(config: &AgentConfig, question: &str, snapshot: &Value, earlier: &[(String, Value)]) -> Result<Advice, String> {
     let message = format!(
         "Snapshot of the situation (collected automatically):\n{}\n\nThe person asks: {}",
         serde_json::to_string_pretty(snapshot).unwrap_or_default(),
         if question.trim().is_empty() { "What should I do next?" } else { question.trim() }
     );
-    let reply = provider::complete(config, &system_prompt(), &[Message::user(message)]).await?;
+    let mut messages = vec![Message::user(message)];
+    for (i, (reply, results)) in earlier.iter().enumerate() {
+        messages.push(Message::assistant(reply.clone()));
+        let last = i + 1 >= CHECK_ROUNDS;
+        messages.push(Message::user(format!(
+            "Results of the checks you asked for:\n{}\n\n{}",
+            serde_json::to_string_pretty(results).unwrap_or_default(),
+            if last { "No more checks now: answer the person with what you know." } else { "Answer the person, or ask for more checks." })));
+    }
+    let reply = provider::complete(config, &system_prompt(), &messages).await?;
     Ok(parse(&reply))
 }
 
@@ -248,6 +348,31 @@ mod tests {
         assert!(parse(r#"{"answer": "a", "fix": {"model": "two words"}}"#).fix.is_none());
         assert_eq!(parse(r#"{"answer": "a", "fix": {"base_url": "", "board": "fnk0104b"}}"#).fix,
                    Some(Fix { base_url: Some(String::new()), board: Some("fnk0104b".into()), ..Fix::default() }));
+    }
+
+    #[test]
+    fn settings_and_checks_come_from_the_snapshot_not_the_prompt() {
+        let prompt = system_prompt();
+        assert!(prompt.contains("\"settings\": {\"<id>\": <value>}") && prompt.contains("checks_available"));
+        assert!(prompt.contains("read them each time rather"), "the lists grow; the prompt says to read them");
+        assert!(prompt.contains("- \"install_erase\": erase the board first"), "buttons are listed with what they do");
+        assert!(prompt.contains("paired_with_this_computer"), "a flash that kept settings needs no pairing again");
+        assert!(prompt.contains("never write that you \"can check\" something later"));
+        let advice = parse(r#"{"answer": "Bigger keys.", "fix": {"settings": {"key_size": "big", "bad name": 1, "deep": {"x": 1}}},
+                              "checks": ["find_boards_on_network", "rm -rf /"]}"#);
+        let settings = advice.fix.expect("fix").settings.expect("settings");
+        assert_eq!(settings.len(), 1);
+        assert_eq!(settings["key_size"], "big");
+        assert_eq!(advice.checks, vec!["find_boards_on_network"]);
+    }
+
+    #[test]
+    fn an_invented_function_call_becomes_a_real_check() {
+        let reply = "I will check.\n<function_calls>\n<invoke name=\"call_service\">\n<parameter name=\"request\">find_boards_on_network</parameter>\n</invoke>\n</function_calls>\nYour board is on the network.";
+        let advice = parse(reply);
+        assert!(advice.answer.is_empty(), "the invented result is not shown");
+        assert!(advice.checks.contains(&"find_boards_on_network".to_string()));
+        assert!(system_prompt().contains("You have no tools and cannot call functions"));
     }
 
     #[test]

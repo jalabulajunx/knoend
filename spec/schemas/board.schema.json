@@ -159,7 +159,7 @@
             180,
             270
           ],
-          "description": "Software rotation applied by LVGL; the UI is landscape."
+          "description": "Software rotation applied by LVGL for the board's usual landscape; the person can turn it further (knoend.display turn, spec/protocol.md 3.6d)."
         },
         "backlight": {
           "type": "object",

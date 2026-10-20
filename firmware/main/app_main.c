@@ -11,6 +11,7 @@
 #include "board.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
+#include "fonts.h"
 #include "nvs_flash.h"
 #include "protocol.h"
 #include "ui.h"
@@ -28,6 +29,7 @@ void app_main(void)
 
     // Without a usable board definition there is no display, but Bluetooth, serial and Wi-Fi
     // still run, so the companion can write a definition over USB.
+    fonts_init();
     const bool has_display = board_init() == ESP_OK;
     if (has_display) {
         ui_start();
