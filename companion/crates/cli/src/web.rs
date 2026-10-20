@@ -383,7 +383,7 @@ async fn display_settings(State(app): State<App>) -> ApiResult {
     let display = crate::display::load();
     let board = app_board(&app).await;
     Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn,
-                   "key_font": display.key_font, "start_font": display.start_font,
+                   "key_font": display.key_font, "start_font": display.start_font, "start_size": display.start_size,
                    "board_can_change_fonts": board.as_ref().is_some_and(|b| b.fonts.is_some()),
                    // False when the board's firmware has one look only (or no board is connected).
                    "board_can_change_look": board.is_some_and(|b| b.display.is_some())})))
@@ -401,13 +401,14 @@ struct DisplayRequest {
     turn: Option<Value>,
     key_font: Option<Value>,
     start_font: Option<Value>,
+    start_size: Option<Value>,
 }
 
 /// Saves the choice and applies it at once, through the settings list (settings.rs).
 async fn save_display(State(app): State<App>, Json(request): Json<DisplayRequest>) -> ApiResult {
     let mut changes = serde_json::Map::new();
     for (id, value) in [("key_size", request.key_size), ("theme", request.theme), ("turn", request.turn),
-                        ("key_font", request.key_font), ("start_font", request.start_font)] {
+                        ("key_font", request.key_font), ("start_font", request.start_font), ("start_size", request.start_size)] {
         if let Some(value) = value {
             changes.insert(id.into(), value);
         }
@@ -415,7 +416,7 @@ async fn save_display(State(app): State<App>, Json(request): Json<DisplayRequest
     crate::settings::apply(&app.shared, &changes).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
     let display = crate::display::load();
     Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn,
-                   "key_font": display.key_font, "start_font": display.start_font})))
+                   "key_font": display.key_font, "start_font": display.start_font, "start_size": display.start_size})))
 }
 
 /// Google Fonts' families with Latin letters, live (fonts.rs), for the font picker.

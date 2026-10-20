@@ -428,6 +428,12 @@
                   "minimum": 0,
                   "maximum": 3,
                   "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
+                },
+                "startSize": {
+                  "type": "integer",
+                  "minimum": 24,
+                  "maximum": 96,
+                  "description": "Pixels of the name shown at start-up; a change shows it for 2 s as a preview."
                 }
               }
             },
@@ -1057,6 +1063,12 @@
           "minimum": 0,
           "maximum": 3,
           "description": "Quarter turns clockwise from the board's usual landscape: 0 landscape, 1 portrait, 2 and 3 upside down."
+        },
+        "startSize": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 96,
+          "description": "Pixels of the name shown at start-up; a change shows it for 2 s as a preview."
         }
       }
     },
@@ -1089,6 +1101,12 @@
         "grid": {
           "description": "The largest grid the board draws as it now sits.",
           "$ref": "#/$defs/grid"
+        },
+        "startSize": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 96,
+          "description": "Pixels of the name shown at start-up; a change shows it for 2 s as a preview."
         }
       },
       "required": [

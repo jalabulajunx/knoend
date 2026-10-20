@@ -608,13 +608,24 @@ static void show_splash_locked(void)
     lv_obj_set_style_text_color(name, lv_color_hex(theme->key_text), 0);
     size_t len;
     const uint8_t *data = fonts_data(FONT_SLOT_START, &len, NULL, NULL);
-    splash_font = data != NULL ? lv_tiny_ttf_create_data(data, len, 64) : NULL;
+    splash_font = data != NULL ? lv_tiny_ttf_create_data(data, len, display_settings()->start_size) : NULL;
     if (splash_font != NULL) {
         splash_font->fallback = &lv_font_montserrat_28; // the degree sign, if the font has none
     }
     lv_obj_set_style_text_font(name, splash_font != NULL ? splash_font : &lv_font_montserrat_28, 0);
     lv_obj_center(name);
     lv_timer_create(splash_done, SPLASH_MS, NULL);
+}
+
+void ui_show_start(void)
+{
+    if (!lvgl_port_lock(1000)) {
+        return;
+    }
+    if (splash == NULL) {
+        show_splash_locked();
+    }
+    lvgl_port_unlock();
 }
 
 void ui_set_turn(int turn)

@@ -167,6 +167,7 @@ static void send_identity(int64_t re, transport_t to)
     cJSON *display = cJSON_AddObjectToObject(b, "display");
     cJSON_AddStringToObject(display, "theme", display_theme_name(look->theme));
     cJSON_AddNumberToObject(display, "turn", look->turn);
+    cJSON_AddNumberToObject(display, "startSize", look->start_size);
     // The fonts the person chose that this board holds (spec/protocol.md 3.6e).
     cJSON *fonts = cJSON_AddObjectToObject(b, "fonts");
     cJSON_AddNumberToObject(fonts, "capacity", fonts_slot_capacity());
@@ -633,8 +634,13 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
     display_settings_t wanted = *display_settings();
     const cJSON *theme = cJSON_GetObjectItemCaseSensitive(body, "theme");
     const cJSON *turn = cJSON_GetObjectItemCaseSensitive(body, "turn");
-    if (theme == NULL && turn == NULL) {
-        send_error(re, "bad-packet", "theme or turn is required", transport);
+    const cJSON *start = cJSON_GetObjectItemCaseSensitive(body, "startSize");
+    if (theme == NULL && turn == NULL && start == NULL) {
+        send_error(re, "bad-packet", "theme, turn or startSize is required", transport);
+        return;
+    }
+    if (start != NULL && !get_int(body, "startSize", DISPLAY_START_MIN, DISPLAY_START_MAX, &wanted.start_size)) {
+        send_error(re, "bad-packet", "startSize must be 24-96", transport);
         return;
     }
     if (theme != NULL && !display_theme_parse(cJSON_GetStringValue(theme), &wanted.theme)) {
@@ -648,7 +654,8 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
     display_settings_t *now = display_settings_mut();
     const bool new_theme = wanted.theme != now->theme;
     const bool new_turn = wanted.turn != now->turn;
-    if ((new_theme || new_turn) && display_settings_store(&wanted) != ESP_OK) {
+    const bool new_start = wanted.start_size != now->start_size;
+    if ((new_theme || new_turn || new_start) && display_settings_store(&wanted) != ESP_OK) {
         send_error(re, "busy", "could not store the display settings", transport);
         return;
     }
@@ -661,12 +668,17 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
         now->turn = wanted.turn;
         ui_set_turn(wanted.turn);
     }
+    if (new_start) {
+        now->start_size = wanted.start_size;
+        ui_show_start(); // the person sees the new size at once
+    }
     const board_info_t *board = board_info();
     int cols, rows;
     ui_max_grid(&cols, &rows);
     cJSON *ack = cJSON_CreateObject();
     cJSON_AddStringToObject(ack, "theme", display_theme_name(wanted.theme));
     cJSON_AddNumberToObject(ack, "turn", wanted.turn);
+    cJSON_AddNumberToObject(ack, "startSize", wanted.start_size);
     cJSON_AddNumberToObject(ack, "width", board->width);
     cJSON_AddNumberToObject(ack, "height", board->height);
     cJSON *grid = cJSON_AddObjectToObject(ack, "grid");
@@ -746,6 +758,8 @@ static void handle_font(const cJSON *body, int64_t re, transport_t transport)
     const esp_err_t err = fonts_finish(slot, (uint32_t)crc->valuedouble);
     if (slot == FONT_SLOT_KEYS) {
         ui_fonts_reload();
+    } else if (err == ESP_OK) {
+        ui_show_start(); // the new start-up font, at once
     }
     ESP_LOGI(TAG, "font %s: %s %s", slot_name, name, err == ESP_OK ? "kept" : esp_err_to_name(err));
     font_ack(slot_name, name, err == ESP_OK ? NULL : "the font arrived damaged; send it again", re, transport);

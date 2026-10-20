@@ -702,7 +702,21 @@ function showFonts(d) {
   for (const id of ["start-font", "start-font-setup"]) if ($(id) && document.activeElement !== $(id)) $(id).value = d.start_font || "";
   previewFont(d.key_font);
   previewFont(d.start_font);
-  for (const id of ["start-preview", "start-preview-setup"]) if ($(id)) $(id).style.fontFamily = fontStack(d.start_font);
+  for (const id of ["start-size", "start-size-setup"]) if ($(id) && document.activeElement !== $(id)) $(id).value = d.start_size || 64;
+  // The preview at the board's size, scaled as the screen previews are (320 px wide shown about 360).
+  for (const id of ["start-preview", "start-preview-setup"]) {
+    if (!$(id)) continue;
+    $(id).style.fontFamily = fontStack(d.start_font);
+    $(id).style.fontSize = `${Math.round((d.start_size || 64) * 1.1)}px`;
+  }
+}
+
+for (const id of ["start-size", "start-size-setup"]) {
+  $(id).addEventListener("change", (e) => {
+    const size = Number(e.target.value);
+    if (!Number.isInteger(size) || size < 24 || size > 96) { e.target.reportValidity(); return; }
+    saveDisplay({ start_size: size }).catch((err) => alert(`Could not change the size: ${err.message}`));
+  });
 }
 
 for (const [id, field] of [["key-font", "key_font"], ["key-font-setup", "key_font"], ["start-font", "start_font"], ["start-font-setup", "start_font"]]) {

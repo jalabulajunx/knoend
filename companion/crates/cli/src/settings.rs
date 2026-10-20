@@ -50,6 +50,11 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
         font_setting("start_font", "Start-up font",
                      "The font of the name the board shows for a moment when it starts (Kn°End): any Google Fonts family, \
                       or empty for the built-in Montserrat. Decorative fonts suit it.", &d.start_font, can_font),
+        number_setting("start_size", "Start-up size",
+                       "How big the name the board shows for a moment when it starts (Kn°End) is, in pixels. The board shows \
+                        it at the new size at once, for 2 seconds, as a preview.",
+                       d.start_size.into(), 24, 96,
+                       if can_look { "at once, on the board (a 2-second preview)" } else { "after the board's firmware is updated" }),
         describe("assistant_watches", "Assistant watches in the background",
                  "When on, problems the service notices by itself (the board dropping again and again, a step or a font \
                   that fails, the board refusing something) are put to the setup assistant without the person asking, \
@@ -69,6 +74,15 @@ fn font_setting(id: &str, title: &str, meaning: &str, current: &str, can: bool) 
     setting
 }
 
+/// A setting that takes a whole number between `min` and `max`.
+fn number_setting(id: &str, title: &str, meaning: &str, current: u64, min: u64, max: u64, shows: &str) -> Value {
+    let mut setting = describe(id, title, meaning, Value::Null, json!(current), shows);
+    setting["kind"] = json!("number");
+    setting["min"] = json!(min);
+    setting["max"] = json!(max);
+    setting
+}
+
 /// How a change reads to the person ("Key size: Big: 2x2"), or None when `value` is not one the
 /// setting takes.
 pub fn change_label(setting: &Value, value: &Value) -> Option<String> {
@@ -77,7 +91,10 @@ pub fn change_label(setting: &Value, value: &Value) -> Option<String> {
     }
     let label = setting["choices"].as_array().into_iter().flatten().find(|c| &c["value"] == value)
         .and_then(|c| c["label"].as_str()).map(str::to_string)
-        .unwrap_or_else(|| value.as_str().filter(|f| !f.is_empty()).unwrap_or("built-in (Montserrat)").to_string());
+        .unwrap_or_else(|| match value {
+            Value::Number(n) => n.to_string(),
+            _ => value.as_str().filter(|f| !f.is_empty()).unwrap_or("built-in (Montserrat)").to_string(),
+        });
     Some(label)
 }
 
@@ -85,6 +102,9 @@ pub fn change_label(setting: &Value, value: &Value) -> Option<String> {
 fn allowed(setting: &Value, value: &Value) -> bool {
     if setting["kind"] == "google_font" {
         return value.as_str().is_some_and(|f| f.is_empty() || crate::fonts::valid_family(f));
+    }
+    if setting["kind"] == "number" {
+        return value.as_u64().is_some_and(|n| Some(n) >= setting["min"].as_u64() && Some(n) <= setting["max"].as_u64());
     }
     setting["choices"].as_array().into_iter().flatten().any(|c| &c["value"] == value)
 }
@@ -101,7 +121,7 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
         done.push(format!("{}: {label}", setting["title"].as_str().unwrap_or(id)));
     }
     let mut d = display::load();
-    let look = (d.theme, d.turn, d.key_font.clone(), d.start_font.clone());
+    let look = (d.theme, d.turn, d.key_font.clone(), d.start_font.clone(), d.start_size);
     let mut key_size = None;
     for (id, value) in changes {
         match id.as_str() {
@@ -111,6 +131,7 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
             "key_font" => d.key_font = value.as_str().unwrap_or_default().trim().to_string(),
             "start_font" => d.start_font = value.as_str().unwrap_or_default().trim().to_string(),
             "assistant_watches" => d.assistant_watches = value.as_bool().unwrap_or(true),
+            "start_size" => d.start_size = value.as_u64().and_then(|n| u8::try_from(n).ok()).ok_or("start size must be 24-96")?,
             _ => {}
         }
     }
@@ -121,7 +142,7 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
     if let Some(k) = key_size {
         shared.key_size_changed(k);
     }
-    if look != (d.theme, d.turn, d.key_font.clone(), d.start_font.clone()) {
+    if look != (d.theme, d.turn, d.key_font.clone(), d.start_font.clone(), d.start_size) {
         shared.look_changed(d.clone());
     }
     Ok(done)
@@ -141,5 +162,8 @@ mod tests {
         let font = font_setting("key_font", "Key font", "", "", true);
         assert!(allowed(&font, &json!("Atkinson Hyperlegible")) && allowed(&font, &json!("")));
         assert!(!allowed(&font, &json!("x&text=<script>")) && !allowed(&font, &json!(3)));
+        let size = number_setting("start_size", "Start-up size", "", 64, 24, 96, "");
+        assert!(allowed(&size, &json!(62)) && !allowed(&size, &json!(100)) && !allowed(&size, &json!("62")));
+        assert_eq!(change_label(&size, &json!(62)).as_deref(), Some("62"));
     }
 }

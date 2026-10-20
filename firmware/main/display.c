@@ -6,7 +6,7 @@
 
 #define NVS_NAMESPACE "openpager" // storage name kept from before the rename
 
-static display_settings_t current;
+static display_settings_t current = { .start_size = DISPLAY_START_DEFAULT };
 static bool loaded;
 
 const display_settings_t *display_settings(void)
@@ -21,6 +21,10 @@ const display_settings_t *display_settings(void)
             }
             if (nvs_get_u8(nvs, "turn", &turn) == ESP_OK && turn <= 3) {
                 current.turn = turn;
+            }
+            uint8_t start = 0;
+            if (nvs_get_u8(nvs, "start_px", &start) == ESP_OK && start >= DISPLAY_START_MIN && start <= DISPLAY_START_MAX) {
+                current.start_size = start;
             }
             nvs_close(nvs);
         }
@@ -63,6 +67,9 @@ esp_err_t display_settings_store(const display_settings_t *settings)
     err = nvs_set_u8(nvs, "theme", (uint8_t)settings->theme);
     if (err == ESP_OK) {
         err = nvs_set_u8(nvs, "turn", (uint8_t)settings->turn);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_u8(nvs, "start_px", (uint8_t)settings->start_size);
     }
     if (err == ESP_OK) {
         err = nvs_commit(nvs);

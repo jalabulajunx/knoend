@@ -11,7 +11,12 @@ typedef enum { DISPLAY_THEME_DARK, DISPLAY_THEME_WHITE, DISPLAY_THEME_SEPIA } di
 typedef struct {
     display_theme_t theme;
     int turn; // quarter turns clockwise from the board's usual landscape, 0-3
+    int start_size; // pixels of the name shown at start-up (DISPLAY_START_MIN..MAX)
 } display_settings_t;
+
+#define DISPLAY_START_DEFAULT 64
+#define DISPLAY_START_MIN     24
+#define DISPLAY_START_MAX     96
 
 // The stored settings (dark, turn 0 when none are stored). Call after nvs_flash_init().
 const display_settings_t *display_settings(void);

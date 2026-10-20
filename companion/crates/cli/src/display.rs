@@ -89,6 +89,9 @@ pub struct Display {
     /// Google Fonts family for the start-up name; empty: the built-in font.
     #[serde(default)]
     pub start_font: String,
+    /// Pixels of the name shown at start-up (24-96), kept on the board.
+    #[serde(default = "start_size")]
+    pub start_size: u8,
     /// The setup assistant looks at problems the service notices without being asked (watch.rs).
     #[serde(default = "yes")]
     pub assistant_watches: bool,
@@ -98,17 +101,21 @@ fn yes() -> bool {
     true
 }
 
+fn start_size() -> u8 {
+    64
+}
+
 impl Default for Display {
     fn default() -> Self {
         Display { key_size: KeySize::default(), theme: Theme::default(), turn: 0, key_font: String::new(),
-                  start_font: String::new(), assistant_watches: true }
+                  start_font: String::new(), start_size: start_size(), assistant_watches: true }
     }
 }
 
 impl Display {
     /// The `knoend.display` body for the board.
     pub fn look(&self) -> serde_json::Value {
-        serde_json::json!({"theme": self.theme, "turn": self.turn})
+        serde_json::json!({"theme": self.theme, "turn": self.turn, "startSize": self.start_size})
     }
 
     /// Whether the board's identity (`board.display`) already shows this look. None: the board's
@@ -116,7 +123,9 @@ impl Display {
     pub fn shown_by(&self, identity: &serde_json::Value) -> Option<bool> {
         let shown = identity["board"]["display"].as_object()?;
         Some(shown.get("theme").and_then(|t| t.as_str()) == self.look()["theme"].as_str()
-             && shown.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(self.turn)))
+             && shown.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(self.turn))
+             // Firmware without a start-up size says nothing about it.
+             && shown.get("startSize").and_then(|t| t.as_u64()).is_none_or(|t| t == u64::from(self.start_size)))
     }
 }
 
@@ -155,13 +164,13 @@ mod tests {
         assert_eq!(serde_json::from_str::<Display>("{}").unwrap().key_size, KeySize::Medium);
         assert_eq!(serde_json::to_value(Display { key_size: KeySize::Big, ..Default::default() }).unwrap(),
                    serde_json::json!({"key_size": "big", "theme": "dark", "turn": 0, "key_font": "", "start_font": "",
-                                      "assistant_watches": true}));
+                                      "start_size": 64, "assistant_watches": true}));
     }
 
     #[test]
     fn the_look_is_compared_with_what_the_board_says() {
         let sepia = Display { theme: Theme::Sepia, ..Default::default() };
-        assert_eq!(sepia.look(), serde_json::json!({"theme": "sepia", "turn": 0}));
+        assert_eq!(sepia.look(), serde_json::json!({"theme": "sepia", "turn": 0, "startSize": 64}));
         let board = |theme: &str| serde_json::json!({"board": {"display": {"theme": theme, "turn": 0}}});
         assert_eq!(sepia.shown_by(&board("sepia")), Some(true));
         assert_eq!(sepia.shown_by(&board("dark")), Some(false));

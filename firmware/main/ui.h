@@ -45,6 +45,10 @@ typedef enum { UI_STATUS_INFO, UI_STATUS_ATTENTION, UI_STATUS_ALERT } ui_status_
 // task.
 void ui_set_turn(int turn);
 
+// Shows the start-up name for a moment, as at start-up (a preview of its font and size). Safe to
+// call from any task.
+void ui_show_start(void);
+
 // Stops using the person's key font (before it is replaced) / starts using what is stored now.
 // Safe to call from any task.
 void ui_fonts_release(void);

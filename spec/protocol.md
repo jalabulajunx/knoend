@@ -257,7 +257,10 @@ connects.
 - `turn`: quarter turns clockwise from the board's usual landscape (its definition's
   `display.rotation`): 0 landscape, 1 portrait, 2 landscape upside down, 3 portrait upside down.
   Touch follows the turn.
-- Either field may be left out to keep its current value.
+- `startSize`: pixels (24-96, 64 by default) of the name the board shows for a moment at start-up
+  (section 3.6e). A change shows the name at the new size at once for 2 s, as a preview; so does a
+  new `start` font.
+- Any field may be left out to keep its current value.
 - The board stores the values and shows them at once, without restarting, so the person sees each
   choice as they make it. Its answer gives the screen's `width`, `height` and largest `grid` as it
   now sits (they change with a turn); the companion uses them as it would the identity's, and sends

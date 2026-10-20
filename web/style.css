@@ -252,4 +252,5 @@ form textarea { font-family: ui-monospace, monospace; font-size: 13px; resize: v
 
 /* Fonts: the picker searches Google Fonts; the start-up name is previewed in its font. */
 .font-pick { min-width: 220px; }
+.size-pick { width: 5em; }
 .start-preview { font-size: 40px; margin: 8px 0; line-height: 1.2; }
