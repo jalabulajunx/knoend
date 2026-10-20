@@ -1348,5 +1348,11 @@ What Sundar's side built that your work can reuse, and where it plugs in:
 - Decided (Tom): live preview on the board; edit mode lasts until switched off or the tab closes;
   saving layers a user library on the draft; long words are cut with "..." rather than split or
   shrunk below 12 px; no Caps Lock key name; firmware merges without waiting for the ONX check.
-- Open: Sundar to flash the ONX and check long labels and a few layouts. Later: moving keys across
-  pages, adding pages, editing non-shortcut actions.
+- Codex (gpt-6.1-sol, xhigh) reviewed it; all 9 findings fixed: agent screens (Claude's questions
+  and permission requests) are left out of edit mode for now, since a saved change could move
+  Allow/Deny under a waiting request and their middle rows hold its text; Save sends the last typed
+  change first and older answers never replace newer typing; Stop works while the board is away;
+  a second library with the same name saves as `user-<name>-2`; every tab follows the session;
+  layouts bigger than the board are refused; a cut word is measured with its dots.
+- Open: Sundar to flash the ONX and check long labels and a few layouts. Later: editing agent
+  screens, moving keys across pages, adding pages, editing non-shortcut actions.
