@@ -907,7 +907,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::LinkDown(reason) => {
-                    raise!("link-lost", "Link to board {} lost: {reason}", board.id);
+                    // Not while the board is being installed or paired over USB: it restarts then.
+                    if !board_restart_expected(&shared) {
+                        raise!("link-lost", "Link to board {} lost: {reason}", board.id);
+                    }
                     shared.emit("log", json!({"text": format!("Link to board {} lost: {reason}", board.id)}));
                     shared.update(|s| { s.link = "searching".into(); s.layout = None; }).await;
                     break;
@@ -1420,6 +1423,22 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             Ok(None)
         }
     }
+}
+
+/// When the last USB job (installing, pairing, changing Wi-Fi) ended: the board restarts during and
+/// after one, so its link drops then are expected, not problems.
+static USB_JOB_ENDED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+pub fn usb_job_ended() {
+    if let Ok(mut ended) = USB_JOB_ENDED.lock() {
+        *ended = Some(std::time::Instant::now());
+    }
+}
+
+/// A USB job is running, or ended less than 90 s ago.
+fn board_restart_expected(shared: &Shared) -> bool {
+    shared.serial.try_lock().is_err()
+        || USB_JOB_ENDED.lock().ok().and_then(|e| *e).is_some_and(|at| at.elapsed() < Duration::from_secs(90))
 }
 
 /// The connected board's theme, for the tones pictures are sent in.

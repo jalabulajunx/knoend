@@ -303,7 +303,10 @@ async fn flash(State(app): State<App>, Json(request): Json<FlashRequest>) -> Api
             shared.emit("flash", serde_json::to_value(&p).unwrap_or_default());
         });
         match result {
-            Ok(()) => shared.emit("flash", json!({"stage": "finished", "version": version, "text": "Flashed and restarted"})),
+            Ok(()) => {
+                crate::service::usb_job_ended();
+                shared.emit("flash", json!({"stage": "finished", "version": version, "text": "Flashed and restarted"}));
+            }
             Err(e) => {
                 raise!("flash", "Installing the firmware failed: {e}");
                 shared.emit("flash", json!({"stage": "failed", "error": e, "text": format!("Flashing failed: {e}")}));
@@ -330,8 +333,10 @@ async fn provision(State(app): State<App>, Json(request): Json<ProvisionRequest>
             (Some(ssid), password) if !ssid.trim().is_empty() => Some((ssid.trim().to_string(), password.clone().unwrap_or_default())),
             _ => None,
         };
-        crate::provision::provision(&request.port, wifi.as_ref().map(|(s, p)| (s.as_str(), p.as_str())),
-                                    &mut |line| shared.emit("provision", json!({"text": line})))
+        let done = crate::provision::provision(&request.port, wifi.as_ref().map(|(s, p)| (s.as_str(), p.as_str())),
+                                               &mut |line| shared.emit("provision", json!({"text": line})));
+        crate::service::usb_job_ended();
+        done
     }).await.map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let done = result.map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
     Ok(Json(serde_json::to_value(done).unwrap_or_default()))
@@ -590,7 +595,9 @@ async fn wifi_change(State(app): State<App>, Json(request): Json<WifiChangeReque
         .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;
     let shared = app.shared.clone();
     let result = tokio::task::spawn_blocking(move || {
-        crate::provision::change_wifi(&request.port, &ssid, &request.password, &mut |line| shared.emit("provision", json!({"text": line})))
+        let done = crate::provision::change_wifi(&request.port, &ssid, &request.password, &mut |line| shared.emit("provision", json!({"text": line})));
+        crate::service::usb_job_ended();
+        done
     }).await.map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let done = result.map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
     Ok(Json(serde_json::to_value(done).unwrap_or_default()))
