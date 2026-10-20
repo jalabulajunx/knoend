@@ -39,7 +39,9 @@ pub struct BoardStatus {
 /// Which page of the layout on the board is shown: the companion turns pages (spec/protocol.md
 /// 3.4a) and drops taps from a page that is no longer shown.
 struct Paging {
-    /// The largest grid the board draws.
+    /// The largest grid the board draws (edit mode shows layouts at this size).
+    board: Grid,
+    /// The largest grid layouts are shown in: the person's key size, within `board` (display.rs).
     max: Grid,
     /// The layout whose pages these are, the page shown (0-based), how many it has, and the grid of
     /// the page shown.
@@ -50,8 +52,8 @@ struct Paging {
 }
 
 impl Paging {
-    fn new(max: Grid) -> Paging {
-        Paging { max, layout: String::new(), page: 0, pages: 1, grid: Grid::DEFAULT }
+    fn new(board: Grid, key_size: crate::display::KeySize) -> Paging {
+        Paging { board, max: crate::display::shown_grid(board, key_size), layout: String::new(), page: 0, pages: 1, grid: Grid::DEFAULT }
     }
 
     /// Shows `layout`, which has `pages` pages: another layout starts on its first page. Returns
@@ -156,6 +158,14 @@ impl Shared {
         reply.await.map_err(|_| "no answer from the service".to_string())?
     }
 
+    /// Tells the service loop the key size changed (it is saved already); the next connection
+    /// reads it from the file anyway.
+    pub fn key_size_changed(&self, key_size: crate::display::KeySize) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.try_send(Event::KeySize(key_size));
+        }
+    }
+
     pub fn editing(&self) -> bool {
         self.edit.lock().is_ok_and(|e| e.is_some())
     }
@@ -250,6 +260,8 @@ enum Event {
     Board(Packet),
     LinkDown(String),
     Configured(Focus, Result<(PathBuf, Library), String>),
+    /// The person chose another key size in the web app (already saved).
+    KeySize(crate::display::KeySize),
     /// From the web app's editor, with where to send the answer.
     Edit(crate::edit::Command, Option<tokio::sync::oneshot::Sender<Result<Value, String>>>),
 }
@@ -364,7 +376,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
         let mut sent_images: HashSet<String> = HashSet::new();
-        let mut paging = Paging::new(board.grid);
+        let mut paging = Paging::new(board.grid, crate::display::load().key_size);
         if focus.is_none() {
             show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
@@ -505,6 +517,19 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE && shared.editing() => {
                     // Edit mode: a tap selects the key in the web app; nothing runs.
                     shared.emit("edit.tap", json!({"page": paging.page, "slot": packet.body["key"]}));
+                }
+                Event::KeySize(key_size) => {
+                    paging.max = crate::display::shown_grid(paging.board, key_size);
+                    println!("Key size: {key_size:?}, pages up to {}x{}", paging.max.cols, paging.max.rows);
+                    // Shown again at the new size.
+                    shown = None;
+                    if approvals.is_empty() {
+                        match effective(&focus, &tab) {
+                            Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                                  &mut shown, calling.as_ref(), &shared).await,
+                        }
+                    }
                 }
                 Event::Edit(command, answer) => {
                     let list = matches!(command, crate::edit::Command::List);
@@ -1091,7 +1116,7 @@ async fn show_edit(sender: &mut wifi::WifiSender, paging: &mut Paging, shown: &m
     let Some((library, dirty)) = shared.edit.lock().ok().and_then(|e| e.as_ref().map(|e| (e.library.clone(), e.dirty()))) else {
         return false;
     };
-    let pages = layout::pages(&library, paging.max);
+    let pages = layout::pages(&library, paging.board);
     let page = paging.enter(&library.pack.id, pages.len());
     let mut body = match layout::build(&library, knoend_core::focus::Os::current(), &pages, page) {
         Ok(body) => body,
@@ -1148,7 +1173,7 @@ fn edit_while_away(command: crate::edit::Command, answer: Option<tokio::sync::on
 fn edit_state(shared: &Shared, paging: &Paging) -> Value {
     match shared.edit.lock().ok().as_ref().and_then(|e| e.as_ref()) {
         Some(edit) => {
-            let mut state = edit.state(paging.page, paging.max);
+            let mut state = edit.state(paging.page, paging.board);
             state["editing"] = json!(true);
             state
         }
@@ -1172,7 +1197,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
                        "overrides": l.pack.overrides, "own": l.pack.source == Source::User && path.is_file()})
             }).collect();
             let edit = session.as_ref().map(|e| {
-                let mut state = e.state(paging.page, paging.max);
+                let mut state = e.state(paging.page, paging.board);
                 state["editing"] = json!(true);
                 state
             }).unwrap_or_else(|| json!({"editing": false}));
@@ -1186,19 +1211,19 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             if !library.matches.agent.is_empty() {
                 return Err("Claude's screens cannot be edited here yet".into());
             }
-            crate::edit::check(serde_json::to_value(library).map_err(|e| e.to_string())?, paging.max)?;
+            crate::edit::check(serde_json::to_value(library).map_err(|e| e.to_string())?, paging.board)?;
             println!("Edit mode: {}", library.pack.id);
             *session = Some(Edit::start(library, path));
             Ok(None)
         }
         Command::Change(json) => {
             let edit = session.as_mut().ok_or("edit mode is off")?;
-            let library = crate::edit::check(json, paging.max)?;
+            let library = crate::edit::check(json, paging.board)?;
             if library.pack.id != edit.library.pack.id {
                 return Err("the library's id cannot change while editing".into());
             }
             // Every shortcut must be one the board can type.
-            let pages = layout::pages(&library, paging.max);
+            let pages = layout::pages(&library, paging.board);
             for page in 0..pages.len() {
                 layout::build(&library, knoend_core::focus::Os::current(), &pages, page)?;
             }
@@ -1808,7 +1833,7 @@ mod tests {
 
     #[test]
     fn pages_turn_wrap_and_drop_taps_from_another_page() {
-        let mut paging = Paging::new(Grid::LARGEST);
+        let mut paging = Paging::new(Grid::LARGEST, crate::display::KeySize::Small);
         assert_eq!(paging.enter("builtin.a", 3), 0);
         assert!(paging.turn("prev"));
         assert_eq!(paging.page, 2, "back from the first page wraps to the last");
@@ -1822,6 +1847,14 @@ mod tests {
     }
 
     #[test]
+    fn key_size_caps_pages_but_edit_mode_sees_the_board() {
+        let medium = Paging::new(Grid::LARGEST, crate::display::KeySize::Medium);
+        assert_eq!((medium.max, medium.board), (Grid::DEFAULT, Grid::LARGEST));
+        let big = Paging::new(Grid::DEFAULT, crate::display::KeySize::Big);
+        assert_eq!(big.max, Grid { cols: 2, rows: 2 });
+    }
+
+    #[test]
     fn board_grid_comes_from_its_identity() {
         assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 4, "rows": 2}}})), Grid { cols: 4, rows: 2 });
         assert_eq!(identity_grid(&json!({"board": {"grid": {"cols": 9, "rows": 2}}})), Grid::DEFAULT);
@@ -1831,8 +1864,8 @@ mod tests {
     #[test]
     fn configure_sits_in_the_middle_of_the_grid() {
         let focus = Focus { os: knoend_core::focus::Os::Linux, app: "x".into(), instance: "x".into(), title: String::new(), web: None };
-        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid::LARGEST)).keys[0].key, 5);
-        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid { cols: 2, rows: 2 })).keys[0].key, 1);
+        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid::LARGEST, crate::display::KeySize::Small)).keys[0].key, 5);
+        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid { cols: 2, rows: 2 }, crate::display::KeySize::Small)).keys[0].key, 1);
     }
 
     #[test]

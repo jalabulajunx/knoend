@@ -31,6 +31,12 @@
             <dt>Address</dt><dd id="f-address"></dd>
             <dt>ID</dt><dd id="f-id"></dd>
           </dl>
+          <label class="inline">Key size
+            <select id="key-size">
+              <option value="big">Big: up to 2x2</option>
+              <option value="medium">Medium: up to 3x3</option>
+              <option value="small">Small: up to 4x4</option>
+            </select></label>
           <p class="actions left"><button type="button" id="change-wifi" class="secondary small-button">Change Wi-Fi</button>
             <span class="muted small">New router, new password or another place: over the USB cable, keeps pairing and settings.</span></p>
         </article>
@@ -177,6 +183,7 @@
         <li data-step="2">Choose firmware</li>
         <li data-step="3">Install</li>
         <li data-step="4" id="step4-name">Pair and Wi-Fi</li>
+        <li data-step="5" id="step5-name">Keys</li>
       </ol>
 
       <article class="card step" data-step="1">
@@ -232,6 +239,14 @@
         </form>
         <ol id="pair-log" class="log compact"></ol>
         <p id="pair-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
+      </article>
+
+      <article class="card step" data-step="5" hidden>
+        <h2>How big should the keys be?</h2>
+        <p>A page never has more keys than this. A layout with more is spread over pages you swipe through, so nothing is lost. You can change it any time on the dashboard.</p>
+        <ul class="choices" id="key-size-setup"></ul>
+        <div class="actions"><button type="button" class="primary" id="key-size-save">Save</button></div>
+        <p id="setup-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
       </article>
 
       <article class="card" id="assistant">

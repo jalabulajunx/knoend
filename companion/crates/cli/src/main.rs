@@ -19,6 +19,7 @@ mod launcher;
 mod browser;
 mod diagnostics;
 mod edit;
+mod display;
 mod firmware;
 mod macos_help;
 mod provision;

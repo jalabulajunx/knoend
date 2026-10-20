@@ -62,6 +62,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/ai", get(ai_settings).post(save_ai_settings))
         .route("/ai/models", post(ai_models))
         .route("/ai/tools", get(ai_tools))
+        .route("/display", get(display_settings).post(save_display))
         .route("/assist", post(assist))
         .route("/open", post(open_help))
         .route("/typing", get(typing))
@@ -369,6 +370,25 @@ async fn ai_settings() -> ApiResult {
         }))),
         Err(e) => Ok(Json(json!({"configured": false, "error": e}))),
     }
+}
+
+/// How the keys look: the key size (and the grid it allows) and the choices.
+async fn display_settings() -> ApiResult {
+    let display = crate::display::load();
+    Ok(Json(json!({"key_size": display.key_size, "choices": ["big", "medium", "small"]})))
+}
+
+#[derive(Deserialize)]
+struct DisplayRequest {
+    key_size: crate::display::KeySize,
+}
+
+/// Saves the key size and shows the board's keys at the new size at once.
+async fn save_display(State(app): State<App>, Json(request): Json<DisplayRequest>) -> ApiResult {
+    let display = crate::display::Display { key_size: request.key_size };
+    crate::display::save(&display).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    app.shared.key_size_changed(display.key_size);
+    Ok(Json(json!({"key_size": display.key_size})))
 }
 
 /// The AI tools on this computer (Claude Code, Antigravity, Codex), looked up now.

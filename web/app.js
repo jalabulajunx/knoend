@@ -554,7 +554,7 @@ function setTask(task) {
   setup.task = task;
   const wifi = task === "wifi";
   // Firmware and Install are not part of changing Wi-Fi (step() rewrites the class names, so by number).
-  document.querySelectorAll('.steps li[data-step="2"], .steps li[data-step="3"]').forEach((el) => (el.hidden = wifi));
+  document.querySelectorAll('.steps li[data-step="2"], .steps li[data-step="3"], .steps li[data-step="5"]').forEach((el) => (el.hidden = wifi));
   $("mode-card").hidden = wifi;
   $("step4-name").textContent = wifi ? "Wi-Fi" : "Pair and Wi-Fi";
   $("step4-title").textContent = wifi ? "Change Wi-Fi" : "Pair and Wi-Fi";
@@ -603,6 +603,49 @@ function choice(name, value, title, sub, disabled) {
   li.append(label);
   return { li, input };
 }
+
+// ---- key size (display.rs): how many keys a page may have at most ----
+
+const KEY_SIZES = [
+  ["big", "Big: up to 2x2", "Four large keys a page. Easiest to read and tap; most apps need several pages."],
+  ["medium", "Medium: up to 3x3 (recommended)", "Nine keys a page. Comfortable on a 2.8-inch screen."],
+  ["small", "Small: up to 4x4", "Sixteen keys a page. Short labels, or icons only; best for a bigger screen or a steady hand."],
+];
+
+async function saveKeySize(key_size) {
+  await api("/display", { key_size });
+  $("key-size").value = key_size;
+}
+
+/** Setup step 5: the key size, chosen once after pairing (the current choice ticked). */
+async function keySizeStep() {
+  step(5);
+  $("setup-done").hidden = true;
+  const current = await api("/display").then((d) => d.key_size).catch(() => "medium");
+  const list = $("key-size-setup");
+  list.replaceChildren();
+  for (const [value, title, sub] of KEY_SIZES) {
+    const { li, input } = choice("key-size-choice", value, title, sub);
+    input.checked = value === current;
+    list.append(li);
+  }
+}
+
+$("key-size-save").addEventListener("click", async (e) => {
+  const picked = document.querySelector('input[name="key-size-choice"]:checked');
+  e.target.disabled = true;
+  try {
+    await saveKeySize(picked ? picked.value : "medium");
+    $("setup-done").hidden = false;
+  } catch (err) {
+    logTo($("pair-log"), `Could not save the key size: ${err.message}`, "error");
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+$("key-size").addEventListener("change", (e) => saveKeySize(e.target.value).catch((err) => alert(`Could not save the key size: ${err.message}`)));
+api("/display").then((d) => { $("key-size").value = d.key_size; }).catch(() => {});
 
 /** What the last port scan saw, so watching only redraws (and asks the assistant) on a change. */
 let lastPorts = null;
@@ -920,7 +963,7 @@ $("pair-form").addEventListener("submit", async (e) => {
   try {
     const result = await api("/provision", { port: setup.port, ssid: ssid || null, password: ssid ? password : null });
     logTo($("pair-log"), `Paired with board ${result.board}${result.ip ? ` on ${result.ip}` : ""}`);
-    $("pair-done").hidden = false;
+    keySizeStep();
   } catch (err) {
     logTo($("pair-log"), `Pairing failed: ${err.message}`, "error");
     autoAssist(`Pairing failed: ${err.message}`);
