@@ -106,7 +106,27 @@ fn usual_dirs() -> Vec<PathBuf> {
     } else {
         dirs.extend([PathBuf::from("/usr/local/bin"), PathBuf::from("/usr/bin")]);
     }
+    dirs.extend(editor_extension_dirs(&home));
     dirs
+}
+
+/// The `claude` that Claude Code's editor extension carries (VS Code, Cursor, Windsurf), newest
+/// first, for people who use Claude Code only in their editor and never installed the command.
+/// Looked in last, so an installed `claude` wins.
+fn editor_extension_dirs(home: &Path) -> Vec<PathBuf> {
+    let mut found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    for editor in [".vscode", ".vscode-insiders", ".cursor", ".windsurf"] {
+        let Ok(entries) = std::fs::read_dir(home.join(editor).join("extensions")) else { continue };
+        for entry in entries.flatten() {
+            let bundled = entry.path().join("resources").join("native-binary");
+            if entry.file_name().to_string_lossy().starts_with("anthropic.claude-code-") && bundled.is_dir() {
+                let installed = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+                found.push((installed, bundled));
+            }
+        }
+    }
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.into_iter().map(|(_, dir)| dir).collect()
 }
 
 /// Every folder to look in, without repeats: this process's PATH, the shells' PATHs, then the
@@ -470,6 +490,17 @@ mod tests {
         assert_eq!(find_in("knoend-no-such-tool", &[dir.clone()]), None);
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(TOOLS.iter().any(|t| t.command == "codex" && !t.supported), "Codex is reported, not run");
+    }
+
+    #[test]
+    fn claude_is_found_inside_the_editor_extension() {
+        let home = std::env::temp_dir().join(format!("knoend-home-{}", std::process::id()));
+        let bundled = home.join(".vscode/extensions/anthropic.claude-code-2.1.304-darwin-arm64/resources/native-binary");
+        std::fs::create_dir_all(&bundled).unwrap();
+        std::fs::create_dir_all(home.join(".vscode/extensions/someone.else-1.0/resources/native-binary")).unwrap();
+        assert_eq!(editor_extension_dirs(&home), vec![bundled]);
+        assert!(editor_extension_dirs(&home.join("nothing")).is_empty());
+        std::fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]
