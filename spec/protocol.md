@@ -124,6 +124,10 @@ arrives.
 - `grid`: columns and rows of this layout (1-4 each, within the board's `grid`); 3x3 when absent.
 - `key`: slot 1 to cols×rows (at most 16), numbered left to right, top to bottom. Slots not listed
   are blank.
+- `label` (1-24 characters): `\n` starts a new line on the key. The board wraps it between words
+  and never splits a word over two lines: a word too wide for the key gets the next smaller font
+  (never below 12 px), and a word still too wide is cut and ends in "...". When the lines do not
+  fit, the last one ends in "...".
 - `page` / `pages`: this is page `page` of `pages` (both 1 when absent). With more than one page
   the board shows a page indicator ("2/3 >") at the right end of the status bar. The companion holds the pages and
   sends one at a time; see `knoend.page`.
@@ -363,6 +367,8 @@ action = { kind = "shortcut", keys = "Primary+Comma" }
 ```
 
 Precedence when several libraries match: user override → installed library → AI draft → default keys.
+The web app's editor writes user overrides: `user-<name>.toml` in the person's library folder, id
+`user.<name>`, with `overrides` naming the recipe or draft it layers on (which stays, underneath).
 
 **Tested.** `[[pack.tested]]` entries record who saw a library work, on which OS and when
 (`os` = linux | macos | windows, `by`, `date` YYYY-MM-DD, optional `note` such as the desktop and

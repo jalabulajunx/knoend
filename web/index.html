@@ -12,6 +12,7 @@
     <div class="brand"><span class="logo" aria-hidden="true"></span>KnoEnd</div>
     <nav class="tabs" role="tablist">
       <button role="tab" data-view="dashboard" aria-selected="true">Dashboard</button>
+      <button role="tab" data-view="edit" aria-selected="false">Edit keys</button>
       <button role="tab" data-view="setup" aria-selected="false">Set up a board</button>
     </nav>
     <span id="link-pill" class="pill">Starting</span>
@@ -49,6 +50,74 @@
         <article class="card">
           <h2>Activity</h2>
           <ol id="activity" class="log"></ol>
+        </article>
+      </div>
+    </section>
+
+    <!-- Edit keys (#29): the board shows what is edited here, live -->
+    <section id="view-edit" class="view" hidden>
+      <article class="card">
+        <h2>Edit keys <span id="edit-dirty" class="badge" hidden>Not saved</span></h2>
+        <details class="help" open>
+          <summary>How editing works</summary>
+          <ul class="small">
+            <li>While editing, the board shows the keys you edit here, live, instead of following the app in front.</li>
+            <li>A tap on a board key <strong>selects</strong> it here; it does not run it.</li>
+            <li>To try your keys: <strong>Save</strong>, then <strong>Stop editing</strong>, and use the app.</li>
+            <li>Saving makes your own version on top of the recipe or AI draft; <strong>Remove my version</strong> brings that back.</li>
+          </ul>
+        </details>
+        <div class="edit-bar">
+          <button type="button" id="edit-toggle" class="primary">Start editing</button>
+          <label class="inline">Keys for <select id="edit-pick" disabled></select></label>
+        </div>
+        <p id="edit-error" class="error small" hidden></p>
+      </article>
+      <div id="edit-main" class="grid2 edit-main" hidden>
+        <article class="card">
+          <div class="edit-bar">
+            <button type="button" id="edit-prev" class="secondary small-button" aria-label="Previous page">&lsaquo;</button>
+            <span id="edit-page" class="muted small"></span>
+            <button type="button" id="edit-next" class="secondary small-button" aria-label="Next page">&rsaquo;</button>
+            <label class="inline small">Grid <select id="edit-grid"></select></label>
+            <button type="button" id="edit-add" class="secondary small-button">Add key</button>
+          </div>
+          <div id="edit-keys" class="keys edit-keys" aria-label="Keys being edited"></div>
+          <p class="muted small">Drag a key onto another place to move it.</p>
+          <div class="actions left">
+            <button type="button" id="edit-save" class="primary">Save</button>
+            <button type="button" id="edit-revert" class="secondary">Undo changes</button>
+            <button type="button" id="edit-remove" class="secondary" hidden>Remove my version</button>
+          </div>
+          <p id="edit-saved" class="note small"></p>
+        </article>
+        <article class="card">
+          <h2>Key</h2>
+          <p id="edit-none" class="muted small">Select a key here or tap one on the board.</p>
+          <form id="edit-key" hidden>
+            <label>Label <span id="edit-count" class="muted small"></span>
+              <textarea id="edit-label" rows="2" maxlength="24"></textarea>
+              <span class="muted small">Enter starts a new line on the key.</span></label>
+            <label>Icon <select id="edit-icon"></select></label>
+            <label>Spoken <input id="edit-speak" maxlength="80" placeholder="Same as the label"></label>
+            <label class="check"><input type="checkbox" id="edit-confirm"> Needs a second tap</label>
+            <div id="edit-keys-row">
+              <label>Keys it presses
+                <span class="edit-bar"><input id="edit-shortcut" placeholder="Primary+Shift+P">
+                  <button type="button" id="edit-record" class="secondary small-button">Record</button></span></label>
+              <p id="edit-shortcut-says" class="small"></p>
+              <details class="help small">
+                <summary>Key names</summary>
+                <p>Write the keys joined with <code>+</code>, the key last: <code>Primary+Shift+P</code>, <code>Ctrl+C</code>, <code>F5</code>, <code>A</code>.
+                  Each names a key on the keyboard, not a character: <code>A</code> types a, <code>Shift+A</code> types A.</p>
+                <p><strong>Held keys:</strong> <code>Primary</code> (&#8984; on a Mac, Ctrl elsewhere: use it so the key works on every computer), <code>Ctrl</code>, <code>Shift</code>, <code>Alt</code> (&#8997; Option on a Mac), <code>Meta</code> (&#8984; / Windows / Super).</p>
+                <p><strong>Keys:</strong> <code>A</code>-<code>Z</code>, <code>0</code>-<code>9</code>, <code>F1</code>-<code>F24</code>, <span id="edit-key-names"></span>.</p>
+                <p>Or press <strong>Record</strong> and then the keys. A few combinations the system keeps for itself (&#8984;Tab, &#8984;Q) cannot be recorded; type those.</p>
+              </details>
+            </div>
+            <p id="edit-action" class="muted small" hidden></p>
+            <div class="actions left"><button type="button" id="edit-delete" class="secondary">Remove key</button></div>
+          </form>
         </article>
       </div>
     </section>

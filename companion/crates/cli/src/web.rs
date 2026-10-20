@@ -26,6 +26,8 @@ use crate::service::Shared;
 const INDEX: &str = include_str!("../../../../web/index.html");
 const APP_JS: &str = include_str!("../../../../web/app.js");
 const STYLE: &str = include_str!("../../../../web/style.css");
+/// The board's key icons (32x32, 4-bit alpha), so the editor shows the pictures the board draws.
+const ICONS_C: &str = include_str!("../../../../firmware/components/icons/icons.c");
 
 #[derive(Clone)]
 struct App {
@@ -63,11 +65,13 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/assist", post(assist))
         .route("/open", post(open_help))
         .route("/typing", get(typing))
+        .route("/edit", post(edit))
         .layer(middleware::from_fn_with_state(app.clone(), require_token));
     let router = Router::new()
         .route("/", get(index))
         .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript")], APP_JS) }))
         .route("/style.css", get(|| async { ([(header::CONTENT_TYPE, "text/css")], STYLE) }))
+        .route("/icons/{name}", get(icon))
         .nest("/api", api)
         .layer(middleware::from_fn_with_state(app.clone(), require_local))
         .with_state(app);
@@ -111,6 +115,39 @@ async fn require_token(State(app): State<App>, Query(query): Query<TokenQuery>, 
     next.run(request).await
 }
 
+/// One of the board's icons as a white PNG with transparency (the web app tints it like the board).
+async fn icon(axum::extract::Path(name): axum::extract::Path<String>) -> Response {
+    let name = name.strip_suffix(".png").unwrap_or(&name);
+    match board_icons().get(name).and_then(|alpha| knoend_desktop::picture::png(alpha, 32, 32)) {
+        Some(png) => ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "max-age=86400")], png).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `icons.c` read once: each `<name>_map` (two pixels per byte, high nibble first) as RGBA.
+fn board_icons() -> &'static std::collections::HashMap<String, Vec<u8>> {
+    static ICONS: std::sync::OnceLock<std::collections::HashMap<String, Vec<u8>>> = std::sync::OnceLock::new();
+    ICONS.get_or_init(|| parse_icons(ICONS_C))
+}
+
+fn parse_icons(source: &str) -> std::collections::HashMap<String, Vec<u8>> {
+    let mut icons = std::collections::HashMap::new();
+    for part in source.split("static const uint8_t ").skip(1) {
+        let Some((name, rest)) = part.split_once("_map[] = {") else { continue };
+        let Some((bytes, _)) = rest.split_once("};") else { continue };
+        let mut rgba = Vec::with_capacity(32 * 32 * 4);
+        for byte in bytes.split(',').filter_map(|b| u8::from_str_radix(b.trim().trim_start_matches("0x"), 16).ok()) {
+            for nibble in [byte >> 4, byte & 0x0f] {
+                rgba.extend([255, 255, 255, nibble * 17]);
+            }
+        }
+        if rgba.len() == 32 * 32 * 4 {
+            icons.insert(name.to_string(), rgba);
+        }
+    }
+    icons
+}
+
 async fn index(State(app): State<App>) -> Html<String> {
     Html(INDEX.replace("{{TOKEN}}", &app.token))
 }
@@ -122,10 +159,56 @@ async fn state(State(app): State<App>) -> ApiResult {
 }
 
 async fn events(State(app): State<App>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    // Counts open tabs while the stream lives: the last one closing ends edit mode.
+    let viewer = Viewer::new(app.shared.clone());
     let stream = BroadcastStream::new(app.shared.events.subscribe())
         .filter_map(|item| item.ok())
-        .map(|value| Ok(Event::default().data(value.to_string())));
+        .map(move |value| {
+            let _ = &viewer;
+            Ok(Event::default().data(value.to_string()))
+        });
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+struct Viewer(Arc<Shared>);
+
+impl Viewer {
+    fn new(shared: Arc<Shared>) -> Viewer {
+        shared.viewer_joined();
+        Viewer(shared)
+    }
+}
+
+impl Drop for Viewer {
+    fn drop(&mut self) {
+        self.0.viewer_left();
+    }
+}
+
+#[derive(Deserialize)]
+struct EditRequest {
+    command: String,
+    id: Option<String>,
+    library: Option<Value>,
+    page: Option<usize>,
+}
+
+/// Edit mode (#29): list, start, change, page, save, revert, remove, stop. Each answers with the
+/// edit state once the board shows it (the list with the libraries).
+async fn edit(State(app): State<App>, Json(request): Json<EditRequest>) -> ApiResult {
+    use crate::edit::Command;
+    let command = match request.command.as_str() {
+        "list" => Command::List,
+        "start" => Command::Start(request.id),
+        "change" => Command::Change(request.library.ok_or_else(|| fail(StatusCode::BAD_REQUEST, "change needs the library"))?),
+        "page" => Command::Page(request.page.unwrap_or(0)),
+        "save" => Command::Save,
+        "revert" => Command::Revert,
+        "remove" => Command::Remove,
+        "stop" => Command::Stop,
+        other => return Err(fail(StatusCode::BAD_REQUEST, format!("unknown edit command {other:?}"))),
+    };
+    app.shared.edit(command).await.map(Json).map_err(|e| fail(StatusCode::BAD_REQUEST, e))
 }
 
 async fn firmware(State(app): State<App>) -> ApiResult {
@@ -449,4 +532,16 @@ async fn wifi_scan(State(app): State<App>, Json(request): Json<PortRequest>) -> 
         .map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
     Ok(Json(networks))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_icon_name_has_the_boards_picture() {
+        let icons = super::board_icons();
+        for name in knoend_core::library::icon_names() {
+            let rgba = icons.get(name).unwrap_or_else(|| panic!("{name} missing from icons.c"));
+            assert!(rgba.chunks(4).any(|p| p[3] > 0), "{name} is blank");
+        }
+    }
 }

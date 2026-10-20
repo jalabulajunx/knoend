@@ -64,6 +64,19 @@ impl Catalog {
         self.libraries.push((path, library));
     }
 
+    /// Every library and the file it came from (built-in recipes have no file of their own here).
+    pub fn all(&self) -> impl Iterator<Item = (&PathBuf, &Library)> {
+        self.libraries.iter().map(|(p, l)| (p, l))
+    }
+
+    pub fn by_id(&self, id: &str) -> Option<(&PathBuf, &Library)> {
+        self.all().find(|(_, l)| l.pack.id == id)
+    }
+
+    pub fn remove(&mut self, id: &str) {
+        self.libraries.retain(|(_, l)| l.pack.id != id);
+    }
+
     pub fn len(&self) -> usize {
         self.libraries.len()
     }

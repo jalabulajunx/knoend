@@ -39,6 +39,8 @@ terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-
 | Claude Code asks through the board: permission requests (Allow / Always / Deny / Stop) with a scrollable explanation; withdrawn when answered on screen | `cli/src/agent_hooks.rs` | `knoend claude-hooks install`, new Claude Code session |
 | Desktop notifications from followed apps (Linux D-Bus) | `companion/crates/desktop` | Claude desktop notifications |
 | Launcher when nothing is focused: most used / recent apps and sites with their own colour icons; tap opens (Linux; macOS since 2026-10-18) | `cli/src/launcher.rs`, `desktop/src/apps.rs`, `mac_apps.rs`, `focus/src/macos.rs`, `knoend.image` | empty workspace; on a Mac click the desktop |
+| Edit keys in the web app: the board shows the layout being edited, live; a board tap selects a key; label (forced line break), icon, spoken text, confirm, recorded shortcut; drag to move, grid per page, add/remove keys; Save as your own version on top of the recipe or draft (FNK tested; ONX not yet) | `cli/src/edit.rs`, `cli/src/service.rs` (`show_edit`), `web/app.js` | web app > Edit keys |
+| Key labels never split a word: one font size smaller (12 px at least), then cut with "..." (FNK tested; ONX not yet) | `firmware/main/ui.c` (`fitting_font`, `cut_long_words`) | a long one-word label in Edit keys |
 | Background service (systemd user unit / LaunchAgent) | `cli/src/background.rs` | `knoend service install` |
 | Recipes: apps, sites and Claude Code's screens as data, each with who tested it on which OS | `recipes/`, `spec/protocol.md` section 5 | `python3 tools/validate_spec.py` |
 

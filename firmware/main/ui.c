@@ -229,6 +229,92 @@ static void key_event(lv_event_t *event)
     update_status_locked();
 }
 
+// The widest piece of `text` (its first `len` bytes) LVGL keeps on one line: a word, or a word up
+// to a break character such as '-' (CONFIG_LV_TXT_BREAK_CHARS), in pixels at `font`.
+static lv_coord_t widest_piece(const char *text, uint32_t len, const lv_font_t *font)
+{
+    lv_coord_t widest = 0;
+    const char *start = text;
+    for (const char *p = text;; p++) {
+        const bool end = p == text + len;
+        const bool space = end || *p == ' ' || *p == '\n';
+        const bool breaker = !end && strchr(",.;:-_", *p) != NULL;
+        if (!space && !breaker) {
+            continue;
+        }
+        const uint32_t piece = (uint32_t)(p - start) + (breaker ? 1 : 0);
+        if (piece > 0) {
+            const lv_coord_t w = lv_txt_get_width(start, piece, font, 0, LV_TEXT_FLAG_NONE);
+            widest = w > widest ? w : widest;
+        }
+        if (end) {
+            return widest;
+        }
+        start = p + 1;
+    }
+}
+
+// The font for a key label: `preferred`, or one size smaller when a word would not fit `width`,
+// never below 12 px (smaller cannot be read on these screens). Words still too wide are cut.
+static const lv_font_t *fitting_font(const char *text, const lv_font_t *preferred, lv_coord_t width)
+{
+    static const lv_font_t *const sizes[] = {&lv_font_montserrat_28, &lv_font_montserrat_20, &lv_font_montserrat_14,
+                                              &lv_font_montserrat_12};
+    const size_t count = sizeof(sizes) / sizeof(sizes[0]);
+    for (size_t i = 0; i < count; i++) {
+        if (sizes[i] == preferred) {
+            const bool fits = widest_piece(text, strlen(text), preferred) <= width;
+            return fits || i + 1 == count ? preferred : sizes[i + 1];
+        }
+    }
+    return preferred;
+}
+
+// `text` with every word too wide for `width` at `font` cut to fit and ended with "...", so a word
+// is never split over two lines ("Sourcecontrol" on a narrow key: "Sourceco..."). Words that fit
+// are kept and wrap between words as usual.
+static void cut_long_words(const char *text, const lv_font_t *font, lv_coord_t width, char *out, size_t size)
+{
+    size_t n = 0;
+    const char *p = text;
+    while (*p != '\0' && n + 1 < size) {
+        if (*p == ' ' || *p == '\n') {
+            out[n++] = *p++;
+            continue;
+        }
+        const char *end = p;
+        while (*end != '\0' && *end != ' ' && *end != '\n') {
+            end++;
+        }
+        uint32_t keep = (uint32_t)(end - p);
+        const bool cut = widest_piece(p, keep, font) > width;
+        if (cut) {
+            // Measured with the dots attached: the last letter's spacing depends on what follows.
+            char candidate[UI_LABEL_BYTES + 4];
+            while (keep > 1) {
+                const uint32_t len = keep < UI_LABEL_BYTES ? keep : UI_LABEL_BYTES - 1;
+                memcpy(candidate, p, len);
+                memcpy(candidate + len, "...", 4);
+                if (lv_txt_get_width(candidate, len + 3, font, 0, LV_TEXT_FLAG_NONE) <= width) {
+                    break;
+                }
+                keep--;
+                while (keep > 1 && ((unsigned char)p[keep] & 0xC0) == 0x80) {
+                    keep--; // not inside a UTF-8 character
+                }
+            }
+        }
+        for (uint32_t k = 0; k < keep && n + 1 < size; k++) {
+            out[n++] = p[k];
+        }
+        for (int k = 0; cut && k < 3 && n + 1 < size; k++) {
+            out[n++] = '.';
+        }
+        p = end;
+    }
+    out[n] = '\0';
+}
+
 static void draw_keys_locked(void)
 {
     const int cols = layout.cols, rows = layout.rows;
@@ -285,12 +371,15 @@ static void draw_keys_locked(void)
             // keys. Icons stay 32 px: LVGL 8 draws 4-bit alpha images line by line and cannot zoom
             // them (it reads a one-line buffer as the whole image, past its end).
             const int icon_px = 32;
-            const lv_font_t *font = big ? &lv_font_montserrat_20 : &lv_font_montserrat_14;
+            const lv_font_t *font = fitting_font(key->label, big ? &lv_font_montserrat_20 : &lv_font_montserrat_14, key_w - 8);
             const int line_px = lv_font_get_line_height(font);
+            char shown[UI_LABEL_BYTES * 2];
+            cut_long_words(key->label, font, key_w - 8, shown, sizeof(shown));
+            lv_label_set_text(key_labels[i], shown);
             // A label too long for one line gets two where they fit: lines a little closer, the
             // text up into the icon's empty margin (3x3: 59 of 61 px). Otherwise one line and "...".
             lv_point_t text;
-            lv_txt_get_size(&text, key->label, font, 0, 0, key_w - 8, LV_TEXT_FLAG_NONE);
+            lv_txt_get_size(&text, shown, font, 0, 0, key_w - 8, LV_TEXT_FLAG_NONE);
             const bool two = text.y > line_px && icon_px - ICON_MARGIN + 2 * line_px - LINE_SQUEEZE <= h - 2;
             const int label_h = two ? 2 * line_px - LINE_SQUEEZE : line_px;
             const int block = icon_px + (two ? -ICON_MARGIN : ICON_GAP) + label_h;
@@ -304,10 +393,14 @@ static void draw_keys_locked(void)
             lv_obj_align(key_labels[i], LV_ALIGN_CENTER, 0, block / 2 - label_h / 2);
         } else {
             lv_obj_add_flag(key_icons[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_style_text_font(key_labels[i],
-                                       detail || small            ? &lv_font_montserrat_14
-                                       : big || strlen(key->label) <= 2 ? &lv_font_montserrat_28
-                                                                        : &lv_font_montserrat_20, 0);
+            const lv_font_t *font = detail || small                   ? &lv_font_montserrat_14
+                                    : big || strlen(key->label) <= 2 ? &lv_font_montserrat_28
+                                                                     : &lv_font_montserrat_20;
+            const lv_font_t *fitted = fitting_font(key->label, font, key_w - 8);
+            char shown[UI_LABEL_BYTES * 2];
+            cut_long_words(key->label, fitted, key_w - 8, shown, sizeof(shown));
+            lv_label_set_text(key_labels[i], blank ? "" : shown);
+            lv_obj_set_style_text_font(key_labels[i], fitted, 0);
             lv_obj_set_style_text_line_space(key_labels[i], 0, 0);
             lv_label_set_long_mode(key_labels[i], LV_LABEL_LONG_WRAP);
             lv_obj_set_height(key_labels[i], LV_SIZE_CONTENT);

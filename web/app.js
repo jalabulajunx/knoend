@@ -38,6 +38,7 @@ function show(view) {
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== `view-${view}`));
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.view === view));
   if (view === "setup" && setup.step === 1) scanPorts();
+  if (view === "edit") loadEdit();
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.view === "setup" && setup.task !== "setup") { setTask("setup"); step(1); }
@@ -123,6 +124,8 @@ function connectEvents() {
     if (event.kind === "flash") onFlash(d);
     if (event.kind === "provision") logTo($("pair-log"), d.text);
     if (event.kind === "configured") loadDrafts();
+    if (event.kind === "edit") onEditEvent(d);
+    if (event.kind === "edit.tap") onEditTap(d);
     if (d.text && event.kind !== "status") logTo($("activity"), d.text.trim(), event.kind === "configure-failed" ? "error" : "");
   };
   source.onerror = () => {
@@ -130,6 +133,413 @@ function connectEvents() {
     $("link-pill").className = "pill warn";
   };
 }
+
+// ---- edit keys (#29) ----
+// While editing, the service shows the library edited here on the board instead of following focus.
+// Every change goes to the board at once, unsaved: the board itself is the preview. A tap on a board
+// key selects it here. Save writes the person's own version on top of the recipe or AI draft.
+
+// rev counts local changes; sent is the last one the service has (its answers to older ones are
+// not shown over newer typing).
+const edit = { state: null, selected: null, timer: null, recording: false, rev: 0, sent: 0 };
+
+// The shortcut grammar (spec/protocol.md section 5; the names in companion/crates/core/src/keys.rs).
+const MODIFIERS = ["Primary", "Ctrl", "Alt", "Shift", "Meta"];
+const NAMED_KEYS = ["Enter", "Escape", "Backspace", "Tab", "Space", "Minus", "Equal", "BracketLeft", "BracketRight", "Backslash",
+  "Semicolon", "Quote", "Backquote", "Comma", "Period", "Slash", "Insert", "Home", "PageUp", "Delete", "End", "PageDown",
+  "Right", "Left", "Down", "Up"];
+// What a key types alone, and with Shift (US layout, as the board's keyboard).
+const TYPES = { Space: [" ", " "], Minus: ["-", "_"], Equal: ["=", "+"], BracketLeft: ["[", "{"], BracketRight: ["]", "}"],
+  Backslash: ["\\", "|"], Semicolon: [";", ":"], Quote: ["'", '"'], Backquote: ["`", "~"], Comma: [",", "<"], Period: [".", ">"],
+  Slash: ["/", "?"], 1: ["1", "!"], 2: ["2", "@"], 3: ["3", "#"], 4: ["4", "$"], 5: ["5", "%"], 6: ["6", "^"], 7: ["7", "&"],
+  8: ["8", "*"], 9: ["9", "("], 0: ["0", ")"] };
+const ON_MAC = /Mac/.test(navigator.platform || navigator.userAgent);
+
+function keyName(text) {
+  if (/^[a-z]$/i.test(text) || /^[0-9]$/.test(text)) return text.toUpperCase();
+  const f = /^f([0-9]{1,2})$/i.exec(text);
+  if (f && Number(f[1]) >= 1 && Number(f[1]) <= 24) return `F${Number(f[1])}`;
+  return NAMED_KEYS.find((n) => n.toLowerCase() === text.toLowerCase()) || null;
+}
+
+/** "ctrl+shift+a" -> "Ctrl+Shift+A", with what it does on this computer, or what is wrong. */
+function readShortcut(text) {
+  const parts = text.split("+").map((p) => p.trim());
+  const key = parts.pop();
+  const held = [];
+  for (const part of parts) {
+    const name = MODIFIERS.find((m) => m.toLowerCase() === part.toLowerCase());
+    if (!name) return { error: `"${part}" is not a held key: use Primary, Ctrl, Alt, Shift or Meta.` };
+    if (!held.includes(name)) held.push(name);
+  }
+  const name = key ? keyName(key) : null;
+  if (!name) return { error: key ? `"${key}" is not a key name: see Key names below.` : "Which key? For example Primary+S." };
+  held.sort((a, b) => MODIFIERS.indexOf(a) - MODIFIERS.indexOf(b));
+  const shown = { Primary: ON_MAC ? "⌘" : "Ctrl", Meta: ON_MAC ? "⌘" : "Super", Alt: ON_MAC ? "⌥" : "Alt", Ctrl: "Ctrl", Shift: "Shift" };
+  const shift = held.includes("Shift");
+  let says = `Presses ${[...held.map((m) => shown[m]), name].join(" ")} on this computer`;
+  if (held.every((m) => m === "Shift")) {
+    const typed = /^[A-Z]$/.test(name) ? (shift ? name : name.toLowerCase()) : TYPES[name] && TYPES[name][shift ? 1 : 0];
+    if (typed) says += `: types ${typed === " " ? "a space" : typed}`;
+  }
+  return { keys: [...held, name].join("+"), says };
+}
+
+/** A key press on this computer, in the shortcut grammar (null for a held key alone). */
+function recordedShortcut(e) {
+  const code = e.code;
+  let name = null;
+  if (/^Key[A-Z]$/.test(code)) name = code.slice(3);
+  else if (/^(Digit|Numpad)[0-9]$/.test(code)) name = code.slice(-1);
+  else if (/^F[0-9]{1,2}$/.test(code)) name = keyName(code);
+  else if (code.startsWith("Arrow")) name = code.slice(5);
+  else if (code === "NumpadEnter") name = "Enter";
+  else name = NAMED_KEYS.includes(code) ? code : null;
+  if (!name) return null;
+  const held = [];
+  if (ON_MAC ? e.metaKey : e.ctrlKey) held.push("Primary");
+  if (ON_MAC && e.ctrlKey) held.push("Ctrl");
+  if (e.altKey) held.push("Alt");
+  if (e.shiftKey) held.push("Shift");
+  if (!ON_MAC && e.metaKey) held.push("Meta");
+  return [...held, name].join("+");
+}
+const SOURCES = { builtin: "recipe", community: "community", ai: "AI draft", user: "yours" };
+
+function showEditError(text) {
+  $("edit-error").textContent = text;
+  $("edit-error").hidden = !text;
+}
+
+async function editCommand(command, extra = {}) {
+  // Save and page turns carry the last change with them; the others drop what is not sent yet.
+  if (command === "save" || command === "page") await sendChange();
+  else if (command !== "list") dropChange();
+  showEditError("");
+  try {
+    const answer = await api("/edit", { command, ...extra });
+    if (command !== "list") onEditState(answer);
+    return answer;
+  } catch (e) {
+    showEditError(e.message);
+    throw e;
+  }
+}
+
+async function loadEdit() {
+  const list = await editCommand("list").catch(() => null);
+  if (!list) return;
+  const pick = $("edit-pick");
+  pick.replaceChildren(new Option("Choose...", ""));
+  const groups = { app: "Apps", site: "Sites", agent: "Agent screens" };
+  for (const [kind, title] of Object.entries(groups)) {
+    const group = document.createElement("optgroup");
+    group.label = title;
+    // The person's own versions are reached through what they layer on.
+    const libs = list.libraries.filter((l) => l.kind === kind && !l.overrides).sort((a, b) => a.name.localeCompare(b.name));
+    for (const l of libs) {
+      const own = list.libraries.some((o) => o.overrides === l.id);
+      group.append(new Option(`${l.name} (${own ? "yours" : SOURCES[l.source] || l.source})`, l.id));
+    }
+    if (libs.length) pick.append(group);
+  }
+  pick.disabled = false;
+  $("edit-icon").replaceChildren(new Option("(none)", ""), ...list.icons.map((name) => new Option(name, name)));
+  onEditState(list.edit, list.shown);
+}
+
+function onEditState(state, shown) {
+  edit.state = state && state.editing ? state : null;
+  const on = !!edit.state;
+  $("edit-toggle").textContent = on ? "Stop editing" : "Start editing";
+  $("edit-main").hidden = !on;
+  $("edit-dirty").hidden = !(on && edit.state.dirty);
+  if (!on) {
+    edit.selected = null;
+    if (shown && [...$("edit-pick").options].some((o) => o.value === shown)) $("edit-pick").value = shown;
+    return;
+  }
+  const pack = edit.state.library.pack;
+  $("edit-pick").value = pack.overrides || pack.id;
+  $("edit-remove").hidden = !(edit.state.own && edit.state.overrides);
+  $("edit-save").disabled = $("edit-revert").disabled = !edit.state.dirty;
+  $("edit-saved").textContent = edit.state.own ? "Saved as your own version." : "Not saved yet: saving makes your own version, on top of this one.";
+  if (edit.selected !== null && !edit.state.library.key[edit.selected]) edit.selected = null;
+  renderEditPage();
+  // Not while the person types in the key's form (it would move the cursor).
+  if (!$("edit-key").contains(document.activeElement)) renderEditKey();
+}
+
+/** The session changed (here, in another tab, or a page turn on the board). */
+function onEditEvent(state) {
+  if (edit.rev !== edit.sent && state.editing && edit.state) {
+    edit.state.page = state.page; // changes of ours are not with the service yet: keep them
+    renderEditPage();
+  } else {
+    onEditState(state);
+  }
+}
+
+/** A tap on the board selects that key here. */
+function onEditTap({ page, slot }) {
+  if (!edit.state) return;
+  edit.state.page = page;
+  const number = currentPage().number;
+  const i = edit.state.library.key.findIndex((k) => k.page === number && k.slot === slot);
+  edit.selected = i >= 0 ? i : null;
+  renderEditPage();
+  renderEditKey();
+}
+
+function currentPage() {
+  const s = edit.state;
+  return s.pages[Math.min(s.page, s.pages.length - 1)] || { number: 1, grid: "3x3" };
+}
+
+function gridOf(text) {
+  const [cols, rows] = text.split("x").map(Number);
+  return { cols, rows };
+}
+
+function renderEditPage() {
+  const s = edit.state;
+  const page = currentPage();
+  const grid = gridOf(page.grid);
+  $("edit-page").textContent = `Page ${Math.min(s.page, s.pages.length - 1) + 1} of ${Math.max(s.pages.length, 1)}`;
+  $("edit-prev").disabled = $("edit-next").disabled = s.pages.length < 2;
+  const sizes = [];
+  for (let rows = 1; rows <= s.max.rows; rows++) for (let cols = 1; cols <= s.max.cols; cols++) sizes.push(`${cols}x${rows}`);
+  $("edit-grid").replaceChildren(...sizes.map((g) => new Option(g, g)));
+  $("edit-grid").value = page.grid;
+
+  const keys = $("edit-keys");
+  keys.replaceChildren();
+  keys.style.gridTemplateColumns = `repeat(${grid.cols}, 1fr)`;
+  keys.style.gridTemplateRows = `repeat(${grid.rows}, 1fr)`;
+  for (let slot = 1; slot <= grid.cols * grid.rows; slot++) {
+    const i = s.library.key.findIndex((k) => k.page === page.number && k.slot === slot);
+    const div = document.createElement("div");
+    if (i >= 0) {
+      const key = s.library.key[i];
+      if (key.icon) {
+        // The picture the board draws (served by the service from the firmware's icons).
+        const icon = document.createElement("img");
+        icon.src = `/icons/${encodeURIComponent(key.icon)}.png`;
+        icon.alt = "";
+        icon.draggable = false;
+        div.append(icon);
+      }
+      const label = document.createElement("span");
+      label.textContent = key.label;
+      div.append(label);
+      div.draggable = true;
+      if (edit.selected === i) div.classList.add("selected");
+      div.addEventListener("click", () => { edit.selected = i; renderEditPage(); renderEditKey(); });
+      div.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", String(slot)));
+    } else {
+      div.classList.add("blank");
+    }
+    div.addEventListener("dragover", (e) => { e.preventDefault(); div.classList.add("over"); });
+    div.addEventListener("dragleave", () => div.classList.remove("over"));
+    div.addEventListener("drop", (e) => {
+      e.preventDefault();
+      moveKey(page.number, Number(e.dataTransfer.getData("text/plain")), slot);
+    });
+    keys.append(div);
+  }
+}
+
+function describeAction(action) {
+  const detail = action.url || action.selector || action.name || action.command || action.reply || "";
+  return detail ? `${action.kind} ${detail}` : action.kind;
+}
+
+function renderEditKey() {
+  stopRecording();
+  const key = edit.state && edit.selected !== null ? edit.state.library.key[edit.selected] : null;
+  $("edit-none").hidden = !!key;
+  $("edit-key").hidden = !key;
+  if (!key) return;
+  $("edit-label").value = key.label;
+  $("edit-count").textContent = `${key.label.length}/24`;
+  $("edit-icon").value = key.icon || "";
+  $("edit-speak").value = key.speak || "";
+  $("edit-confirm").checked = !!key.confirm;
+  const shortcut = key.action.kind === "shortcut";
+  $("edit-keys-row").hidden = !shortcut;
+  $("edit-action").hidden = shortcut;
+  if (shortcut) {
+    $("edit-shortcut").value = key.action.keys;
+    showShortcut(key.action.keys);
+  } else {
+    $("edit-action").textContent = `Does: ${describeAction(key.action)} (not editable here yet)`;
+  }
+}
+
+function showShortcut(text) {
+  const read = readShortcut(text);
+  $("edit-shortcut-says").textContent = read.error || read.says;
+  $("edit-shortcut-says").className = `small ${read.error ? "error" : "muted"}`;
+  return read;
+}
+
+function stopRecording() {
+  edit.recording = false;
+  $("edit-record").classList.remove("recording");
+  $("edit-record").textContent = "Record";
+}
+
+/** A local change: shown here at once, sent to the board a moment later (typing sends once). */
+function changed() {
+  edit.state.dirty = true;
+  $("edit-dirty").hidden = false;
+  $("edit-save").disabled = $("edit-revert").disabled = false;
+  renderEditPage();
+  edit.rev++;
+  clearTimeout(edit.timer);
+  edit.timer = setTimeout(sendChange, 250);
+}
+
+/** Sends the library as edited now, if the service does not have it yet. */
+async function sendChange() {
+  clearTimeout(edit.timer);
+  edit.timer = null;
+  if (!edit.state || edit.sent === edit.rev) return;
+  const rev = edit.rev;
+  try {
+    const answer = await api("/edit", { command: "change", library: edit.state.library });
+    edit.sent = rev;
+    showEditError("");
+    if (edit.rev === rev) onEditState(answer); // not over typing that came after
+  } catch (e) {
+    edit.sent = rev; // sent again with the next change
+    showEditError(e.message);
+  }
+}
+
+function dropChange() {
+  clearTimeout(edit.timer);
+  edit.timer = null;
+  edit.sent = edit.rev;
+}
+
+function editKey(apply) {
+  const key = edit.state && edit.state.library.key[edit.selected];
+  if (!key) return;
+  apply(key);
+  $("edit-count").textContent = `${key.label.length}/24`;
+  changed();
+}
+
+function moveKey(number, from, to) {
+  if (from === to) return;
+  const keys = edit.state.library.key;
+  const a = keys.find((k) => k.page === number && k.slot === from);
+  const b = keys.find((k) => k.page === number && k.slot === to);
+  if (!a) return;
+  a.slot = to;
+  if (b) b.slot = from;
+  changed();
+}
+
+$("edit-toggle").addEventListener("click", () => {
+  if (edit.state) editCommand("stop").catch(() => {});
+  else editCommand("start", $("edit-pick").value ? { id: $("edit-pick").value } : {}).catch(() => {});
+});
+$("edit-pick").addEventListener("change", (e) => {
+  if (!e.target.value) return;
+  if (edit.state && edit.state.dirty && !confirm("Leave your unsaved changes?")) {
+    const pack = edit.state.library.pack;
+    e.target.value = pack.overrides || pack.id;
+    return;
+  }
+  edit.selected = null;
+  editCommand("start", { id: e.target.value }).catch(() => {});
+});
+$("edit-prev").addEventListener("click", () => editCommand("page", { page: (edit.state.page + edit.state.pages.length - 1) % edit.state.pages.length }).catch(() => {}));
+$("edit-next").addEventListener("click", () => editCommand("page", { page: (edit.state.page + 1) % edit.state.pages.length }).catch(() => {}));
+$("edit-grid").addEventListener("change", (e) => {
+  const lib = edit.state.library;
+  const page = currentPage();
+  const grid = gridOf(e.target.value);
+  const size = grid.cols * grid.rows;
+  const onPage = lib.key.filter((k) => k.page === page.number);
+  if (onPage.length > size) {
+    showEditError(`This page has ${onPage.length} keys: remove some first, or pick a bigger grid.`);
+    e.target.value = page.grid;
+    return;
+  }
+  // Keys past the smaller grid move into its free places.
+  const used = new Set(onPage.filter((k) => k.slot <= size).map((k) => k.slot));
+  for (const k of onPage.filter((k) => k.slot > size)) {
+    let slot = 1;
+    while (used.has(slot)) slot++;
+    k.slot = slot;
+    used.add(slot);
+  }
+  lib.page = (lib.page || []).filter((p) => p.number !== page.number);
+  lib.page.push({ number: page.number, grid: e.target.value });
+  page.grid = e.target.value;
+  changed();
+});
+$("edit-add").addEventListener("click", () => {
+  const page = currentPage();
+  const grid = gridOf(page.grid);
+  const used = new Set(edit.state.library.key.filter((k) => k.page === page.number).map((k) => k.slot));
+  let slot = 1;
+  while (used.has(slot)) slot++;
+  if (slot > grid.cols * grid.rows) {
+    showEditError("This page is full: pick a bigger grid first.");
+    return;
+  }
+  edit.state.library.key.push({ page: page.number, slot, label: "New key", action: { kind: "shortcut", keys: "Escape" } });
+  edit.selected = edit.state.library.key.length - 1;
+  renderEditKey();
+  changed();
+});
+$("edit-delete").addEventListener("click", () => {
+  edit.state.library.key.splice(edit.selected, 1);
+  edit.selected = null;
+  renderEditKey();
+  changed();
+});
+$("edit-label").addEventListener("input", (e) => editKey((k) => { k.label = e.target.value; }));
+$("edit-icon").addEventListener("change", (e) => editKey((k) => { if (e.target.value) k.icon = e.target.value; else delete k.icon; }));
+$("edit-speak").addEventListener("input", (e) => editKey((k) => { if (e.target.value) k.speak = e.target.value; else delete k.speak; }));
+$("edit-confirm").addEventListener("change", (e) => editKey((k) => { k.confirm = e.target.checked; }));
+$("edit-shortcut").addEventListener("input", (e) => {
+  const read = showShortcut(e.target.value);
+  if (read.keys) editKey((k) => { k.action.keys = read.keys; }); // lowercase and spaces are fine: sent as key names
+});
+$("edit-shortcut").addEventListener("change", (e) => {
+  const read = readShortcut(e.target.value);
+  if (read.keys) e.target.value = read.keys;
+});
+$("edit-record").addEventListener("click", () => {
+  if (edit.recording) return stopRecording();
+  edit.recording = true;
+  $("edit-record").classList.add("recording");
+  $("edit-record").textContent = "Press the keys...";
+  $("edit-shortcut-says").textContent = "Press the keys now (click Record again to cancel).";
+});
+document.addEventListener("keydown", (e) => {
+  if (!edit.recording) return;
+  const keys = recordedShortcut(e);
+  if (!keys) return; // a held key alone: wait for the rest
+  e.preventDefault();
+  e.stopPropagation();
+  stopRecording();
+  $("edit-shortcut").value = keys;
+  showShortcut(keys);
+  editKey((k) => { k.action.keys = keys; });
+}, true);
+$("edit-key-names").textContent = NAMED_KEYS.join(", ");
+$("edit-key").addEventListener("submit", (e) => e.preventDefault());
+$("edit-save").addEventListener("click", () => editCommand("save").then(loadEdit).catch(() => {}));
+$("edit-revert").addEventListener("click", () => editCommand("revert").catch(() => {}));
+$("edit-remove").addEventListener("click", () => {
+  if (confirm("Remove your version? The keys go back to the recipe or AI draft underneath.")) editCommand("remove").then(loadEdit).catch(() => {});
+});
 
 // ---- setup wizard ----
 

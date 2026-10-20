@@ -1316,3 +1316,43 @@ What Sundar's side built that your work can reuse, and where it plugs in:
   - Follow-up 5 (long single words break mid-word): part of edit mode (#29), not fixed separately.
   - Bug fixes are reproduced on main on the board, then checked with the fix, before merging.
 - Open: edit mode (#29) next. Not tested on macOS: Antigravity and Codex lookups (not installed).
+
+## 2026-10-20 - Tom (Claude Code) - Edit keys in the web app (#29), labels never split a word
+
+- Changed:
+  - Edit mode (https://github.com/jalabulajunx/knoend/issues/29, design agreed with Sundar there):
+    web app > Edit keys. While on, the service shows the library being edited instead of following
+    focus (`show_edit`, checked first in `show` and `show_launcher`; Claude permission requests still
+    win). Every change goes to the board at once, unsaved; every key is sent as `event` without
+    `confirm`, so a board tap only selects the key in the web app (`edit.tap`). Edit label (with
+    `\n`), icon, spoken text, confirm and shortcut keys; drag keys within a page, change a page's
+    grid (up to the board's largest), add and remove keys. Save writes `user-<name>.toml` (id
+    `user.<name>`, `pack.overrides` = the recipe or draft it layers on, which stays); Remove my
+    version deletes it. Edit mode ends with Stop editing or when the last web app tab closes.
+    API: `POST /api/edit` (list, start, change, page, save, revert, remove, stop), answered by the
+    service loop (`cli/src/edit.rs`, `edit_command`).
+  - The editor shows each key's real icon: the service serves the firmware's icons as PNGs
+    (`/icons/<name>.png`, read from `icons.c`).
+  - Help in the editor: "How editing works", the shortcut field explained in plain words ("Presses
+    ⌘ Shift P on this computer", "types a" / "types A"), lowercase accepted, a Record button that
+    takes the real key press, and the list of key names. Shortcuts still name keys, not characters
+    (`A` types a, `Shift+A` types A), as in every recipe.
+  - Firmware labels (Sundar's #30 point 5): a label wraps between words only; a word too wide for
+    the key gets one font size smaller (never below 12 px; Montserrat 12 added), and a word still
+    too wide is cut with "..." (`fitting_font`, `cut_long_words`). Spec §3.2 and §5 updated (forced
+    line break, the label rule, where the editor writes user overrides).
+- Tested (FNK0104B, macOS): Tom edited VS Code and Firefox on the board: tap selects, live
+  preview, drag, grid change (4x1), add key, Save, Stop editing; the saved keys then typed in the
+  apps ("A" typed a, "Shift+A" typed A). Labels: "Sourcecontrol" on a 4x1 key is cut with "...",
+  readable; earlier steps (14 px floor, then 10 px) still split it and were replaced.
+- Decided (Tom): live preview on the board; edit mode lasts until switched off or the tab closes;
+  saving layers a user library on the draft; long words are cut with "..." rather than split or
+  shrunk below 12 px; no Caps Lock key name; firmware merges without waiting for the ONX check.
+- Codex (gpt-6.1-sol, xhigh) reviewed it; all 9 findings fixed: agent screens (Claude's questions
+  and permission requests) are left out of edit mode for now, since a saved change could move
+  Allow/Deny under a waiting request and their middle rows hold its text; Save sends the last typed
+  change first and older answers never replace newer typing; Stop works while the board is away;
+  a second library with the same name saves as `user-<name>-2`; every tab follows the session;
+  layouts bigger than the board are refused; a cut word is measured with its dots.
+- Open: Sundar to flash the ONX and check long labels and a few layouts. Later: editing agent
+  screens, moving keys across pages, adding pages, editing non-shortcut actions.

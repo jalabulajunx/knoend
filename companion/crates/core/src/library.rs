@@ -197,7 +197,11 @@ impl Library {
     pub fn parse(text: &str) -> Result<Library, LibraryError> {
         let value: toml::Value = toml::from_str(text).map_err(|e| LibraryError::Toml(e.to_string()))?;
         let json = serde_json::to_value(&value).map_err(|e| LibraryError::Toml(e.to_string()))?;
+        Library::from_json(json)
+    }
 
+    /// Validates a library given as JSON (the web app's editor) by the same rules as a file.
+    pub fn from_json(json: serde_json::Value) -> Result<Library, LibraryError> {
         let errors: Vec<String> = schema().iter_errors(&json).map(|e| format!("{} at {}", e, e.instance_path())).collect();
         if !errors.is_empty() {
             return Err(LibraryError::Invalid(errors));
