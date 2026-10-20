@@ -371,8 +371,9 @@ function pageInventory() {
     if (role === "link") {
       try {
         const u = new URL(el.href, location.href);
-        // Path and query, plus an app's in-page route ("#/album/all") when it keeps one there.
-        if (u.origin === location.origin) item.href = (u.pathname + u.search + (u.hash.startsWith("#/") ? u.hash : "")).slice(0, 200);
+        // The path, plus an app's in-page route ("#/album/all") when it keeps one there; never a
+        // query (search terms, tokens), not even one inside the route.
+        if (u.origin === location.origin) item.href = (u.pathname + (u.hash.startsWith("#/") ? u.hash.split("?")[0] : "")).slice(0, 200);
       } catch { /* not a URL */ }
     }
     items.push(item);
