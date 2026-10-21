@@ -2,6 +2,9 @@
 //! app's tabs are the terminals its child processes run on, the active one is the one typed in last
 //! (the terminal device's access time moves on input), and its program is that terminal's
 //! foreground process group. No permission needed, and the same for every terminal app.
+//!
+//! Linux keeps a terminal's access time to 8 s, so switching tabs and typing within 8 s can keep
+//! the previous tab's keys until the next input after that.
 
 use std::time::SystemTime;
 
@@ -55,7 +58,12 @@ fn pick(table: &[Process], app: u32, last_input: impl Fn(&str) -> Option<SystemT
         family.extend(table.iter().filter(|p| p.ppid == parent && p.pid != parent).map(|p| p.pid));
         i += 1;
     }
-    let mut ttys: Vec<&str> = table.iter().filter(|p| family.contains(&p.pid) && has_tty(&p.tty)).map(|p| p.tty.as_str()).collect();
+    // Not the terminal the app itself was started from (an xterm launched from another terminal
+    // keeps it): only its children's.
+    let own = table.iter().find(|p| p.pid == app).map(|p| p.tty.as_str());
+    let mut ttys: Vec<&str> = table.iter()
+        .filter(|p| p.pid != app && family.contains(&p.pid) && has_tty(&p.tty) && Some(p.tty.as_str()) != own)
+        .map(|p| p.tty.as_str()).collect();
     ttys.sort_unstable();
     ttys.dedup();
     let tty = ttys.iter().max_by_key(|t| last_input(t))?.to_string();
@@ -95,6 +103,8 @@ mod tests {
 90007 90001 90001 90001 ttys002  less -is
 90009 90001 90001 90001 ttys002  <defunct>
 76574 76388 76574 76574 ttys003  /bin/zsh -il
+ 3000 17102  3000 17102 ttys000  xterm
+ 3001  3000  3001  3001 ttys009  bash
 ";
 
     #[test]
@@ -105,9 +115,11 @@ mod tests {
         assert_eq!(tab, TerminalTab { tty: "ttys002".into(), programs: vec!["man".into(), "less".into()] });
         let tab = pick(&table, 76388, |tty| if tty == "ttys003" { at(300) } else { at(100) }).unwrap();
         assert_eq!(tab.programs, vec!["zsh"], "a shell at its prompt");
-        let tab = pick(&table, 2218, |_| at(1)).unwrap();
+        let tab = pick(&table, 2218, |tty| if tty == "ttys000" { at(2) } else { at(1) }).unwrap();
         assert_eq!(tab, TerminalTab { tty: "ttys000".into(), programs: vec!["zsh".into()] }, "login is not in the foreground");
         assert!(pick(&table, 1234, |_| at(1)).is_none(), "an app without terminals");
+        let tab = pick(&table, 3000, |tty| if tty == "ttys000" { at(500) } else { at(1) }).unwrap();
+        assert_eq!(tab.tty, "ttys009", "an xterm started from Terminal: not Terminal's tab");
     }
 
     #[test]

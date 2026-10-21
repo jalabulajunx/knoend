@@ -29,8 +29,8 @@ pub const ALL: &[(&str, &str)] = &[
       The way to find out why a board keeps restarting."),
     ("last_terminal",
      "The last terminal app the person was in and what the board made of it: its active tab (the one typed in last), \
-      the programs in that tab's foreground and the library shown (a program's own, such as Claude Code or the pager, \
-      else the terminal's). Terminal apps only: in an editor's terminal pane (VS Code) the board keeps the editor's keys. \
+      the programs in that tab's foreground, the library that matched (a program's own, such as Claude Code or the \
+      pager, else the terminal's) and what the board showed (an agent's waiting request or edit mode win over it). Terminal apps only: in an editor's terminal pane (VS Code) the board keeps the editor's keys. \
       When the board does not follow a terminal: no app pid or no tab means the terminal's processes were not found; \
       a tab that is not the one in front means the person switched tabs without typing (the active tab is the one \
       typed in last)."),

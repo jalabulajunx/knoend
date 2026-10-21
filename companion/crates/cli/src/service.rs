@@ -530,9 +530,6 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         Some(t) => say!("Focus: {} ({}), tab {} runs {}", f.display_name(), f.instance, t.tty, t.programs.join(" + ")),
                         None => say!("Focus: {} ({})", f.display_name(), f.instance),
                     }
-                    if f.is_terminal() {
-                        remember_terminal(&f, catalog.find(&f).map(|l| l.pack.id.as_str()));
-                    }
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
                     // Questions waiting while the person goes to the app the agent runs in: they are
@@ -548,6 +545,13 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                     show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
+                    if f.is_terminal() {
+                        // What matched and what the board shows can differ: an agent's request and
+                        // edit mode win over the terminal's keys.
+                        let on_board = shared.status.read().await.layout.as_ref().and_then(|l| l["id"].as_str().map(str::to_string));
+                        remember_terminal(&f, catalog.find(&f).map(|l| l.pack.id.as_str()), on_board.as_deref(),
+                                          !approvals.is_empty(), shared.edit.lock().is_ok_and(|e| e.is_some()));
+                    }
                     draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                 }
                 Event::Focus(None) => {
@@ -999,6 +1003,12 @@ fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
                 return;
             }
         };
+        // What decides the keys: a window title changing (a progress counter, tmux) is not a change.
+        let same = |a: &Option<Focus>, b: &Option<Focus>| match (a, b) {
+            (Some(a), Some(b)) => a.app == b.app && a.instance == b.instance && a.pid == b.pid && a.terminal == b.terminal,
+            (None, None) => true,
+            _ => false,
+        };
         let mut last = with_terminal(watcher.current());
         let _ = events.blocking_send(Event::Focus(last.clone()));
         loop {
@@ -1010,7 +1020,7 @@ fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
             } else {
                 with_terminal(watcher.wait_for_change(last.as_ref()))
             };
-            if now == last {
+            if same(&now, &last) {
                 continue;
             }
             last = now;
@@ -1611,10 +1621,11 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
 /// assistant (it is asked from the web app, so the terminal is no longer in front then).
 static LAST_TERMINAL: std::sync::Mutex<Option<(std::time::Instant, Value)>> = std::sync::Mutex::new(None);
 
-fn remember_terminal(focus: &Focus, library: Option<&str>) {
+fn remember_terminal(focus: &Focus, matched: Option<&str>, on_board: Option<&str>, agent_waiting: bool, editing: bool) {
     let seen = json!({"app": focus.display_name(), "app_id": focus.app, "app_pid_known": focus.pid.is_some(),
                       "active_tab": focus.terminal.as_ref().map(|t| &t.tty), "tab_programs": focus.terminal.as_ref().map(|t| &t.programs),
-                      "library_shown": library});
+                      "library_matched": matched, "board_showed": on_board,
+                      "agent_request_waiting": agent_waiting, "edit_mode_on": editing});
     if let Ok(mut last) = LAST_TERMINAL.lock() {
         *last = Some((std::time::Instant::now(), seen));
     }
