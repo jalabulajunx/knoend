@@ -1751,3 +1751,11 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   there. Noted in `terminal.rs` for Sundar's Linux check.
 - Open: Linux check by Sundar; "a program waiting for input" (2026-10-18 notes) not done; tabs
   switched without typing keep the last-typed tab's keys.
+
+## 2026-10-21 - Tom (Claude Code) - Corrections to the 2026-10-20 entries
+
+- Correction: "Connected to board" does still appear in the service's stdout log (seen after every
+  restart that day). It was missing once only because the service was stuck reading the USB port
+  while a second program held it open (the lesson in that entry stands).
+- Decided (Tom): "Remove my version" stays as it is (deletes the file after its confirm); not an
+  open item.
