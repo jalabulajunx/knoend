@@ -73,20 +73,22 @@ impl Catalog {
         self.all().find(|(_, l)| l.pack.id == id)
     }
 
-    /// The recipe that replaced an AI draft: a built-in or community library for the same app or
-    /// site (a pattern in common, for the same OS or the web), which always wins over the draft.
-    /// None for anything but a draft, and for a draft still in use.
-    pub fn replaced_by(&self, draft: &Library) -> Option<&Library> {
+    /// The recipe that replaced an AI draft on `os`: built-in or community libraries have every
+    /// site and app pattern the draft matches by there, so the draft is never shown. The recipe
+    /// with its first pattern; None for anything but a draft, and for a draft still in use.
+    pub fn replaced_by(&self, draft: &Library, os: Os) -> Option<&Library> {
         if draft.pack.source != Source::Ai {
             return None;
         }
-        fn fields(l: &Library) -> [&Vec<String>; 4] {
-            [&l.matches.web, &l.matches.linux, &l.matches.macos, &l.matches.windows]
-        }
-        let common = |a: &Vec<String>, b: &Vec<String>| a.iter().any(|p| b.iter().any(|q| p.eq_ignore_ascii_case(q)));
-        self.all().map(|(_, l)| l)
+        // Every pattern the draft matches by here (its sites, its apps on `os`), each with a
+        // recipe that has it too: otherwise `find` still picks the draft somewhere.
+        let wanted: Vec<(&String, bool)> = draft.matches.web.iter().map(|p| (p, true))
+            .chain(patterns(draft, os).iter().map(|p| (p, false))).collect();
+        let covering = |&(pattern, web): &(&String, bool)| self.all().map(|(_, l)| l)
             .filter(|l| matches!(l.pack.source, Source::Builtin | Source::Community))
-            .find(|l| fields(l).into_iter().zip(fields(draft)).any(|(a, b)| common(a, b)))
+            .find(|l| if web { l.matches.web.as_slice() } else { patterns(l, os) }.iter().any(|q| q.eq_ignore_ascii_case(pattern)));
+        let first = covering(wanted.first()?)?;
+        wanted.iter().all(|w| covering(w).is_some()).then_some(first)
     }
 
     pub fn remove(&mut self, id: &str) {
@@ -278,19 +280,25 @@ mod tests {
     }
 
     #[test]
-    fn a_draft_is_replaced_by_a_recipe_for_the_same_app_on_the_same_os() {
-        let app = |id: &str, source: &str, os: &str, class: &str| Library::parse(&format!(
-            "[pack]\nid = \"{id}\"\nname = \"X\"\nversion = \"1.0.0\"\nsource = \"{source}\"\n[match]\n{os} = [\"{class}\"]\n[[key]]\nlabel = \"Save\"\naction = {{ kind = \"shortcut\", keys = \"Primary+S\" }}\n"
+    fn a_draft_is_replaced_only_when_recipes_cover_all_it_matches_on_this_os() {
+        let lib = |id: &str, source: &str, matches: &str| Library::parse(&format!(
+            "[pack]\nid = \"{id}\"\nname = \"X\"\nversion = \"1.0.0\"\nsource = \"{source}\"\n[match]\n{matches}\n[[key]]\nlabel = \"Save\"\naction = {{ kind = \"shortcut\", keys = \"Primary+S\" }}\n"
         )).unwrap();
         let mut catalog = Catalog::default();
-        catalog.add("ai-claude.toml".into(), app("ai.claude", "ai", "linux", "com.anthropic.Claude"));
-        catalog.add("ai-firefox.toml".into(), app("ai.firefox", "ai", "macos", "firefox"));
-        assert!(catalog.replaced_by(catalog.by_id("ai.claude").unwrap().1).is_none(), "no recipe yet");
-        catalog.add("claude.toml".into(), app("builtin.claude", "builtin", "linux", "com.anthropic.claude"));
-        catalog.add("firefox.toml".into(), app("builtin.firefox", "builtin", "linux", "firefox"));
-        let replaced = |id: &str| catalog.replaced_by(catalog.by_id(id).unwrap().1).map(|l| l.pack.id.clone());
-        assert_eq!(replaced("ai.claude").as_deref(), Some("builtin.claude"), "same class, any case");
-        assert_eq!(replaced("ai.firefox"), None, "the recipe is for Linux; on macOS the draft is in use");
-        assert_eq!(replaced("builtin.claude"), None, "only drafts are replaced");
+        catalog.add("ai-claude.toml".into(), lib("ai.claude", "ai", "linux = [\"com.anthropic.Claude\"]"));
+        catalog.add("ai-firefox.toml".into(), lib("ai.firefox", "ai", "linux = [\"firefox\"]\nmacos = [\"org.mozilla.firefox\"]"));
+        catalog.add("ai-site.toml".into(), lib("ai.site", "ai", "web = [\"linkedin.com\", \"linkedin.com/feed\"]"));
+        let replaced = |catalog: &Catalog, id: &str, os: Os| catalog.replaced_by(catalog.by_id(id).unwrap().1, os).map(|l| l.pack.id.clone());
+        assert_eq!(replaced(&catalog, "ai.claude", Os::Linux), None, "no recipe yet");
+        catalog.add("claude.toml".into(), lib("builtin.claude", "builtin", "linux = [\"com.anthropic.claude\"]"));
+        catalog.add("firefox.toml".into(), lib("builtin.firefox", "builtin", "linux = [\"firefox\"]"));
+        catalog.add("site.toml".into(), lib("builtin.site", "builtin", "web = [\"linkedin.com\"]"));
+        assert_eq!(replaced(&catalog, "ai.claude", Os::Linux).as_deref(), Some("builtin.claude"), "same class, any case");
+        assert_eq!(replaced(&catalog, "ai.firefox", Os::Linux).as_deref(), Some("builtin.firefox"));
+        assert_eq!(replaced(&catalog, "ai.firefox", Os::Macos), None, "the recipe is for Linux; on macOS the draft is in use");
+        assert_eq!(replaced(&catalog, "ai.site", Os::Linux), None, "its feed pattern has no recipe");
+        catalog.add("feed.toml".into(), lib("builtin.feed", "builtin", "web = [\"linkedin.com/feed\"]"));
+        assert_eq!(replaced(&catalog, "ai.site", Os::Linux).as_deref(), Some("builtin.site"));
+        assert_eq!(replaced(&catalog, "builtin.claude", Os::Linux), None, "only drafts are replaced");
     }
 }

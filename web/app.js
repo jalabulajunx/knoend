@@ -293,10 +293,10 @@ async function loadEdit() {
   }
   pick.disabled = false;
   $("edit-icon").replaceChildren(new Option("(none)", ""), ...list.icons.map((name) => new Option(name, name)));
-  onEditState(list.edit, list.shown);
+  onEditState(list.edit);
 }
 
-function onEditState(state, shown) {
+function onEditState(state) {
   edit.state = state && state.editing ? state : null;
   const on = !!edit.state;
   $("edit-toggle").textContent = on ? "Stop editing" : "Start editing";
@@ -305,11 +305,8 @@ function onEditState(state, shown) {
   $("edit-old").hidden = true;
   if (!on) {
     edit.selected = null;
-    // What the board shows (the recipe or draft under a version of the person's own), never a
-    // library picked earlier: Start editing begins there.
-    const lib = edit.libraries.find((l) => l.id === shown);
-    const id = lib && lib.overrides ? lib.overrides : shown;
-    $("edit-pick").value = [...$("edit-pick").options].some((o) => o.value === id) ? id : "";
+    // What the board shows when Start editing is pressed, never a library picked earlier.
+    $("edit-pick").value = "";
     return;
   }
   const pack = edit.state.library.pack;
@@ -597,7 +594,10 @@ $("edit-key-names").textContent = NAMED_KEYS.join(", ");
 $("edit-key").addEventListener("submit", (e) => e.preventDefault());
 /** The recipe that replaced the draft being edited (or the draft under the person's version), if any. */
 function replacingRecipe() {
-  const lib = edit.state && edit.libraries.find((l) => l.id === edit.state.library.pack.id);
+  if (!edit.state) return null;
+  const pack = edit.state.library.pack;
+  // A version saved in another tab is not in this tab's list yet: the draft under it is.
+  const lib = edit.libraries.find((l) => l.id === pack.id) || edit.libraries.find((l) => l.id === pack.overrides);
   return lib ? lib.replacedBy : null;
 }
 

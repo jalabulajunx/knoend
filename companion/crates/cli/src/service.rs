@@ -1488,7 +1488,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             // their keys answer a waiting request and their middle rows hold its text.
             // A draft a recipe replaced is never shown; a version of the person's own on one hides
             // the recipe (#38). Both name the recipe, so the web app can say so.
-            let recipe = |l: &knoend_core::library::Library| catalog.replaced_by(l).map(|r| json!({"id": r.pack.id, "name": r.pack.name}));
+            let recipe = |l: &knoend_core::library::Library| catalog.replaced_by(l, knoend_core::focus::Os::current()).map(|r| json!({"id": r.pack.id, "name": r.pack.name}));
             let libraries: Vec<Value> = catalog.all().filter(|(_, l)| l.matches.agent.is_empty()).map(|(path, l)| {
                 let kind = if !l.matches.web.is_empty() { "site" } else { "app" };
                 let under = l.pack.overrides.as_deref().and_then(|id| catalog.by_id(id)).and_then(|(_, d)| recipe(d));

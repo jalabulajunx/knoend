@@ -1705,6 +1705,11 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
     it). With the fix: marked and listed last, the note and "Edit the recipe instead" (Tom);
     saving on the draft and the "on an old draft" flag checked through `/api/edit` only, the
     confirm dialog not clicked.
+- Codex (gpt-6.1-sol, xhigh): #52 no findings. #38: 3 findings, all fixed: a draft counts as
+  replaced only when recipes have every pattern it matches by on this OS (and every site pattern),
+  not any one in common; the picker stays on "What the board shows" when not editing (a library
+  under the shown one went stale when the board changed); a version saved in another tab finds its
+  warning through the draft under it.
 - Lessons:
   - Since #49 the service opens a paired board's USB port when Wi-Fi is not found. A second
     program reading the same port on macOS splits the bytes and left the service blocked in
