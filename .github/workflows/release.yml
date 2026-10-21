@@ -1,7 +1,8 @@
 name: Release
 
-# Push a tag like v0.2.0 to publish firmware (universal image + board definitions + manifest.json)
-# and the knoend service for Linux and macOS as a GitHub release. The service downloads
+# Push a tag like v0.2.0 to publish firmware (universal image + board definitions + manifest.json),
+# the knoend service (Linux and macOS archives; Windows as an installer and a zip) and the browser
+# extension (Chrome and Firefox zips, unsigned) as a GitHub release. The service downloads
 # firmware from releases/latest, so the newest release is what users install.
 
 on:
@@ -63,21 +64,43 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
           Compress-Archive -Path "companion/target/${{ matrix.target }}/release/knoend.exe" -DestinationPath "out/knoend-${{ matrix.target }}.zip"
+      # The installer (per user, no administrator rights; installer/windows/knoend.iss). Not signed.
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$version" "/DExe=$PWD\companion\target\${{ matrix.target }}\release\knoend.exe" "/DOutDir=$PWD\out" installer\windows\knoend.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: service-${{ matrix.target }}
           path: out
 
-  publish:
-    needs: [firmware, service]
+  extension:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/build_extension.py --version "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension
+          path: dist/extension/knoend-*.zip
+
+  publish:
+    needs: [firmware, service, extension]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: assets
       - run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "KnoEnd $GITHUB_REF_NAME" \
-            --notes "Firmware (universal ESP32-S3 image + board definitions) and the knoend service. Install: run \`knoend serve\` and follow the web app." \
-            assets/firmware/* assets/service-*/*
+            --notes-file installer/release-notes.md \
+            assets/firmware/* assets/service-*/* assets/extension/*
         env:
           GH_TOKEN: ${{ github.token }}

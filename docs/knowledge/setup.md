@@ -273,6 +273,14 @@ devices and whether each has a port, the WCH driver state, and whether knoend ma
 
 ### Windows
 
+- **Installing:** the release's `knoend-setup-<version>-x86_64.exe` installs for the person only (no
+  administrator rights) to `%LOCALAPPDATA%\Programs\KnoEnd`, adds KnoEnd to the Start menu, and by
+  default runs `knoend service install` and `knoend browser install`. **"Windows protected your PC" /
+  "unknown publisher":** the installer is not code-signed yet; More info > Run anyway. The Start menu
+  entry runs `knoend serve`, which opens the running KnoEnd's web app when the background one is
+  already up. Uninstalling (Settings > Apps) removes the startup entry and the browser
+  registrations and stops knoend; the settings in the person's config folder stay.
+
 The assistant's snapshot (`system_checks`) shows `usb_serial_devices` from Windows SetupAPI (every
 known USB-serial chip on the USB bus, whether or not a COM port driver is installed, and its bound
 Windows service in `drivers`), `keys_follow_apps: true`, and `service_can_type: true`.
@@ -385,6 +393,13 @@ Windows service in `drivers`), `keys_follow_apps: true`, and `service_can_type: 
   the session, or add it to the window manager's start-up (i3: an `exec` line).
 
 ### The browser extension
+
+- **Where it comes from:** each release has `knoend-chrome-<version>.zip` and
+  `knoend-firefox-<version>.zip`; neither is in a browser store yet. Chrome, Edge, Brave: unzip,
+  `chrome://extensions`, Developer mode, Load unpacked, the unzipped folder (the zip's manifest
+  carries the key that fixes the extension id, so the native host accepts it). Firefox:
+  `about:debugging` > This Firefox > Load Temporary Add-on > the zip; unsigned, so it is gone after a
+  Firefox restart until the add-on is signed.
 
 - **Popup says "not set up".** The browser could not start knoend: `knoend browser install` was
   not run, or the browser was not restarted afterwards, or the knoend binary moved (the
