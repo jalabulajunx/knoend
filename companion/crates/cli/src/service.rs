@@ -1178,6 +1178,9 @@ async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc:
     if UNPAIRED_USB_SCAN.lock().ok().and_then(|s| s.clone()).as_deref() == Some(scan_key.as_str()) {
         return None;
     }
+    // Says which job holds the USB port meanwhile (Identify and Install wait for it).
+    say!("Looking for the paired board on USB ({}): it is not on Wi-Fi",
+         ports.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", "));
     let pairings_clone = Pairings::load();
     let shared_check = shared.clone();
     let found = tokio::task::spawn_blocking(move || {

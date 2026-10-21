@@ -1030,7 +1030,8 @@ $("identify").addEventListener("click", async () => {
     renderCandidates(result.candidates, result.known !== false);
     status.hidden = true;
     step(2);
-    if (result.known === false && chip) autoAssist(`Which board is this? ${result.summary}`);
+    // Asked as a question, not an error; the evidence goes in the context (identify_result).
+    if (result.known === false && chip && setup.mode === "ai" && aiReady) ask("Which board is this, and can KnoEnd run on it?");
   } catch (e) {
     status.className = "note error";
     status.textContent = `Could not identify the board: ${e.message}`;
@@ -1090,7 +1091,7 @@ function renderCandidates(candidates, known = true) {
       ask_.type = "button";
       ask_.className = "ghost";
       ask_.textContent = "° Ask the assistant which board this is";
-      ask_.addEventListener("click", () => { assistantPanel(true); ask(`Which board is this? ${setup.identified?.summary || ""}`); });
+      ask_.addEventListener("click", () => ask("Which board is this, and can KnoEnd run on it?"));
       li.append(document.createElement("br"), ask_);
     }
   }
