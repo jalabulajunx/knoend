@@ -109,6 +109,8 @@ pub struct Status {
     /// "no-pairing" | "searching" | "connected"
     pub link: String,
     pub board: Option<BoardStatus>,
+    /// Every connected board (they mirror each other); `board` is the first.
+    pub boards: Vec<BoardStatus>,
     /// The focused app's display name (never the window title).
     pub app: Option<String>,
     pub layout: Option<Value>,
@@ -300,14 +302,18 @@ enum Event {
     Agent(crate::agent_hooks::AgentEvent),
     /// A site's icon, fetched and shrunk to 32x32 RGBA.
     Favicon(String, Vec<u8>),
-    Board(Packet),
-    LinkDown(String),
+    /// A packet from the board with this id.
+    Board(Packet, String),
+    /// The link to one board (Some(id)) or to every board (None) is gone.
+    LinkDown(Option<String>, String),
+    /// Another paired board was found while others are connected: it joins them (#15, mirror).
+    Joined(BoardStatus, Link),
     Configured(Focus, Result<(PathBuf, Library), String>),
     /// The person chose another theme or turn in the web app (already saved).
     Look(crate::display::Display),
-    /// A font fetched for a slot ("keys", "start"): its family (empty: back to the built-in font)
-    /// and the TrueType bytes.
-    Font(String, String, Result<Vec<u8>, String>),
+    /// A font fetched for a slot ("keys", "start"): its family (empty: back to the built-in font),
+    /// the TrueType bytes, and the board it is for.
+    Font(String, String, Result<Vec<u8>, String>, String),
     /// The person chose another key size in the web app (already saved).
     KeySize(crate::display::KeySize),
     /// From the web app's editor, with where to send the answer.
@@ -425,65 +431,62 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             continue;
         }
         shared.update(|s| s.link = "searching".into()).await;
-        let (mut board, mut sender) = match connect(&pairings, &shared, events.clone()).await {
-            Ok(link) => link,
-            Err(e) => {
-                say!("{e}; retrying in 5 s");
-                // Not while installing or pairing over USB: the board is restarting on purpose then.
-                if shared.serial.try_lock().is_err() {
-                    missing_since = None;
-                }
-                let since = *missing_since.get_or_insert_with(tokio::time::Instant::now);
-                if since.elapsed() >= Duration::from_secs(120) {
-                    problem!("board-missing", "The paired board has not been found on the network for {} minutes ({e})",
-                             since.elapsed().as_secs() / 60);
-                    missing_since = Some(tokio::time::Instant::now()); // again in two minutes if still missing
-                }
-                drain_focus(&mut inbox, &mut focus, &mut tab, &mut players, &shared).await;
-                continue;
+        let found = connect(&pairings, &shared, events.clone(), &[], false).await;
+        if found.is_empty() {
+            let e = "no paired board found on Wi-Fi or USB";
+            say!("{e}; retrying in 5 s");
+            // Not while installing or pairing over USB: the board is restarting on purpose then.
+            if shared.serial.try_lock().is_err() {
+                missing_since = None;
             }
-        };
+            let since = *missing_since.get_or_insert_with(tokio::time::Instant::now);
+            if since.elapsed() >= Duration::from_secs(120) {
+                problem!("board-missing", "The paired board has not been found on the network for {} minutes ({e})",
+                         since.elapsed().as_secs() / 60);
+                missing_since = Some(tokio::time::Instant::now()); // again in two minutes if still missing
+            }
+            drain_focus(&mut inbox, &mut focus, &mut tab, &mut players, &shared).await;
+            continue;
+        }
         missing_since = None;
-        let transport = if board.address.starts_with("USB") { &board.address } else { "Wi-Fi" };
-        shared.emit("log", json!({"text": format!("Connected to board {} over {transport}", board.id)}));
-        // A board that can listen: the KnoEnd MIDI device is made now, so music apps list it before
-        // the first note.
-        if board.mic {
-            if let Err(e) = tokio::task::spawn_blocking(crate::midi::open).await.unwrap_or_else(|e| Err(e.to_string())) {
-                say!("MIDI: {e}");
-            }
-        }
-        let board_status = board.clone();
-        shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
-        let mut shown: Option<String> = None;
+        // Every board found: they mirror each other (#15). `boards[0]` is the one the web app shows
+        // first; paging uses the grid all of them can draw.
+        let mut sender = BoardSender::new();
+        let mut boards: Vec<BoardStatus> = Vec::new();
+        let mut heard: HashMap<String, tokio::time::Instant> = HashMap::new();
         let mut sent_images: HashSet<String> = HashSet::new();
-        if let Some(reason) = board.last_start.as_deref().filter(|r| ["crash", "watchdog", "brownout"].contains(r)) {
-            problem!("board-crash", "The board started again after a {reason} (it stopped on its own; firmware {})", board.firmware);
-        }
         let wanted = crate::display::load();
-        let mut paging = Paging::new(board.grid, wanted.key_size);
-        set_picture_theme(board.display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
-        let mut asked_look = send_look(&mut sender, &board, &wanted).await;
-        fetch_fonts(&board, &wanted, &events, false);
+        let mut paging = Paging::new(Grid::DEFAULT, wanted.key_size);
+        let mut asked_look = false;
+        for (board, link) in found {
+            asked_look |= join_board(board, link, &mut sender, &mut boards, &mut heard, &events, &shared).await;
+        }
+        paging.board = common_grid(&boards);
+        paging.max = crate::display::shown_grid(paging.board, wanted.key_size);
+        set_picture_theme(boards[0].display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
+        publish_boards(&boards, &shared).await;
+        let mut shown: Option<String> = None;
         if focus.is_none() {
             show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
         if let Some(f) = effective(&focus, &tab) {
             show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
         }
+        // Other paired boards switched on later join these (#15): looked for every 20 s.
+        let scout = spawn_scout(events.clone(), shared.clone(), boards.iter().map(|b| b.id.clone()).collect());
 
         // A board that restarts never closes its old connection, so silence is the only sign:
-        // ping every 10 s and treat 25 s without any packet as a lost link.
+        // ping every 10 s and treat 25 s without any packet from a board as its link lost.
         let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
         heartbeat.tick().await;
         let mut second = tokio::time::interval(Duration::from_secs(1));
         if let Some(a) = approvals.front() {
             show_approval(&mut sender, a, &catalog, &mut shown, &shared).await;
         }
-        let mut last_heard = tokio::time::Instant::now();
 
         loop {
-            let event = tokio::select! {
+            // A board that could not be sent to is dropped; the others carry on.
+            let event = if let Some(id) = sender.failed.pop() { Event::LinkDown(Some(id), "could not send to the board".into()) } else { tokio::select! {
                 event = inbox.recv() => match event { Some(e) => e, None => return },
                 _ = second.tick() => {
                     // A Claude notification with no hook event near it: offer "Go to Claude".
@@ -527,24 +530,25 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     continue;
                 }
                 _ = heartbeat.tick() => {
-                    if last_heard.elapsed() > Duration::from_secs(25) {
-                        Event::LinkDown("no reply from the board for 25 s".into())
+                    let silent = heard.iter().find(|(_, at)| at.elapsed() > Duration::from_secs(25)).map(|(id, _)| id.clone());
+                    if let Some(id) = silent {
+                        Event::LinkDown(Some(id), "no reply from the board for 25 s".into())
                     } else if sender.send("knoend.ping", json!({})).await.is_err() {
-                        Event::LinkDown("could not send to the board".into())
+                        Event::LinkDown(None, "could not send to any board".into())
                     } else {
                         continue;
                     }
                 }
-            };
-            if matches!(event, Event::Board(_)) {
-                last_heard = tokio::time::Instant::now();
+            } };
+            if let Event::Board(_, from) = &event {
+                heard.insert(from.clone(), tokio::time::Instant::now());
             }
             if matches!(event, Event::Agent(_)) {
                 last_hook = Some(std::time::Instant::now());
             }
             // A swipe on the board turns the page it was made on; a late one for another layout does nothing.
             let event = match event {
-                Event::Board(p) if p.kind == "knoend.page" => {
+                Event::Board(p, _) if p.kind == "knoend.page" => {
                     if p.body["layout"] != paging.layout.as_str() {
                         continue;
                     }
@@ -614,7 +618,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                     favicons.insert(host, pixels);
                 }
-                Event::Board(packet) if packet.kind == "knoend.key" && paging.stale(&packet) => {
+                Event::Board(packet, _) if packet.kind == "knoend.key" && paging.stale(&packet) => {
                     say!("  tap on page {} of {}, which is no longer shown; ignored", packet.body["page"], paging.layout);
                 }
                 Event::Page(to) => {
@@ -630,40 +634,49 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                 }
-                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE && shared.editing() => {
+                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE && shared.editing() => {
                     // Edit mode: a tap selects the key in the web app; nothing runs.
                     shared.emit("edit.tap", json!({"page": paging.page, "slot": packet.body["key"]}));
                 }
                 Event::Look(wanted) => {
-                    asked_look = send_look(&mut sender, &board, &wanted).await;
-                    fetch_fonts(&board, &wanted, &events, true);
+                    // Each board is told only what it does not show yet.
+                    asked_look = false;
+                    for board in &boards {
+                        sender.only = Some(board.id.clone());
+                        asked_look |= send_look(&mut sender, board, &wanted).await;
+                        fetch_fonts(board, &wanted, &events, true);
+                    }
+                    sender.only = None;
                 }
-                Event::Font(slot, family, font) => match font {
+                Event::Font(slot, family, font, board_id) => match font {
                     Ok(bytes) if family.is_empty() => {
-                        say!("Font {slot}: back to the built-in font");
+                        say!("Font {slot}: back to the built-in font on {board_id}");
+                        sender.only = Some(board_id);
                         let _ = sender.send("knoend.font", json!({"slot": slot, "clear": true})).await;
+                        sender.only = None;
                         let _ = bytes;
                     }
                     Ok(bytes) => {
-                        say!("Font {slot}: sending {family} ({} bytes) to the board", bytes.len());
+                        say!("Font {slot}: sending {family} ({} bytes) to board {board_id}", bytes.len());
+                        sender.only = Some(board_id);
                         send_font(&mut sender, &slot, &family, &bytes).await;
+                        sender.only = None;
                     }
                     Err(e) => {
                         raise!("font", "Could not get the font {family}: {e}");
                         shared.emit("display", json!({"text": format!("Could not get the font {family}: {e}")}));
                     }
                 },
-                Event::Board(packet) if packet.kind == "knoend.font.ack" => {
+                Event::Board(packet, from) if packet.kind == "knoend.font.ack" => {
                     let slot = packet.body["slot"].as_str().unwrap_or("?").to_string();
                     if packet.body["ok"] == true {
                         let name = packet.body["name"].as_str().unwrap_or_default();
                         shared.emit("display", json!({"text": if name.is_empty() { format!("The board uses its built-in font for {slot} again") }
                                                               else { format!("The board now uses {name} for {slot}") }}));
-                        if let Some(fonts) = board.fonts.as_mut() {
+                        if let Some(fonts) = boards.iter_mut().find(|b| b.id == from).and_then(|b| b.fonts.as_mut()) {
                             fonts[slot.as_str()] = if name.is_empty() { Value::Null } else { json!({"name": name}) };
                         }
-                        let status = board.clone();
-                        shared.update(|s| s.board = Some(status)).await;
+                        publish_boards(&boards, &shared).await;
                         // The keys again, now in the new font.
                         shown = None;
                         if approvals.is_empty() {
@@ -677,14 +690,14 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         shared.emit("display", json!({"text": format!("The board could not keep the {slot} font: {reason}")}));
                     }
                 }
-                Event::Board(packet) if packet.kind == "knoend.error" && asked_look => {
+                Event::Board(packet, from) if packet.kind == "knoend.error" && asked_look => {
                     // The board cannot show that look (older firmware): the choice goes back to
                     // what it shows, and the web app says why.
                     asked_look = false;
                     let reason = packet.body["message"].as_str().unwrap_or("the board refused it").to_string();
                     problem!("display", "The board refused the display settings: {reason}");
                     let mut saved = crate::display::load();
-                    if let Some(shown) = &board.display {
+                    if let Some(shown) = boards.iter().find(|b| b.id == from).and_then(|b| b.display.as_ref()) {
                         saved.theme = crate::display::Theme::named(shown["theme"].as_str().unwrap_or("dark"));
                         saved.turn = shown["turn"].as_u64().and_then(|t| u8::try_from(t).ok()).unwrap_or(0);
                     }
@@ -729,7 +742,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         let _ = answer.send(result);
                     }
                 }
-                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE
+                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE
                                         && calling.as_ref().and_then(|c| c.key(paging.grid)).is_some_and(|k| packet.body["key"] == k.key) => {
                     let c = calling.take().expect("calling");
                     let names = c.names.clone();
@@ -747,7 +760,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                                               &mut shown, calling.as_ref(), &shared).await,
                     }
                 }
-                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] == LAUNCHER => {
+                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] == LAUNCHER => {
                     let key = packet.body["key"].as_u64().and_then(|k| u8::try_from(k).ok()).unwrap_or(0);
                     if let Some(target) = launcher_targets.get(&key) {
                         let text = match target.open() {
@@ -786,7 +799,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         draft_new_page(&catalog, &f, &drafted, &mut attempted, &events, &shared).await;
                     }
                 }
-                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] == ANSWERING => {
+                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] == ANSWERING => {
                     if let Some(front) = approvals.front_mut().filter(|_| packet.body["key"] == u64::from(ANSWER_HERE_SLOT)) {
                         say!("  answering on the board instead");
                         front.here = true;
@@ -795,7 +808,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         show_approval(&mut sender, front, &catalog, &mut shown, &shared).await;
                     }
                 }
-                Event::Board(packet) if packet.kind == "knoend.key" && packet.body["layout"] == APPROVE => {
+                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] == APPROVE => {
                     let key = packet.body["key"].as_u64().unwrap_or(0);
                     let decision = match approvals.front_mut() {
                         Some(front) => {
@@ -829,22 +842,23 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                 }
-                Event::Board(packet) if packet.kind == "knoend.display.ack" => {
+                Event::Board(packet, from) if packet.kind == "knoend.display.ack" => {
                     asked_look = false;
                     // A new theme or turn is shown at once: pictures are sent again in the theme's
                     // colours, and the layout in a grid that fits the screen as it now sits.
                     say!("  board display: {}", packet.body);
                     // The start-up size too: without it, the next size change looks already shown.
-                    board.display = Some(json!({"theme": packet.body["theme"], "turn": packet.body["turn"],
-                                                "startSize": packet.body["startSize"]}));
-                    if packet.body["grid"].is_object() {
-                        board.grid = identity_grid(&json!({"board": {"grid": packet.body["grid"]}}));
+                    if let Some(board) = boards.iter_mut().find(|b| b.id == from) {
+                        board.display = Some(json!({"theme": packet.body["theme"], "turn": packet.body["turn"],
+                                                    "startSize": packet.body["startSize"]}));
+                        if packet.body["grid"].is_object() {
+                            board.grid = identity_grid(&json!({"board": {"grid": packet.body["grid"]}}));
+                        }
                     }
-                    paging.board = board.grid;
-                    paging.max = crate::display::shown_grid(board.grid, crate::display::load().key_size);
+                    paging.board = common_grid(&boards);
+                    paging.max = crate::display::shown_grid(paging.board, crate::display::load().key_size);
                     set_picture_theme(packet.body["theme"].as_str().unwrap_or("dark"));
-                    let status = board.clone();
-                    shared.update(|s| s.board = Some(status)).await;
+                    publish_boards(&boards, &shared).await;
                     sent_images.clear();
                     shown = None;
                     if approvals.is_empty() {
@@ -855,7 +869,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                 }
-                Event::Board(packet) => {
+                Event::Board(packet, _) => {
                     let current = effective(&focus, &tab);
                     if let Some(target) = on_board_packet(&packet, current.as_ref(), &shown_actions, &players, &mut sender, &shared).await {
                         let scope = site_scope(&catalog, &target);
@@ -986,14 +1000,52 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                 }
-                Event::LinkDown(reason) => {
-                    // Not while the board is being installed or paired over USB: it restarts then.
-                    if !board_restart_expected(&shared) {
-                        raise!("link-lost", "Link to board {} lost: {reason}", board.id);
+                Event::LinkDown(which, reason) => {
+                    let lost: Vec<String> = match which {
+                        Some(id) => vec![id],
+                        None => boards.iter().map(|b| b.id.clone()).collect(),
+                    };
+                    for id in &lost {
+                        // Not while the board is being installed or paired over USB: it restarts then.
+                        if !board_restart_expected(&shared) {
+                            raise!("link-lost", "Link to board {id} lost: {reason}");
+                        }
+                        shared.emit("log", json!({"text": format!("Link to board {id} lost: {reason}")}));
+                        sender.remove(id);
+                        heard.remove(id);
+                        boards.retain(|b| &b.id != id);
                     }
-                    shared.emit("log", json!({"text": format!("Link to board {} lost: {reason}", board.id)}));
-                    shared.update(|s| { s.link = "searching".into(); s.layout = None; }).await;
-                    break;
+                    if boards.is_empty() {
+                        scout.abort();
+                        shared.update(|s| { s.link = "searching".into(); s.layout = None; s.board = None; s.boards.clear(); }).await;
+                        break;
+                    }
+                    // The others carry on; a smaller board leaving may allow a bigger grid.
+                    paging.board = common_grid(&boards);
+                    paging.max = crate::display::shown_grid(paging.board, crate::display::load().key_size);
+                    scout.watch(boards.iter().map(|b| b.id.clone()).collect());
+                    publish_boards(&boards, &shared).await;
+                }
+                Event::Joined(board, link) => {
+                    if boards.iter().any(|b| b.id == board.id) {
+                        continue;
+                    }
+                    asked_look |= join_board(board, link, &mut sender, &mut boards, &mut heard, &events, &shared).await;
+                    paging.board = common_grid(&boards);
+                    paging.max = crate::display::shown_grid(paging.board, crate::display::load().key_size);
+                    scout.watch(boards.iter().map(|b| b.id.clone()).collect());
+                    publish_boards(&boards, &shared).await;
+                    // Everything the others show, on the new one too.
+                    sent_images.clear();
+                    shown = None;
+                    match approvals.front() {
+                        Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
+                        None => match effective(&focus, &tab) {
+                            Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                                  &mut shown, calling.as_ref(), &shared).await,
+                        },
+                    }
                 }
             }
         }
@@ -1083,16 +1135,23 @@ fn with_terminal(focus: Option<Focus>) -> Option<Focus> {
     })
 }
 
-enum BoardSender {
+/// One board's connection.
+pub enum Link {
     Wifi(wifi::WifiSender),
     Serial(mpsc::Sender<(String, Value)>),
 }
 
-impl BoardSender {
+impl std::fmt::Debug for Link {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self { Link::Wifi(_) => "Wi-Fi", Link::Serial(_) => "USB" })
+    }
+}
+
+impl Link {
     async fn send(&mut self, kind: &str, body: Value) -> Result<u32, String> {
         match self {
-            BoardSender::Wifi(w) => w.send(kind, body).await.map_err(|e| e.to_string()),
-            BoardSender::Serial(tx) => {
+            Link::Wifi(w) => w.send(kind, body).await.map_err(|e| e.to_string()),
+            Link::Serial(tx) => {
                 tx.send((kind.to_string(), body)).await.map_err(|_| "USB serial link closed".to_string())?;
                 Ok(0)
             }
@@ -1100,73 +1159,225 @@ impl BoardSender {
     }
 }
 
+/// Every connected board (#15): they mirror each other, so what is sent goes to all of them, or to
+/// one (`only`) for what differs per board (its look, its fonts). A board whose link fails is
+/// noted in `failed` and dropped by the service loop; the others carry on.
+pub struct BoardSender {
+    links: Vec<(String, Link)>,
+    only: Option<String>,
+    failed: Vec<String>,
+}
+
+impl BoardSender {
+    fn new() -> BoardSender {
+        BoardSender { links: Vec::new(), only: None, failed: Vec::new() }
+    }
+
+    fn add(&mut self, id: String, link: Link) {
+        self.links.retain(|(i, _)| *i != id);
+        self.links.push((id, link));
+    }
+
+    fn remove(&mut self, id: &str) {
+        self.links.retain(|(i, _)| i != id);
+        self.failed.retain(|f| f != id);
+    }
+
+    async fn send(&mut self, kind: &str, body: Value) -> Result<u32, String> {
+        let mut sent = None;
+        let mut error = String::from("no board is connected");
+        for (id, link) in self.links.iter_mut() {
+            if self.only.as_ref().is_some_and(|o| o != id) || self.failed.contains(id) {
+                continue;
+            }
+            match link.send(kind, body.clone()).await {
+                Ok(n) => sent = Some(n),
+                Err(e) => {
+                    error = e;
+                    self.failed.push(id.clone());
+                }
+            }
+        }
+        sent.ok_or(error)
+    }
+}
+
+/// Adds a board that was just connected: its link, what the web app shows, and its own look and
+/// fonts (sent to it alone). Returns whether a look was asked of it.
+async fn join_board(board: BoardStatus, link: Link, sender: &mut BoardSender, boards: &mut Vec<BoardStatus>,
+                    heard: &mut HashMap<String, tokio::time::Instant>, events: &mpsc::Sender<Event>, shared: &Arc<Shared>) -> bool {
+    let transport = if board.address.starts_with("USB") { board.address.as_str() } else { "Wi-Fi" };
+    shared.emit("log", json!({"text": format!("Connected to board {} over {transport}{}", board.id,
+                                              if boards.is_empty() { String::new() } else { format!(" (with {} other: they mirror each other)", boards.len()) })}));
+    // A board that can listen: the KnoEnd MIDI device is made now, so music apps list it before
+    // the first note.
+    if board.mic {
+        if let Err(e) = tokio::task::spawn_blocking(crate::midi::open).await.unwrap_or_else(|e| Err(e.to_string())) {
+            say!("MIDI: {e}");
+        }
+    }
+    if let Some(reason) = board.last_start.as_deref().filter(|r| ["crash", "watchdog", "brownout"].contains(r)) {
+        problem!("board-crash", "Board {} started again after a {reason} (it stopped on its own; firmware {})", board.id, board.firmware);
+    }
+    sender.add(board.id.clone(), link);
+    heard.insert(board.id.clone(), tokio::time::Instant::now());
+    let wanted = crate::display::load();
+    sender.only = Some(board.id.clone());
+    let asked = send_look(sender, &board, &wanted).await;
+    sender.only = None;
+    fetch_fonts(&board, &wanted, events, false);
+    boards.push(board);
+    asked
+}
+
+/// The connected boards, for the web app and the setup assistant.
+async fn publish_boards(boards: &[BoardStatus], shared: &Shared) {
+    let all = boards.to_vec();
+    shared.update(|s| { s.link = "connected".into(); s.board = all.first().cloned(); s.boards = all; }).await;
+}
+
+/// Looks every 20 s for paired boards that are not connected yet, while others are, and sends them
+/// in as `Event::Joined` (#15). Only paired boards are opened: on Wi-Fi by their id, on USB only a
+/// native-USB board whose MAC is a paired id (see `connect`).
+struct Scout {
+    task: tokio::task::JoinHandle<()>,
+    connected: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl Scout {
+    fn watch(&self, ids: Vec<String>) {
+        if let Ok(mut c) = self.connected.lock() {
+            *c = ids;
+        }
+    }
+
+    fn abort(&self) {
+        self.task.abort();
+    }
+}
+
+fn spawn_scout(events: mpsc::Sender<Event>, shared: Arc<Shared>, connected: Vec<String>) -> Scout {
+    let connected = Arc::new(std::sync::Mutex::new(connected));
+    let watching = connected.clone();
+    let task = tokio::spawn(async move {
+        let mut every = tokio::time::interval(Duration::from_secs(20));
+        every.tick().await;
+        loop {
+            every.tick().await;
+            let pairings = Pairings::load();
+            let have = watching.lock().map(|c| c.clone()).unwrap_or_default();
+            if pairings.boards.keys().all(|id| have.contains(id)) || shared.serial.try_lock().is_err() {
+                continue;
+            }
+            for (board, link) in connect(&pairings, &shared, events.clone(), &have, true).await {
+                say!("Board {} found; it joins the connected board(s)", board.id);
+                if events.send(Event::Joined(board, link)).await.is_err() {
+                    return;
+                }
+            }
+        }
+    });
+    Scout { task, connected }
+}
+
+/// The grid every connected board can draw: the smallest of their largest grids, so the boards
+/// show the same pages (mirror).
+fn common_grid(boards: &[BoardStatus]) -> Grid {
+    let cols = boards.iter().map(|b| b.grid.cols).min().unwrap_or(Grid::DEFAULT.cols);
+    let rows = boards.iter().map(|b| b.grid.rows).min().unwrap_or(Grid::DEFAULT.rows);
+    Grid { cols, rows }
+}
+
 /// Last USB port scan that had no paired board, so `connect` does not repeatedly open and reset an
 /// unpaired USB device when no paired board is on Wi-Fi.
 static UNPAIRED_USB_SCAN: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
-async fn connect(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender<Event>) -> Result<(BoardStatus, BoardSender), String> {
-    let wanted: Vec<String> = pairings.boards.keys().cloned().collect();
+/// Every paired board this computer can reach (#15): those on Wi-Fi, and one on USB. Boards
+/// already connected (`skip`) are left alone. With `scouting` (others are connected already), only
+/// a paired native-USB board is opened on USB: a USB-serial bridge (CH340) cannot be told apart
+/// without opening it, which restarts the board that may already be connected over Wi-Fi.
+async fn connect(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender<Event>, skip: &[String], scouting: bool)
+    -> Vec<(BoardStatus, Link)> {
+    let wanted: Vec<String> = pairings.boards.keys().filter(|id| !skip.contains(id)).cloned().collect();
+    if wanted.is_empty() {
+        return Vec::new();
+    }
     let first = (wanted.len() == 1).then(|| wanted[0].clone());
     let has_usb = !knoend_flash::list_ports().is_empty();
-    let wifi_wait = if has_usb { Duration::from_secs(3) } else { Duration::from_secs(10) };
+    let wifi_wait = if has_usb || scouting { Duration::from_secs(3) } else { Duration::from_secs(10) };
     let wanted_wifi = wanted.clone();
-    let wifi_found = tokio::task::spawn_blocking(move || discover::discover(wifi_wait, first.as_deref()))
+    let found: Vec<_> = tokio::task::spawn_blocking(move || discover::discover(wifi_wait, first.as_deref()))
         .await.map_err(|e| e.to_string())
         .and_then(|r| r.map_err(|e| e.to_string()))
-        .ok()
-        .and_then(|found| found.into_iter().find(|b| wanted_wifi.contains(&b.device_id)));
+        .unwrap_or_default()
+        .into_iter().filter(|b| wanted_wifi.contains(&b.device_id)).collect();
 
-    if let Some(board) = wifi_found {
-        let key = pairings.key_for(&board.device_id).ok_or("stored key is not valid hex")?;
-        if let Ok((sender, mut receiver)) = wifi::connect((board.address, board.port).into(), &board.device_id, &pairings.companion, key, board.old_names).await {
-            if let Ok(identity) = receiver.recv().await {
-                let status = BoardStatus {
-                    id: board.device_id.clone(),
-                    profile: identity.body["board"]["profile"].as_str().unwrap_or("?").to_string(),
-                    firmware: identity.body["firmware"].as_str().unwrap_or("?").to_string(),
-                    address: board.address.to_string(),
-                    grid: identity_grid(&identity.body),
-                    display: identity.body["board"].get("display").cloned(),
-                    fonts: identity.body["board"].get("fonts").cloned(),
-                    last_start: identity.body["lastStart"].as_str().map(str::to_string),
-                    mic: identity.body["features"]["mic"] == true,
-                };
-                tokio::spawn(async move {
-                    loop {
-                        match receiver.recv().await {
-                            Ok(packet) => {
-                                if events.send(Event::Board(packet)).await.is_err() {
-                                    return;
-                                }
-                            }
-                            Err(e) => {
-                                let _ = events.send(Event::LinkDown(e.to_string())).await;
-                                return;
-                            }
+    let mut connected: Vec<(BoardStatus, Link)> = Vec::new();
+    for board in found {
+        if connected.iter().any(|(s, _)| s.id == board.device_id) {
+            continue;
+        }
+        let Some(key) = pairings.key_for(&board.device_id) else { continue };
+        let Ok((sender, mut receiver)) = wifi::connect((board.address, board.port).into(), &board.device_id, &pairings.companion, key, board.old_names).await else { continue };
+        let Ok(identity) = receiver.recv().await else { continue };
+        let status = board_status(&board.device_id, &identity.body, board.address.to_string());
+        let (events, id) = (events.clone(), board.device_id.clone());
+        tokio::spawn(async move {
+            loop {
+                match receiver.recv().await {
+                    Ok(packet) => {
+                        if events.send(Event::Board(packet, id.clone())).await.is_err() {
+                            return;
                         }
                     }
-                });
-                return Ok((status, BoardSender::Wifi(sender)));
+                    Err(e) => {
+                        let _ = events.send(Event::LinkDown(Some(id), e.to_string())).await;
+                        return;
+                    }
+                }
             }
-        }
+        });
+        connected.push((status, Link::Wifi(sender)));
     }
 
-    if let Some(serial_link) = connect_serial(pairings, shared, events).await {
-        return Ok(serial_link);
+    let mut skip_usb: Vec<String> = skip.to_vec();
+    skip_usb.extend(connected.iter().map(|(s, _)| s.id.clone()));
+    let native_only = scouting || !connected.is_empty();
+    if let Some(serial_link) = connect_serial(pairings, shared, events, &skip_usb, native_only).await {
+        connected.push(serial_link);
     }
-    Err("no paired board found on Wi-Fi or USB".into())
+    connected
+}
+
+/// What the service keeps about a connected board, from its identity.
+fn board_status(id: &str, identity: &Value, address: String) -> BoardStatus {
+    BoardStatus {
+        id: id.to_string(),
+        profile: identity["board"]["profile"].as_str().unwrap_or("?").to_string(),
+        firmware: identity["firmware"].as_str().unwrap_or("?").to_string(),
+        address,
+        grid: identity_grid(identity),
+        display: identity["board"].get("display").cloned(),
+        fonts: identity["board"].get("fonts").cloned(),
+        last_start: identity["lastStart"].as_str().map(str::to_string),
+        mic: identity["features"]["mic"] == true,
+    }
 }
 
 /// Checks connected USB serial ports for a board paired with this computer and opens a live serial
 /// session if found. Skips probing when a setup job owns the USB lock or when the same ports and
 /// pairings were already checked and had no paired board.
-async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender<Event>) -> Option<(BoardStatus, BoardSender)> {
+async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender<Event>, skip: &[String], native_only: bool)
+    -> Option<(BoardStatus, Link)> {
     let guard = shared.serial.clone().try_lock_owned().ok()?;
     // A native-USB board gives its MAC (its board id) over USB: only a paired one is worth opening.
     // Another board there (one KnoEnd does not run on, or not paired here) is left alone; boards
     // behind a CH340 or CP210x cannot be told apart without asking them.
     let ports: Vec<_> = knoend_flash::list_ports().into_iter()
-        .filter(|p| p.mac_id().is_none_or(|mac| pairings.boards.contains_key(&mac)))
+        .filter(|p| match p.mac_id() {
+            Some(mac) => pairings.boards.contains_key(&mac) && !skip.contains(&mac),
+            None => !native_only,
+        })
         .collect();
     if ports.is_empty() {
         return None;
@@ -1205,29 +1416,20 @@ async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc:
         *last = None;
     }
     let id = identity["deviceId"].as_str().unwrap_or("?").to_string();
-    let status = BoardStatus {
-        id,
-        profile: identity["board"]["profile"].as_str().unwrap_or("?").to_string(),
-        firmware: identity["firmware"].as_str().unwrap_or("?").to_string(),
-        address: format!("USB ({port_name})"),
-        grid: identity_grid(&identity),
-        display: identity["board"].get("display").cloned(),
-        fonts: identity["board"].get("fonts").cloned(),
-        last_start: identity["lastStart"].as_str().map(str::to_string),
-        mic: identity["features"]["mic"] == true,
-    };
+    let status = board_status(&id, &identity, format!("USB ({port_name})"));
     let (tx, mut rx) = mpsc::channel::<(String, Value)>(64);
     let shared_loop = shared.clone();
+    let board_id = id.clone();
     std::thread::spawn(move || {
         let _guard = guard;
         loop {
             if shared_loop.serial_preempt.load(std::sync::atomic::Ordering::SeqCst) {
-                let _ = events.blocking_send(Event::LinkDown("USB port needed for setup".into()));
+                let _ = events.blocking_send(Event::LinkDown(Some(board_id), "USB port needed for setup".into()));
                 return;
             }
             while let Ok((kind, body)) = rx.try_recv() {
                 if let Err(e) = link.send(&kind, body) {
-                    let _ = events.blocking_send(Event::LinkDown(e));
+                    let _ = events.blocking_send(Event::LinkDown(Some(board_id), e));
                     return;
                 }
             }
@@ -1235,7 +1437,7 @@ async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc:
                 if line.starts_with('{') {
                     if let Ok(mut packet) = serde_json::from_str::<Packet>(&line) {
                         packet.kind = knoend_core::protocol::current_name(&packet.kind);
-                        if events.blocking_send(Event::Board(packet)).is_err() {
+                        if events.blocking_send(Event::Board(packet, board_id.clone())).is_err() {
                             return;
                         }
                     }
@@ -1252,7 +1454,7 @@ async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc:
             }
         }
     });
-    Some((status, BoardSender::Serial(tx)))
+    Some((status, Link::Serial(tx)))
 }
 
 /// The largest grid a board says it draws (`board.grid` in its identity), 3x3 if it says nothing usable.
@@ -1758,10 +1960,10 @@ fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &m
             problem!("font", "The board dropped the font {family} ({slot}) after it could not start with it: it is not sent again until it is chosen again");
             continue;
         }
-        let events = events.clone();
+        let (events, board_id) = (events.clone(), board.id.clone());
         tokio::spawn(async move {
             let font = if family.is_empty() { Ok(Vec::new()) } else { crate::fonts::fetch(&family).await };
-            let _ = events.send(Event::Font(slot.to_string(), family, font)).await;
+            let _ = events.send(Event::Font(slot.to_string(), family, font, board_id)).await;
         });
     }
 }

@@ -70,6 +70,11 @@ function renderStatus(s) {
     $("f-firmware").textContent = s.board.firmware;
     $("f-address").textContent = s.board.address;
     $("f-id").textContent = s.board.id;
+    // Several boards connected: they show the same keys (mirror).
+    const others = (s.boards || []).slice(1);
+    $("f-mirror-label").hidden = $("f-mirror").hidden = !others.length;
+    $("f-mirror").textContent = others.map((b) => `${b.profile} (${b.address.startsWith("USB") ? b.address : "Wi-Fi"})`).join(", ")
+      + (others.length ? ": the same keys, mirrored" : "");
   }
   // A new board connection (a restart for a new look, other firmware): the choices follow it.
   const look = s.board ? JSON.stringify([s.board.firmware, s.board.display]) : "";
