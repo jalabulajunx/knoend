@@ -1797,7 +1797,7 @@ function renderSuggestions() {
 
 // ---- keys for the apps on this computer (step 7, and "Set up apps" on the dashboard) ----
 
-const apps = { list: [], chosen: new Set(), progress: new Map(), icons: new Map(), drafting: false };
+const apps = { list: [], chosen: new Set(), progress: new Map(), icons: new Map(), drafting: false, pins: [], fill: true };
 const APPS_MOST = 12;
 const APP_STATE = {
   ready: ["Ready", "keys from a recipe"],
@@ -1833,8 +1833,12 @@ function appsStatus(text, error) {
 }
 
 async function loadApps() {
-  const r = await api("/apps");
+  const [r, settings] = await Promise.all([api("/apps"), api("/settings").catch(() => ({ settings: [] }))]);
   apps.list = r.apps || [];
+  const setting = (id) => (settings.settings || []).find((x) => x.id === id);
+  if (setting("home_apps")) apps.pins = setting("home_apps").current || [];
+  if (setting("home_fill")) apps.fill = setting("home_fill").current !== false;
+  renderHome();
   renderKnown();
   $("apps-ai-off").hidden = aiReady;
   renderApps();
@@ -1886,6 +1890,16 @@ function appTile(app) {
     label.append(badge);
   }
   li.append(label);
+  const key = `app:${app.id}`;
+  const pin = document.createElement("button");
+  pin.type = "button";
+  pin.className = "pin";
+  const pinned = apps.pins.includes(key);
+  pin.setAttribute("aria-pressed", pinned);
+  pin.title = pinned ? `Unpin ${app.name} from the board's home screen` : `Pin ${app.name} to the board's home screen`;
+  pin.setAttribute("aria-label", pin.title);
+  pin.addEventListener("click", () => savePins(pinned ? apps.pins.filter((k) => k !== key) : [...apps.pins, key]));
+  li.append(pin);
   if (progress && progress.state === "failed") {
     const again = document.createElement("button");
     again.type = "button";
@@ -1896,6 +1910,64 @@ function appTile(app) {
   }
   return li;
 }
+
+/** The pinned apps as chips, in order, each movable and removable. */
+function renderHome() {
+  $("home-fill").checked = apps.fill;
+  const list = $("home-pins");
+  if (!apps.pins.length) {
+    list.replaceChildren(Object.assign(document.createElement("li"), { className: "muted small empty", textContent: apps.fill ? "Nothing pinned: the board shows what you use most." : "Nothing pinned, and filling is off: the home screen is empty." }));
+    return;
+  }
+  list.replaceChildren(...apps.pins.map((key, i) => {
+    const [kind, id] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+    const app = kind === "app" ? apps.list.find((a) => a.id === id) : null;
+    const name = app ? app.name : id;
+    const li = document.createElement("li");
+    li.className = "home-pin";
+    const icon = document.createElement("span");
+    icon.className = "app-icon";
+    icon.textContent = name.slice(0, 1);
+    if (app) loadIcon(app.id, icon);
+    const label = document.createElement("span");
+    label.textContent = name;
+    const move = (to, text, glyph) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = glyph;
+      b.title = text;
+      b.setAttribute("aria-label", `${text}: ${name}`);
+      b.disabled = to < 0 || to >= apps.pins.length;
+      b.addEventListener("click", () => {
+        const next = [...apps.pins];
+        if (text === "Remove") next.splice(i, 1);
+        else [next[i], next[to]] = [next[to], next[i]];
+        savePins(next);
+      });
+      return b;
+    };
+    li.append(Object.assign(document.createElement("span"), { className: "pos", textContent: String(i + 1) }), icon, label,
+              move(i - 1, "Move earlier", "\u2190"), move(i + 1, "Move later", "\u2192"), move(0, "Remove", "\u00d7"));
+    return li;
+  }));
+}
+
+async function savePins(pins, fill = apps.fill) {
+  const before = [apps.pins, apps.fill];
+  apps.pins = pins;
+  apps.fill = fill;
+  renderHome();
+  renderApps();
+  try {
+    await api("/settings", { changes: { home_apps: pins, home_fill: fill } });
+  } catch (e) {
+    [apps.pins, apps.fill] = before;
+    renderHome();
+    renderApps();
+    appsStatus(`Could not change the home screen: ${e.message}`, true);
+  }
+}
+$("home-fill").addEventListener("change", () => savePins(apps.pins, $("home-fill").checked));
 
 function tileLine(app, progress) {
   if (progress) {

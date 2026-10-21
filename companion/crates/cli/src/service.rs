@@ -1460,12 +1460,14 @@ async fn show_launcher(sender: &mut BoardSender, usage: &crate::launcher::Usage,
     // Pages at the person's key size (3x3 unless they chose otherwise).
     let grid = paging.max;
     let per_page = usize::from(grid.size());
-    let entries = usage.top(per_page * LAUNCHER_PAGES);
+    let home = crate::display::load();
+    let entries = usage.home(&home.home_apps, home.home_fill, per_page * LAUNCHER_PAGES,
+                             |id| apps.iter().find(|a| a.id == id).map(|a| a.name.clone()));
     let pages = entries.len().div_ceil(per_page);
     let page = paging.enter(LAUNCHER, pages);
     paging.grid = grid;
     let mut keys = Vec::new();
-    for (i, entry) in entries.into_iter().skip(page * per_page).take(per_page).enumerate() {
+    for (i, entry) in entries.iter().skip(page * per_page).take(per_page).enumerate() {
         let slot = i as u8 + 1;
         let name = entry.target.image_name();
         let mut icon = Some(match entry.target { crate::launcher::Target::Site { .. } => "public", _ => "apps" }.to_string());
@@ -1488,7 +1490,7 @@ async fn show_launcher(sender: &mut BoardSender, usage: &crate::launcher::Usage,
     }
     let status = match calling {
         Some(c) if c.key(grid).is_none() => c.status(),
-        _ if keys.is_empty() => "Nothing open. Apps and sites you use will appear here.".into(),
+        _ if keys.is_empty() => "Nothing open. Apps you pin or use will appear here.".into(),
         _ => String::new(),
     };
     let paged = pages > 1;

@@ -126,13 +126,33 @@ impl Usage {
         self.items.get(key).map_or(0.0, |e| e.seconds)
     }
 
-    pub fn top(&self, n: usize) -> Vec<&Entry> {
-        let now = now();
-        let mut all: Vec<&Entry> = self.items.values().collect();
-        all.sort_by(|a, b| b.score(now).total_cmp(&a.score(now)));
-        all.truncate(n);
-        all
+    /// The board's home screen, at most `n`: the pinned apps and sites (`pinned`, keys like
+    /// "app:firefox"), in their order, then, when `fill`, the most used of the rest. `name` names a
+    /// pinned app never used yet (its installed name).
+    pub fn home(&self, pinned: &[String], fill: bool, n: usize, name: impl Fn(&str) -> Option<String>) -> Vec<Entry> {
+        let mut out: Vec<Entry> = pinned.iter().filter_map(|key| {
+            if let Some(used) = self.items.get(key) {
+                return Some(used.clone());
+            }
+            let (kind, id) = key.split_once(':')?;
+            let target = match kind {
+                "app" => Target::App { id: id.to_string() },
+                "site" => Target::Site { host: id.to_string() },
+                _ => return None,
+            };
+            let shown = if kind == "site" { id.to_string() } else { name(id).unwrap_or_else(|| id.rsplit('.').next().unwrap_or(id).trim_end_matches(".exe").to_string()) };
+            Some(Entry { name: shown, target, seconds: 0.0, last: 0 })
+        }).collect();
+        if fill {
+            let now = now();
+            let mut rest: Vec<(&String, &Entry)> = self.items.iter().filter(|(k, _)| !pinned.contains(k)).collect();
+            rest.sort_by(|a, b| b.1.score(now).total_cmp(&a.1.score(now)));
+            out.extend(rest.into_iter().map(|(_, e)| e.clone()));
+        }
+        out.truncate(n);
+        out
     }
+
 }
 
 /// What to count for a focus: the site in the browser, else the app (by its desktop entry on
@@ -257,6 +277,20 @@ mod tests {
     }
 
     #[test]
+    fn pinned_apps_come_first_then_the_most_used() {
+        let mut usage = Usage::default();
+        let entry = |name: &str, target: Target, seconds: f64| Entry { name: name.into(), target, seconds, last: now() };
+        usage.items.insert("app:firefox".into(), entry("Firefox", Target::App { id: "firefox".into() }, 900.0));
+        usage.items.insert("site:github.com".into(), entry("github.com", Target::Site { host: "github.com".into() }, 300.0));
+        let names = |home: &[Entry]| home.iter().map(|e| e.name.clone()).collect::<Vec<_>>();
+        let pinned = vec!["app:org.musescore.MuseScore".to_string(), "site:github.com".to_string()];
+        let name = |id: &str| (id == "org.musescore.MuseScore").then(|| "MuseScore".to_string());
+        assert_eq!(names(&usage.home(&pinned, true, 9, name)), ["MuseScore", "github.com", "Firefox"], "pinned, then the rest by use");
+        assert_eq!(names(&usage.home(&pinned, false, 9, name)), ["MuseScore", "github.com"], "pinned only");
+        assert_eq!(names(&usage.home(&[], true, 1, name)), ["Firefox"]);
+    }
+
+    #[test]
     fn image_names_fit_the_board() {
         assert_eq!(Target::App { id: "com.anthropic.Claude".into() }.image_name(), "app:com.anthropic.claude");
         assert_eq!(Target::Site { host: "www.GitHub.com".into() }.image_name(), "site:www.github.com");
@@ -270,7 +304,7 @@ mod tests {
         usage.items.insert("a".into(), e("old-heavy", 36000.0, t - 30 * 86400));
         usage.items.insert("b".into(), e("today", 300.0, t - 60));
         usage.items.insert("c".into(), e("week", 4000.0, t - 3 * 86400));
-        let names: Vec<_> = usage.top(3).iter().map(|e| e.name.clone()).collect();
+        let names: Vec<_> = usage.home(&[], true, 3, |_| None).iter().map(|e| e.name.clone()).collect();
         assert_eq!(names, vec!["week", "old-heavy", "today"]); // 2971, 1846, 900
     }
 }

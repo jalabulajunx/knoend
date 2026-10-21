@@ -95,6 +95,13 @@ pub struct Display {
     /// The setup assistant looks at problems the service notices without being asked (watch.rs).
     #[serde(default = "yes")]
     pub assistant_watches: bool,
+    /// The board's home screen (the launcher, shown when no app is in front): these first, in this
+    /// order ("app:firefox", "site:github.com"), ...
+    #[serde(default)]
+    pub home_apps: Vec<String>,
+    /// ... then, when true, the apps and sites used most.
+    #[serde(default = "yes")]
+    pub home_fill: bool,
     /// While the board listens for notes, sounds quieter than this (dB below full scale) are silence.
     #[serde(default = "listen_quiet")]
     pub listen_quiet: i8,
@@ -115,7 +122,7 @@ fn start_size() -> u8 {
 impl Default for Display {
     fn default() -> Self {
         Display { key_size: KeySize::default(), theme: Theme::default(), turn: 0, key_font: String::new(),
-                  start_font: String::new(), start_size: start_size(), assistant_watches: true,
+                  start_font: String::new(), start_size: start_size(), assistant_watches: true, home_apps: Vec::new(), home_fill: true,
                   listen_quiet: listen_quiet() }
     }
 }
@@ -172,7 +179,7 @@ mod tests {
         assert_eq!(serde_json::from_str::<Display>("{}").unwrap().key_size, KeySize::Medium);
         assert_eq!(serde_json::to_value(Display { key_size: KeySize::Big, ..Default::default() }).unwrap(),
                    serde_json::json!({"key_size": "big", "theme": "dark", "turn": 0, "key_font": "", "start_font": "",
-                                      "start_size": 64, "assistant_watches": true, "listen_quiet": -60}));
+                                      "start_size": 64, "assistant_watches": true, "home_apps": [], "home_fill": true, "listen_quiet": -60}));
     }
 
     #[test]
