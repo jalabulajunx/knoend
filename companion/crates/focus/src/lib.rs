@@ -30,7 +30,7 @@ pub use terminal::active_tab;
 
 /// What runs in a terminal app's active tab (macOS and Linux only).
 #[cfg(not(unix))]
-pub fn active_tab(_app: u32) -> Option<knoend_core::focus::TerminalTab> {
+pub fn active_tab(_app: u32, _title: &str) -> Option<knoend_core::focus::TerminalTab> {
     None
 }
 

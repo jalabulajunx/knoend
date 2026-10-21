@@ -1759,3 +1759,37 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   while a second program held it open (the lesson in that entry stands).
 - Decided (Tom): "Remove my version" stays as it is (deletes the file after its confirm); not an
   open item.
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - Terminal keys on Linux (#56)
+
+- Changed (branch `sundar/terminal-linux`):
+  - Active tab: the terminal window's title first (it follows the active tab; fish and zsh put the
+    running command and folder in it, "man ls ~/Projects"), then the tab typed in last for tabs the
+    title does not tell apart. `focus/src/terminal.rs`, `active_tab(pid, title)`.
+  - `sudo` runs its command on a terminal of its own (`use_pty`): that terminal belongs to the tab
+    (`sudo` + `pacman`) and is never a tab of its own. Only programs in the tab's foreground count, so
+    an xterm started from a tab stays a window of its own.
+  - `TerminalTab::program()`: the program keys are for, skipping shells and `sudo`/`env`/`nice`...
+  - A program in a terminal tab with no keys: the terminal's keys plus a **Configure** key (last
+    page when the terminal's fill the first), status "No keys for pacman yet". The configure agent
+    drafts `ai.terminal-<program>` with `match.terminal`; the prompt gets "Terminal program: pacman"
+    and its `whatis` line (pacman has two manual pages: the package manager and a Pac-Man game).
+    Prompt rules for terminals: Ctrl not Primary; Shift for capital-letter commands (htop's P).
+  - New action kind **`sequence`** (spec/protocol.md section 5 and the library schema; **needs Tom's
+    review**): 2-8 shortcuts typed in order by the companion on its own computer (the board sends an
+    event). The agent uses it only for terminal programs that read a line (`["N", "Enter"]`); a
+    desktop app's draft with one is rejected.
+  - `knoend draft --terminal <program>`.
+- Tested (ONX2432G028, Arch Linux, i3/X11, Xfce Terminal, fish): Tom's cases each worked (`man ls`
+  pager keys, back to the terminal's keys at the prompt, Claude Code's keys); a tab switch without
+  typing now changes the keys; `sudo pacman -Syu` showed Configure, the draft arrived, and No
+  (`N`, `Enter`) cancelled at "Proceed?" (Sundar at the board). Live drafts through openai/gpt-6-sol:
+  pacman (Yes/No as sequences, Default, Stop with confirm) and htop (Shift+P/M/T after the capitals
+  rule; the first draft sent plain P). Unit tests for the title, folder, sudo and xterm cases.
+  macOS not run: titles there may be empty, which falls back to the old behaviour.
+- Decided: a terminal-program draft applies in any terminal app on any OS; sequences are typed by
+  the companion (no firmware change), so they type on the computer running knoend.
+- Open: any long command (`cargo build`) also shows Configure and "No keys for ... yet"; could wait
+  a few seconds before offering it. Bash at a prompt sets the same title in every tab of one folder:
+  typing still decides there. Edit keys shows a sequence key as "types N, then Enter" (not editable
+  yet).

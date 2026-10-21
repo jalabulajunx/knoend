@@ -8,6 +8,9 @@ use serde_json::Value;
 
 /// Facts about the app in `focus`, one per line; empty when nothing could be read.
 pub fn about(focus: &Focus) -> Vec<String> {
+    if let Some(program) = knoend_agents::terminal_program(focus) {
+        return manual_line(program).into_iter().collect();
+    }
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     {
         let Some(pid) = knoend_focus::window_pid(&[focus.app.as_str(), focus.instance.as_str()]) else { return Vec::new() };
@@ -75,6 +78,16 @@ fn asar_file(path: &std::path::Path, name: &str) -> Option<Vec<u8>> {
     Some(data)
 }
 
+/// What the manual says a terminal program is (`whatis`), for a program in a terminal tab:
+/// "pacman (8) - package manager utility". Commands (sections 1 and 8) before games (6).
+fn manual_line(program: &str) -> Option<String> {
+    let out = std::process::Command::new("whatis").arg(program).output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = text.lines().filter(|l| l.starts_with(&format!("{program} ("))).collect();
+    let pick = ["(1", "(8", "(6"].iter().find_map(|s| lines.iter().find(|l| l.contains(s)))?;
+    Some(format!("Manual: {}", pick.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(160).collect::<String>()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,3 +118,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
