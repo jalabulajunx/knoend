@@ -187,6 +187,11 @@ C3, C6) are not supported.
   everything ("display: an update never reported done"). Measured on the ONX: 30 lost updates in
   75 s before, none in 32 minutes after. Unplug and plug the board in to get a frozen one back.
   A watchdog line is not a crash; "Guru Meditation" or `rst:` with a panic is.
+- **Edit keys says "page 1 is 4x4; this board draws at most 3x3".** Usually the board's firmware is
+  older than v0.2.0 (v0.1.1 draws a fixed 3x3 and reports no grid, so the service assumes 3x3): an
+  AI draft or recipe with a 4x4 page cannot be edited for it. Install the latest firmware without
+  erasing (seen on Sundar's Windows machine, 2026-10-20). In portrait a v0.2.0 board draws at most
+  3x4, so a 4x4 page cannot be edited there either: turn it to landscape to edit.
 - **Several Claude questions in one prompt (#41).** Claude Code reports nothing until the last is
   answered. While the person is in the app Claude runs in (or once they started answering there)
   the board shows a panel listing the questions with "Answer here"; otherwise it shows the

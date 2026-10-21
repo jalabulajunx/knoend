@@ -1498,6 +1498,17 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
 - **A firmware build that misses a new `sdkconfig.defaults` value:** delete
   `build/universal/sdkconfig` and build again.
 
+## 2026-10-20 - Sundar (Claude Code, Opus 5.5) - Release v0.2.0
+
+- Sundar is setting KnoEnd up on a Windows machine (with Antigravity's agent). The service there
+  installed firmware v0.1.1 from releases/latest, which predates grids: Edit keys refused the 4x4
+  PowerPoint draft ("this board draws at most 3x3"). The message now says when old firmware is the
+  likely cause; knowledge entry added.
+- Release v0.2.0 (Sundar's call): workspace version 0.2.0 (the crates' path requirements too), tag
+  pushed from main; the release workflow builds firmware for every board and the service for Linux
+  and macOS. No Windows build of the service is published (Windows focus and typing are not done on
+  main).
+
 ## 2026-10-20 - Sundar (Antigravity) - Windows companion support
 
 - Branch `sundar/windows-support`.

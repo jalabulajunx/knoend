@@ -128,7 +128,14 @@ pub fn check(json: Value, max: Grid) -> Result<Library, String> {
     for n in page_numbers(&library) {
         let grid = library.grid(n);
         if !grid.fits(max) {
-            return Err(format!("page {n} is {}x{}; this board draws at most {}x{}", grid.cols, grid.rows, max.cols, max.rows));
+            // Firmware before v0.2.0 draws 3x3 only and reports no grid (the service then assumes 3x3).
+            let firmware = if max == Grid::DEFAULT {
+                ". If the board's firmware is older than v0.2.0, it draws 3x3 only: install the latest firmware \
+                 (Set up a board > Install, without erasing) to edit bigger pages"
+            } else {
+                ""
+            };
+            return Err(format!("page {n} is {}x{}; this board draws at most {}x{}{firmware}", grid.cols, grid.rows, max.cols, max.rows));
         }
     }
     Ok(library)

@@ -25,7 +25,7 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | macOS: layout follows the front window, keys typed by the service, assistant snapshot shows USB driver and Accessibility state | `focus/src/macos.rs`, `input/src/macos.rs`, `cli/src/diagnostics.rs` | switch apps on a Mac; "Ask the assistant" |
 | Windows: layout follows the foreground window, keys typed via `SendInput`, USB bus scan (`setupapi`), app icons (`SHGetFileInfoW`), native messaging + agent hooks over authenticated local TCP, startup service (`HKCU\...\Run`) | `focus/src/windows.rs`, `input/src/windows.rs`, `desktop/src/win_apps.rs`, `cli/src/browser.rs`, `cli/src/agent_hooks.rs`, `cli/src/background.rs` | `knoend devices`, `knoend serve`, `knoend browser install` on Windows |
 | USB-Serial-JTAG serial line (native-USB boards): identify, install, pair | `firmware/main/`, `companion/crates/flash` | Freenove FNK0104B on macOS |
-| Installing from the published release (v0.1.0; v0.1.1 adds the Mac fixes and onboarding work) through the web app | `companion/crates/cli/src/firmware.rs` | default firmware source |
+| Installing from the published release (v0.2.0, 2026-10-20: grids, the rename, looks and fonts, the assistant that listens, the freeze fix) through the web app | `companion/crates/cli/src/firmware.rs` | default firmware source |
 | CI: spec, companion on Linux + macOS + Windows, firmware build | `.github/workflows/ci.yml`, `.github/workflows/release.yml` | every push and PR |
 
 ## Browser, desktop apps, coding agents (added 2026-10-18; Linux + Windows tested, macOS partly)
