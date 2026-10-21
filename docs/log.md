@@ -1628,3 +1628,54 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   added a CI step packaging the firmware, which called `release_firmware.py` without `--version`:
   the firmware job failed on main. Fixed (version from `git describe`). The macOS job of the push
   run after #44 was cancelled, not failed (it passed on the PR and on the next push).
+
+## 2026-10-20 - Sundar (Antigravity) - Setup wizard: Keys & Look over USB and separate optional Wi-Fi and Bluetooth steps (#47)
+
+- Branch `sundar/setup-connections-and-look`, closes [#47](https://github.com/jalabulajunx/knoend/issues/47).
+- Why: the web app's setup wizard only showed **Keys and look** after Wi-Fi was set up, even though the
+  board is already connected over USB during setup and supports three transports: USB serial, Wi-Fi
+  (2.4 GHz), and Bluetooth LE keyboard (`"KnoEnd"`).
+- Changed:
+  - `companion/crates/transport/src/serial.rs`: added `SerialLink::send(&mut self, kind: &str, body: Value)`
+    for non-blocking packet writes (`knoend.layout`, `knoend.display`, `knoend.font`, `knoend.image`,
+    `knoend.status`) over USB serial while the service loop reads events from the board.
+  - `companion/crates/cli/src/provision.rs`: added `connect_paired(port, pairings)` to identify a
+    paired board on USB serial and return its open `SerialLink` without resetting the port a second time.
+  - `companion/crates/cli/src/service.rs`, `cli/src/web.rs`:
+    - Added `BoardSender` (`Wifi` / `Serial`) and updated `connect()` to try Wi-Fi discovery first
+      (`3 s` when USB ports are present, `10 s` otherwise) and fall back to a paired board on USB
+      serial (`BoardStatus.address = "USB (<port>)"`), so layouts, key taps, and **Keys and look**
+      changes work live over USB even before or without Wi-Fi.
+    - Updated USB `connect_serial` in `service.rs` to forward raw non-JSON board console lines
+      (`BLE ...`, `WIFI ...`, `KEY ...`, `READY ...`, `E (...)`, etc.) into `say!("Board: {trim}")`
+      so Bluetooth and network events on the board reach the service journal and setup assistant.
+    - Added `UNPAIRED_USB_SCAN` memoization so `connect_serial` does not repeatedly open and reset an
+      unpaired serial port when no paired board is on Wi-Fi.
+    - Added `Shared::acquire_serial()` (`serial_preempt: AtomicBool`) so USB setup routes
+      (`/api/identify`, `/api/flash`, `/api/provision`, `/api/wifi/scan`, `/api/wifi/change`) cleanly
+      preempt any active USB `SerialLink` session in `service.rs`.
+  - `companion/crates/cli/src/macos_help.rs`, `companion/crates/agents/src/assistant.rs`: added
+    cross-platform `POST /api/open` target `"bluetooth_settings"` (`ms-settings:bluetooth` on Windows,
+    `x-apple.systempreferences:com.apple.BluetoothSettings` on macOS, `blueman-manager` /
+    `gnome-control-center bluetooth` / `systemsettings kcm_bluetooth` on Linux) and assistant actions
+    `look_settings` and `open_bluetooth_settings`.
+  - `web/index.html`, `web/style.css`, `web/app.js`:
+    - Restructured the Setup Wizard into 6 steps:
+      1. `Find the board`
+      2. `Choose firmware` (with **Skip install (already installed)** when the board already runs KnoEnd)
+      3. `Install` (automatically pairs the board over USB right after flashing so Step 4 is live over USB)
+      4. `Keys and look` (immediately available over USB; includes **Finish (use over USB)**,
+         **Skip to Bluetooth (optional)**, and **Next: Wi-Fi (optional)**)
+      5. `Wi-Fi (optional)` (2.4 GHz scan and join, or **Skip Wi-Fi**)
+      6. `Bluetooth (optional)` (instructions for pairing `"KnoEnd"` BLE keyboard, **Open Bluetooth settings**
+         button, and **Done** button)
+    - Added a **Bluetooth settings** button alongside **Change Wi-Fi** on the Dashboard's Board card.
+  - `docs/setup.md`, `docs/knowledge/setup.md`, `docs/status.md`: documented the 6-step setup flow,
+    USB-only operation, and optional Wi-Fi and Bluetooth setup.
+- Tested (Windows 11, ONX2432G028 on `COM4`):
+  - `cargo test --locked`: all unit tests across all 9 crates pass with 0 warnings (including updated
+    assistant action/prompt tests).
+  - `python tools/validate_spec.py`: 28 valid, 19 invalid examples checked; 0 problems.
+  - `knoend.exe serve`: verified the 6-step setup wizard UI and endpoints (`http://127.0.0.1:7380`).
+  - Bluetooth LE keyboard on Windows 11: verified pairing of "KnoEnd" to Windows 11 (cleared initial
+    handshake stall by toggling Windows Bluetooth off and on).

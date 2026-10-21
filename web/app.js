@@ -75,6 +75,7 @@ function renderStatus(s) {
   if (look !== renderStatus.look) {
     renderStatus.look = look;
     loadDisplay().catch(() => {});
+    if ($("theme-note") && s.board) $("theme-note").hidden = !!s.board.display;
   }
   $("now-app").textContent = s.app || "-";
   const layout = s.link === "connected" ? s.layout : null;
@@ -167,7 +168,7 @@ function connectEvents() {
     if (event.kind === "edit") onEditEvent(d);
     if (event.kind === "edit.tap") onEditTap(d);
     if (event.kind === "noticed") onNoticed(d);
-    if (event.kind === "display") { loadDisplay().catch(() => {}); if (setup.step === 5) keySizeStep(); }
+    if (event.kind === "display") { loadDisplay().catch(() => {}); if (setup.step === 4) keySizeStep(); }
     if (d.text && event.kind !== "status") logTo($("activity"), d.text.trim(), event.kind === "configure-failed" ? "error" : "");
   };
   source.onerror = () => {
@@ -585,26 +586,28 @@ $("edit-remove").addEventListener("click", () => {
 
 // ---- setup wizard ----
 
-const setup = { step: 1, port: null, board: null, firmware: null, identified: null, mode: null, task: "setup" };
+const setup = { step: 1, port: null, board: null, firmware: null, identified: null, mode: null, task: "setup", usbPaired: false };
 
 /**
- * The wizard does two jobs: set up a board (find, firmware, install, pair and Wi-Fi), or move a
- * board that is already set up to another Wi-Fi network (find, Wi-Fi): over USB, keeping its
- * pairings, so it works when the board cannot reach its old network.
+ * The wizard does two jobs: set up a board (find, firmware, install, keys and look over USB,
+ * optional Wi-Fi, optional Bluetooth), or move a board that is already set up to another Wi-Fi
+ * network (find, Wi-Fi): over USB, keeping its pairings, so it works when the board cannot reach
+ * its old network.
  */
 function setTask(task) {
   setup.task = task;
   const wifi = task === "wifi";
-  // Firmware and Install are not part of changing Wi-Fi (step() rewrites the class names, so by number).
-  document.querySelectorAll('.steps li[data-step="2"], .steps li[data-step="3"], .steps li[data-step="5"]').forEach((el) => (el.hidden = wifi));
+  // Firmware, Install, Look and Bluetooth are not part of changing Wi-Fi (step() rewrites the class names, so by number).
+  document.querySelectorAll('.steps li[data-step="2"], .steps li[data-step="3"], .steps li[data-step="4"], .steps li[data-step="6"]').forEach((el) => (el.hidden = wifi));
   $("mode-card").hidden = wifi;
-  $("step4-name").textContent = wifi ? "Wi-Fi" : "Pair and Wi-Fi";
-  $("step4-title").textContent = wifi ? "Change Wi-Fi" : "Pair and Wi-Fi";
-  $("step4-intro").textContent = wifi
+  $("step5-name").textContent = wifi ? "Wi-Fi" : "Wi-Fi (optional)";
+  $("step5-title").textContent = wifi ? "Change Wi-Fi" : "Wi-Fi (optional)";
+  $("step5-intro").textContent = wifi
     ? "Pick the network the board should use from now on. Its pairing with this computer and its settings stay as they are; the password goes to the board over the cable only and is not stored here."
-    : "The board and this computer agree on a secret key over the cable. Wi-Fi lets the board work away from the desk; your password goes to the board over the cable only and is not stored here.";
-  $("step4-submit").textContent = wifi ? "Change Wi-Fi" : "Pair";
-  $("step4-back").dataset.back = wifi ? "1" : "3";
+    : "Wi-Fi lets the board work wirelessly anywhere on your 2.4 GHz network, away from the USB cable. Your password goes to the board over the USB cable only and is never stored here. If you keep the board plugged into this computer over USB, you can skip this step.";
+  $("step5-submit").textContent = wifi ? "Change Wi-Fi" : "Join Wi-Fi";
+  $("step5-back").dataset.back = wifi ? "1" : "4";
+  $("skip-wifi").hidden = wifi;
   $("identify").textContent = wifi ? "Next" : "Identify";
   $("pair-log").replaceChildren();
   $("pair-done").hidden = true;
@@ -614,6 +617,10 @@ $("change-wifi").addEventListener("click", () => {
   setTask("wifi");
   step(1);
   show("setup");
+});
+
+$("dashboard-bluetooth").addEventListener("click", () => {
+  openBluetoothSettings().catch(() => {});
 });
 
 function step(n) {
@@ -764,9 +771,9 @@ async function loadDisplay() {
   return d;
 }
 
-/** Setup step 5: the key size, chosen once after pairing (the current choice ticked). */
+/** Setup step 4: keys and look, available right after USB install/identify (before Wi-Fi or Bluetooth). */
 async function keySizeStep() {
-  step(5);
+  step(4);
   $("setup-done").hidden = true;
   const current = await api("/display").catch(() => ({ key_size: "medium", theme: "dark", board_can_change_look: false }));
   const fill = (list, name, choices, value, disabled) => {
@@ -781,22 +788,25 @@ async function keySizeStep() {
   // The preview shows every look; the board follows when its firmware can.
   fill($("theme-setup"), "theme-choice", THEMES, current.theme);
   fill($("turn-setup"), "turn-choice", TURNS, String(current.turn || 0));
-  $("theme-note").hidden = current.board_can_change_look;
+  const canLook = !!(current.board_can_change_look || setup.justInstalled || setup.identified?.running?.hasDisplay);
+  $("theme-note").hidden = canLook;
   displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0, key_font: current.key_font, start_font: current.start_font };
   showFonts(current);
   redrawScreens();
-  // Each choice applies at once: on the board, and in the preview.
+  // Each choice applies at once: on the board (over USB or Wi-Fi), and in the preview.
   const field = { "key-size-choice": (v) => ({ key_size: v }), "theme-choice": (v) => ({ theme: v }), "turn-choice": (v) => ({ turn: Number(v) }) };
   for (const name of Object.keys(field)) {
     document.querySelectorAll(`input[name="${name}"]`).forEach((input) => input.addEventListener("change", () => {
       const change = field[name](input.value);
-      saveDisplay(change).catch((err) => logTo($("pair-log"), `Could not apply that: ${err.message}`, "error"));
+      saveDisplay(change).catch((err) => logTo($("activity"), `Could not apply that: ${err.message}`, "error"));
     }));
   }
 }
 
-// Every choice is applied as it is made; Done only finishes setup.
+// Every choice is applied as it is made; the buttons let the person finish over USB or continue to optional Wi-Fi / Bluetooth.
 $("key-size-save").addEventListener("click", () => { $("setup-done").hidden = false; });
+$("to-wifi").addEventListener("click", () => { step(5); scanWifi(); });
+$("to-bluetooth").addEventListener("click", () => bluetoothStep());
 
 $("key-size").addEventListener("change", (e) => saveDisplay({ key_size: e.target.value }).catch((err) => alert(`Could not save the key size: ${err.message}`)));
 $("theme").addEventListener("change", (e) => saveDisplay({ theme: e.target.value }).catch((err) => alert(`Could not change the look: ${err.message}`)));
@@ -897,7 +907,7 @@ function noPortAdvice(d, os, wch) {
 }
 
 $("identify").addEventListener("click", async () => {
-  if (setup.task === "wifi") { step(4); scanWifi(); return; }
+  if (setup.task === "wifi") { step(5); scanWifi(); return; }
   const status = $("identify-status");
   status.hidden = false;
   status.className = "note";
@@ -907,8 +917,15 @@ $("identify").addEventListener("click", async () => {
     const result = await api("/identify", { port: setup.port });
     const [firmware] = await Promise.all([api("/firmware").catch(() => null)]);
     setup.firmware = firmware;
+    setup.justInstalled = false;
+    setup.usbPaired = false;
     $("fw-source").textContent = firmware ? `${firmware.source} (version ${firmware.manifest.version})` : "unavailable";
-    setup.identified = { chip: result.chip, chipError: result.chipError, running: result.running ? { firmware: result.running.firmware, profile: result.running.board?.profile } : null, candidates: result.candidates };
+    setup.identified = {
+      chip: result.chip,
+      chipError: result.chipError,
+      running: result.running ? { firmware: result.running.firmware, profile: result.running.board?.profile, hasDisplay: !!result.running.board?.display } : null,
+      candidates: result.candidates,
+    };
     const chip = result.chip;
     const running = result.running;
     $("chip-summary").textContent = [
@@ -916,6 +933,7 @@ $("identify").addEventListener("click", async () => {
       running ? `Running KnoEnd ${running.firmware} (${running.board.profile}).` : "Not running KnoEnd yet.",
     ].join(" ");
     $("erase").checked = !running;
+    $("skip-install").hidden = !running;
     renderCandidates(result.candidates);
     status.hidden = true;
     step(2);
@@ -925,6 +943,30 @@ $("identify").addEventListener("click", async () => {
     autoAssist(`Identify failed: ${e.message}`);
   } finally {
     $("identify").disabled = false;
+  }
+});
+
+/** Pairs the board over USB (without requiring Wi-Fi) so the companion can talk to it immediately. */
+async function pairOverUsb(logList) {
+  if (!setup.port || setup.usbPaired) return true;
+  try {
+    const result = await api("/provision", { port: setup.port, ssid: null, password: null });
+    setup.usbPaired = true;
+    if (logList) logTo(logList, `Paired with board ${result.board} over USB.`);
+    return true;
+  } catch (e) {
+    if (logList) logTo(logList, `Could not pair over USB yet: ${e.message}`, "error");
+    return false;
+  }
+}
+
+$("skip-install").addEventListener("click", async () => {
+  $("skip-install").disabled = true;
+  try {
+    await pairOverUsb($("activity"));
+    keySizeStep();
+  } finally {
+    $("skip-install").disabled = false;
   }
 });
 
@@ -970,8 +1012,7 @@ $("install").addEventListener("click", async () => {
   $("flash-stage").className = "note";
   $("flash-stage").textContent = "Downloading and checking the firmware...";
   try {
-    delete $("to-pair").dataset.next;
-    $("to-pair").textContent = "Next";
+    $("to-pair").textContent = "Next: keys and look";
     await api("/flash", { port: setup.port, board: setup.board, erase: $("erase").checked });
   } catch (e) {
     onFlash({ stage: "failed", error: e.message });
@@ -994,12 +1035,9 @@ function onFlash(p) {
   } else if (p.stage === "finished") {
     $("bar").style.width = "100%";
     stage.className = "note success";
-    stage.textContent = `Installed KnoEnd ${p.version}. The board restarted.`;
-    if ($("erase").checked) {
-      $("to-pair").disabled = false;
-    } else {
-      afterKeptSettings();
-    }
+    stage.textContent = `Installed KnoEnd ${p.version}. Pairing over USB...`;
+    setup.justInstalled = true;
+    afterInstallFinished(p.version);
   } else if (p.stage === "failed") {
     stage.className = "note error";
     stage.textContent = `Install failed: ${p.error}`;
@@ -1009,37 +1047,19 @@ function onFlash(p) {
   if (p.text) logTo($("flash-log"), p.text);
 }
 
-$("to-pair").addEventListener("click", () => {
-  if ($("to-pair").dataset.next === "look") keySizeStep();
-  else { step(4); scanWifi(); }
-});
+$("to-pair").addEventListener("click", () => keySizeStep());
 
 /**
- * After an install that kept the board's settings: a board paired with this computer comes back on
- * its Wi-Fi by itself, so pairing and Wi-Fi are skipped when it does (within 40 s).
+ * Right after installing: pairs the board over USB so Keys and look works immediately over the USB
+ * cable, whether or not the person sets up Wi-Fi later.
  */
-async function afterKeptSettings() {
+async function afterInstallFinished(version) {
   const button = $("to-pair");
   const stage = $("flash-stage");
-  const paired = renderStatus.last && renderStatus.last.link !== "no-pairing";
-  if (!paired) {
-    button.disabled = false;
-    return;
-  }
-  stage.textContent += " It keeps its pairing and Wi-Fi: waiting for it to come back on your network...";
-  const deadline = Date.now() + 40000;
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 1000));
-    if (renderStatus.last && renderStatus.last.link === "connected") {
-      stage.textContent = "Installed. The board kept its pairing and Wi-Fi and is connected again: nothing to pair.";
-      button.dataset.next = "look";
-      button.textContent = "Next: keys and look";
-      button.disabled = false;
-      return;
-    }
-  }
-  stage.className = "note";
-  stage.textContent = "Installed, but the board has not come back on the network after 40 seconds. Pair it and give it Wi-Fi again.";
+  const paired = await pairOverUsb($("flash-log"));
+  stage.textContent = paired
+    ? `Installed KnoEnd ${version} and paired over USB. Next: choose your key size and look.`
+    : `Installed KnoEnd ${version}. The board restarted.`;
   button.disabled = false;
 }
 
@@ -1132,6 +1152,7 @@ async function scanWifi() {
   }
 }
 $("scan-wifi").addEventListener("click", scanWifi);
+$("skip-wifi").addEventListener("click", () => bluetoothStep());
 
 $("pair-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1139,8 +1160,11 @@ $("pair-form").addEventListener("submit", async (e) => {
   const ssid = (chosenNetwork && chosenNetwork !== "other" ? chosenNetwork.ssid : $("ssid").value).trim();
   const password = $("password").value;
   const button = e.submitter;
+  if (!ssid) {
+    logTo($("pair-log"), "Pick a network, or type its name under Other network (or click Skip Wi-Fi).", "error");
+    return;
+  }
   if (setup.task === "wifi") {
-    if (!ssid) { logTo($("pair-log"), "Pick a network, or type its name under Other network.", "error"); return; }
     button.disabled = true;
     logTo($("pair-log"), `Sending "${ssid}" to the board over USB...`);
     try {
@@ -1157,19 +1181,55 @@ $("pair-form").addEventListener("submit", async (e) => {
     return;
   }
   button.disabled = true;
-  logTo($("pair-log"), "Pairing over USB...");
+  logTo($("pair-log"), `Joining "${ssid}" over USB...`);
   try {
-    const result = await api("/provision", { port: setup.port, ssid: ssid || null, password: ssid ? password : null });
-    logTo($("pair-log"), `Paired with board ${result.board}${result.ip ? ` on ${result.ip}` : ""}`);
-    keySizeStep();
+    const endpoint = setup.usbPaired ? "/wifi/change" : "/provision";
+    const result = await api(endpoint, { port: setup.port, ssid, password });
+    setup.usbPaired = true;
+    logTo($("pair-log"), `Board ${result.board} joined "${ssid}"${result.ip ? ` on ${result.ip}` : ""}`);
+    bluetoothStep();
   } catch (err) {
-    logTo($("pair-log"), `Pairing failed: ${err.message}`, "error");
-    autoAssist(`Pairing failed: ${err.message}`);
+    logTo($("pair-log"), `Wi-Fi setup failed: ${err.message}`, "error");
+    autoAssist(`Wi-Fi setup failed: ${err.message}`);
   } finally {
     $("password").value = "";
     button.disabled = false;
   }
 });
+
+// ---- Step 6: Bluetooth (optional) ----
+
+function bluetoothStep() {
+  step(6);
+  $("bluetooth-done").hidden = true;
+  $("bluetooth-status").hidden = true;
+}
+
+async function openBluetoothSettings() {
+  const status = $("bluetooth-status");
+  try {
+    const r = await api("/open", { target: "bluetooth_settings" });
+    if (status) {
+      status.hidden = false;
+      status.className = "note";
+      status.textContent = `${r.done}. Pick "KnoEnd" there to pair the board as a Bluetooth keyboard.`;
+    }
+    if (!$("advice").hidden) {
+      $("advice-text").textContent = `${r.done}. Pick "KnoEnd" there to pair the board as a Bluetooth keyboard.`;
+    }
+    return r.done;
+  } catch (e) {
+    if (status) {
+      status.hidden = false;
+      status.className = "note error";
+      status.textContent = `Could not open Bluetooth settings: ${e.message}`;
+    }
+    throw e;
+  }
+}
+
+$("open-bluetooth").addEventListener("click", () => openBluetoothSettings().catch(() => {}));
+$("bluetooth-done-btn").addEventListener("click", () => { $("bluetooth-done").hidden = false; });
 
 // ---- setup mode and AI settings ----
 
@@ -1403,8 +1463,10 @@ const ACTIONS = {
   identify: ["Identify the board", () => { step(1); $("identify").click(); }],
   install: ["Install", () => { if (setup.board) { $("erase").checked = false; $("install").click(); } else step(1); }],
   install_erase: ["Erase and install", () => { if (setup.board) { $("erase").checked = true; $("install").click(); } else step(1); }],
-  pair: ["Go to pairing", () => { setTask("setup"); step(4); scanWifi(); }],
+  look_settings: ["Keys and look", () => { setTask("setup"); keySizeStep(); show("setup"); }],
+  pair: ["Set up Wi-Fi", () => { setTask("setup"); step(5); scanWifi(); show("setup"); }],
   change_wifi: ["Change Wi-Fi", () => { setTask("wifi"); step(1); show("setup"); }],
+  open_bluetooth_settings: ["Open Bluetooth settings", () => openBluetoothSettings().catch(() => {})],
   dashboard: ["Open the dashboard", () => show("dashboard")],
   open_accessibility_settings: ["Open Accessibility settings", () => openOnMac("accessibility_settings")],
   open_driver_settings: ["Open Driver Extensions", () => openOnMac("driver_settings")],

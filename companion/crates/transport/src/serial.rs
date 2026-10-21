@@ -47,8 +47,8 @@ impl SerialLink {
         while Instant::now() < deadline && self.read_line(Duration::from_millis(100)).is_some() {}
     }
 
-    /// Sends a packet and waits for the reply of `reply_type` (or an error) that answers it.
-    pub fn request(&mut self, kind: &str, body: Value, reply_type: &str, timeout: Duration) -> Result<Packet, String> {
+    /// Sends a packet without waiting for a reply.
+    pub fn send(&mut self, kind: &str, body: Value) -> Result<u32, String> {
         let id = self.next_id;
         self.next_id += 1;
         let kind = if self.old_names { old_name(kind) } else { kind.to_string() };
@@ -56,6 +56,12 @@ impl SerialLink {
         let mut text = serde_json::to_string(&packet).expect("serialisable");
         text.push('\n');
         self.port.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+
+    /// Sends a packet and waits for the reply of `reply_type` (or an error) that answers it.
+    pub fn request(&mut self, kind: &str, body: Value, reply_type: &str, timeout: Duration) -> Result<Packet, String> {
+        let id = self.send(kind, body)?;
 
         let deadline = Instant::now() + timeout;
         while let Some(left) = deadline.checked_duration_since(Instant::now()) {

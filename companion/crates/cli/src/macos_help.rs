@@ -8,8 +8,12 @@ const WCH_DRIVER_URL: &str = "https://raw.githubusercontent.com/WCHSoftGroup/ch3
 /// Developer ID team of Nanjing Qinheng Microelectronics (WCH), which signs that installer.
 const WCH_TEAM: &str = "5JZGQTGU4W";
 
-/// Opens `target` on this computer: "accessibility_settings", "driver_settings" or "usb_driver".
+/// Opens `target` on this computer: "bluetooth_settings" (all platforms), or on macOS
+/// "accessibility_settings", "driver_settings" or "usb_driver".
 pub async fn open(target: &str) -> Result<String, String> {
+    if target == "bluetooth_settings" {
+        return open_bluetooth_settings();
+    }
     if !cfg!(target_os = "macos") {
         return Err("only needed on macOS".into());
     }
@@ -55,4 +59,34 @@ pub async fn open(target: &str) -> Result<String, String> {
 fn open_url(url: &str) -> Result<(), String> {
     let status = std::process::Command::new("open").arg(url).status().map_err(|e| e.to_string())?;
     if status.success() { Ok(()) } else { Err(format!("could not open {url}")) }
+}
+
+fn open_bluetooth_settings() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        knoend_focus::spawn_on_input_desktop("explorer.exe ms-settings:bluetooth")?;
+        return Ok("Opened Windows Settings > Bluetooth & devices".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        open_url("x-apple.systempreferences:com.apple.BluetoothSettings")?;
+        return Ok("Opened System Settings > Bluetooth".into());
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        for (cmd, args) in [
+            ("blueman-manager", &[][..]),
+            ("gnome-control-center", &["bluetooth"][..]),
+            ("systemsettings", &["kcm_bluetooth"][..]),
+            ("overskride", &[][..]),
+        ] {
+            if std::process::Command::new(cmd).args(args)
+                .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+                .spawn().is_ok()
+            {
+                return Ok(format!("Opened Bluetooth settings ({cmd})"));
+            }
+        }
+        Err("could not find a Bluetooth settings app; open your desktop's Bluetooth settings to pair \"KnoEnd\"".into())
+    }
 }

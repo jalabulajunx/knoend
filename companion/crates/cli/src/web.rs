@@ -244,8 +244,8 @@ struct PortRequest {
 /// Who is on this port: KnoEnd's own identity if it answers (gentle), else the chip's boot
 /// ROM (resets the board). Returns ranked board suggestions from the firmware manifest.
 async fn identify(State(app): State<App>, Json(request): Json<PortRequest>) -> ApiResult {
-    let _serial = app.shared.serial.clone().try_lock_owned()
-        .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;
+    let _serial = app.shared.acquire_serial().await
+        .map_err(|e| fail(StatusCode::CONFLICT, e))?;
     let port = knoend_flash::list_ports().into_iter().find(|p| p.name == request.port)
         .ok_or_else(|| fail(StatusCode::NOT_FOUND, format!("{} is not connected", request.port)))?;
 
@@ -278,8 +278,8 @@ struct FlashRequest {
 
 /// Starts a flashing job; progress and the result arrive as "flash" events.
 async fn flash(State(app): State<App>, Json(request): Json<FlashRequest>) -> ApiResult {
-    let guard = app.shared.serial.clone().try_lock_owned()
-        .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;
+    let guard = app.shared.acquire_serial().await
+        .map_err(|e| fail(StatusCode::CONFLICT, e))?;
     let source = app.shared.firmware_source.clone();
     let manifest = crate::firmware::manifest(&source).await
         .map_err(|e| fail(StatusCode::BAD_GATEWAY, format!("firmware list unavailable: {e}")))?;
@@ -325,8 +325,8 @@ struct ProvisionRequest {
 
 /// Pairs the board over USB and, if a network is given, hands it the Wi-Fi settings.
 async fn provision(State(app): State<App>, Json(request): Json<ProvisionRequest>) -> ApiResult {
-    let _serial = app.shared.serial.clone().try_lock_owned()
-        .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;
+    let _serial = app.shared.acquire_serial().await
+        .map_err(|e| fail(StatusCode::CONFLICT, e))?;
     let shared = app.shared.clone();
     let result = tokio::task::spawn_blocking(move || {
         let wifi = match (&request.ssid, &request.password) {
@@ -591,8 +591,8 @@ async fn wifi_change(State(app): State<App>, Json(request): Json<WifiChangeReque
     if ssid.is_empty() || ssid.len() > 32 || request.password.len() > 64 {
         return Err(fail(StatusCode::BAD_REQUEST, "a network name of 1-32 bytes (and a password up to 64) is needed"));
     }
-    let _serial = app.shared.serial.clone().try_lock_owned()
-        .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;
+    let _serial = app.shared.acquire_serial().await
+        .map_err(|e| fail(StatusCode::CONFLICT, e))?;
     let shared = app.shared.clone();
     let result = tokio::task::spawn_blocking(move || {
         let done = crate::provision::change_wifi(&request.port, &ssid, &request.password, &mut |line| shared.emit("provision", json!({"text": line})));
@@ -604,10 +604,14 @@ async fn wifi_change(State(app): State<App>, Json(request): Json<WifiChangeReque
 }
 
 async fn wifi_scan(State(app): State<App>, Json(request): Json<PortRequest>) -> ApiResult {
-    let _serial = app.shared.serial.clone().try_lock_owned()
-        .map_err(|_| fail(StatusCode::CONFLICT, "the USB port is busy with another job"))?;
+    let _serial = app.shared.acquire_serial().await
+        .map_err(|e| fail(StatusCode::CONFLICT, e))?;
     let port = request.port.clone();
-    let networks = tokio::task::spawn_blocking(move || crate::provision::scan_wifi(&port)).await
+    let networks = tokio::task::spawn_blocking(move || {
+        let done = crate::provision::scan_wifi(&port);
+        crate::service::usb_job_ended();
+        done
+    }).await
         .map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .map_err(|e| fail(StatusCode::BAD_GATEWAY, e))?;
     Ok(Json(networks))

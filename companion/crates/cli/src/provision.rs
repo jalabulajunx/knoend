@@ -74,6 +74,20 @@ pub fn probe(port: &str) -> Option<Value> {
         .ok().filter(|p| p.kind == "knoend.identity").map(|p| p.body)
 }
 
+/// Opens `port` and checks whether a board paired with this computer is on it. Returns its
+/// identity body and the open serial link so the service can use the board over USB without
+/// resetting it a second time.
+pub fn connect_paired(port: &str, pairings: &Pairings) -> Option<(Value, SerialLink)> {
+    let mut link = SerialLink::open(port).ok()?;
+    let identity = match settle(&mut link) {
+        Some(announced) => announced,
+        None => ask(&mut link, "knoend.identity", hello(pairings), "knoend.identity", Duration::from_secs(2))
+            .ok().filter(|p| p.kind == "knoend.identity").map(|p| p.body)?,
+    };
+    let id = identity["deviceId"].as_str()?;
+    pairings.boards.contains_key(id).then_some((identity, link))
+}
+
 /// Pairs the board on `port` with this computer (fresh random key), and if `wifi` is given, sends
 /// the network name and password and waits for the board to join. `log` gets progress lines;
 /// neither the key nor the password is ever passed to it.

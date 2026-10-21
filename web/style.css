@@ -511,19 +511,19 @@ code { font: .9em var(--mono); }
 .scene { grid-area: 1 / 1; width: 100%; height: 100%; opacity: 0; transition: opacity .5s var(--ease); }
 .scene * { fill: none; stroke: #ece8df; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .setup-flow[data-step="1"] .s1, .setup-flow[data-step="2"] .s2, .setup-flow[data-step="3"] .s3,
-.setup-flow[data-step="4"] .s4, .setup-flow[data-step="5"] .s5 { opacity: 1; }
+.setup-flow[data-step="4"] .s4, .setup-flow[data-step="5"] .s5, .setup-flow[data-step="6"] .s6 { opacity: 1; }
 .stage figcaption > span { display: none; }
 .setup-flow[data-step="1"] .c1, .setup-flow[data-step="2"] .c2, .setup-flow[data-step="3"] .c3,
-.setup-flow[data-step="4"] .c4, .setup-flow[data-step="5"] .c5 { display: inline; }
+.setup-flow[data-step="4"] .c4, .setup-flow[data-step="5"] .c5, .setup-flow[data-step="6"] .c6 { display: inline; }
 /* 1: the cable goes into the port on the board's edge; the screen wakes, the ° lights. */
 .stage { padding-left: 48px; }
 .usb { position: absolute; right: 100%; top: 50%; height: 12px; margin-top: -6px; display: flex; align-items: center;
   opacity: 0; transition: opacity .4s; }
 .usb .wire { width: 46px; height: 3px; border-radius: 2px; background: #8d897f; }
 .usb .head { width: 14px; height: 12px; border-radius: 2px 1px 1px 2px; background: #ece8df; }
-/* Plugged in from step 1 on: it moves in on step 1, and stays in while installing and pairing. */
+/* Plugged in from step 1 on: it moves in on step 1, and stays in while installing, configuring look, and setting Wi-Fi. */
 .setup-flow[data-step="1"] .usb, .setup-flow[data-step="2"] .usb,
-.setup-flow[data-step="3"] .usb, .setup-flow[data-step="4"] .usb { opacity: 1; }
+.setup-flow[data-step="3"] .usb, .setup-flow[data-step="4"] .usb, .setup-flow[data-step="5"] .usb { opacity: 1; }
 .setup-flow[data-step="1"] .usb { animation: plug-in 2.8s var(--ease) infinite; }
 @keyframes plug-in { 0%, 15% { transform: translateX(-26px); } 45%, 100% { transform: translateX(-1px); } }
 .s1 .wake { stroke: #3a3f44; stroke-width: 3; animation: wake 2.8s var(--ease) infinite; }
@@ -539,15 +539,16 @@ code { font: .9em var(--mono); }
 .s3 .track { stroke: #3a3f44; }
 .s3 .fill { fill: var(--signal); stroke: none; transform-origin: 20px 40px; animation: fill 2.8s var(--ease) infinite; }
 @keyframes fill { from { transform: scaleX(0); } 80%, to { transform: scaleX(1); } }
-/* 4: Wi-Fi rings, one after another. */
-.s4 .dot { fill: var(--signal); stroke: none; }
-.s4 .arc { stroke: #ece8df; opacity: .2; animation: ring 1.8s var(--ease) infinite; }
-.s4 .a2 { animation-delay: .3s; } .s4 .a3 { animation-delay: .6s; }
-@keyframes ring { 30% { opacity: 1; stroke: var(--signal); } 70% { opacity: .2; } }
-/* 5: keys appear. */
-.s5 rect { stroke: #ece8df; animation: key 2.4s var(--ease) infinite; }
-.s5 rect:nth-child(3n+2) { animation-delay: .15s; } .s5 rect:nth-child(3n) { animation-delay: .3s; }
+/* 4: keys appear. */
+.s4 rect { stroke: #ece8df; animation: key 2.4s var(--ease) infinite; }
+.s4 rect:nth-child(3n+2) { animation-delay: .15s; } .s4 rect:nth-child(3n) { animation-delay: .3s; }
 @keyframes key { 0%, 10% { opacity: .15; } 40%, 100% { opacity: 1; } }
+/* 5 & 6: Wi-Fi and Bluetooth rings. */
+.s5 .dot { fill: var(--signal); stroke: none; }
+.s5 .arc, .s6 .arc { stroke: #ece8df; opacity: .2; animation: ring 1.8s var(--ease) infinite; }
+.s5 .a2, .s6 .a2 { animation-delay: .3s; } .s5 .a3 { animation-delay: .6s; }
+.s6 .bt { stroke: var(--signal); }
+@keyframes ring { 30% { opacity: 1; stroke: var(--signal); } 70% { opacity: .2; } }
 .flow-main { min-width: 0; }
 .flow-main .card.step { padding-top: 0; border-top: 0; }
 .flow-main .card.step h2 { font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.03em; font-weight: 600; margin-bottom: 14px; }

@@ -64,8 +64,10 @@
             <dt>Address</dt><dd id="f-address"></dd>
             <dt>ID</dt><dd id="f-id"></dd>
           </dl>
-          <p class="actions left"><button type="button" id="change-wifi" class="secondary small-button">Change Wi-Fi</button>
-            <span class="muted small">New router, new password or another place: over the USB cable, keeps pairing and settings.</span></p>
+          <p class="actions left">
+            <button type="button" id="change-wifi" class="secondary small-button">Change Wi-Fi</button>
+            <button type="button" id="dashboard-bluetooth" class="secondary small-button">Bluetooth settings</button>
+            <span class="muted small">The board works over USB, 2.4 GHz Wi-Fi, and Bluetooth ("KnoEnd" keyboard).</span></p>
         </article>
         <article class="card look">
           <h2>Look</h2>
@@ -186,7 +188,7 @@
         <ul class="needs" aria-label="What you need">
           <li><span>01</span>An ESP32-S3 touch board</li>
           <li><span>02</span>A USB cable that carries data</li>
-          <li><span>03</span>Your Wi-Fi name and password <em>2.4 GHz</em></li>
+          <li><span>03</span>Optional: Wi-Fi <em>2.4 GHz</em> or Bluetooth</li>
         </ul>
       </header>
       <article class="card" id="mode-card">
@@ -243,10 +245,11 @@
         <li data-step="1" class="current">Find the board</li>
         <li data-step="2">Choose firmware</li>
         <li data-step="3">Install</li>
-        <li data-step="4" id="step4-name">Pair and Wi-Fi</li>
-        <li data-step="5" id="step5-name">Keys and look</li>
+        <li data-step="4" id="step4-name">Keys and look</li>
+        <li data-step="5" id="step5-name">Wi-Fi (optional)</li>
+        <li data-step="6" id="step6-name">Bluetooth (optional)</li>
       </ol>
-      <!-- The board, acting out the step: plug in, the chip, installing, joining Wi-Fi. -->
+      <!-- The board, acting out the step: plug in, the chip, installing, look, Wi-Fi, Bluetooth. -->
       <figure class="stage" aria-hidden="true">
         <div class="device small-device">
           <span class="port"></span>
@@ -256,16 +259,18 @@
             <svg class="scene s1" viewBox="0 0 120 80"><circle class="wake" cx="60" cy="38" r="9"/><text class="ready" x="60" y="66">READY</text></svg>
             <svg class="scene s2" viewBox="0 0 120 80"><rect class="chip" x="38" y="18" width="44" height="44" rx="4"/><path class="pins" d="M46 12v6M56 12v6M66 12v6M76 12v6M46 62v6M56 62v6M66 62v6M76 62v6M32 26h6M32 36h6M32 46h6M32 56h6M82 26h6M82 36h6M82 46h6M82 56h6"/><text x="60" y="44">S3</text></svg>
             <svg class="scene s3" viewBox="0 0 120 80"><rect class="track" x="20" y="36" width="80" height="8" rx="4"/><rect class="fill" x="20" y="36" width="80" height="8" rx="4"/></svg>
-            <svg class="scene s4" viewBox="0 0 120 80"><circle class="dot" cx="60" cy="58" r="4"/><path class="arc a1" d="M48 48 a17 17 0 0 1 24 0"/><path class="arc a2" d="M40 40 a28 28 0 0 1 40 0"/><path class="arc a3" d="M32 32 a39 39 0 0 1 56 0"/></svg>
-            <svg class="scene s5" viewBox="0 0 120 80"><g class="grid9"><rect x="22" y="12" width="22" height="16" rx="3"/><rect x="49" y="12" width="22" height="16" rx="3"/><rect x="76" y="12" width="22" height="16" rx="3"/><rect x="22" y="32" width="22" height="16" rx="3"/><rect x="49" y="32" width="22" height="16" rx="3"/><rect x="76" y="32" width="22" height="16" rx="3"/><rect x="22" y="52" width="22" height="16" rx="3"/><rect x="49" y="52" width="22" height="16" rx="3"/><rect x="76" y="52" width="22" height="16" rx="3"/></g></svg>
+            <svg class="scene s4" viewBox="0 0 120 80"><g class="grid9"><rect x="22" y="12" width="22" height="16" rx="3"/><rect x="49" y="12" width="22" height="16" rx="3"/><rect x="76" y="12" width="22" height="16" rx="3"/><rect x="22" y="32" width="22" height="16" rx="3"/><rect x="49" y="32" width="22" height="16" rx="3"/><rect x="76" y="32" width="22" height="16" rx="3"/><rect x="22" y="52" width="22" height="16" rx="3"/><rect x="49" y="52" width="22" height="16" rx="3"/><rect x="76" y="52" width="22" height="16" rx="3"/></g></svg>
+            <svg class="scene s5" viewBox="0 0 120 80"><circle class="dot" cx="60" cy="58" r="4"/><path class="arc a1" d="M48 48 a17 17 0 0 1 24 0"/><path class="arc a2" d="M40 40 a28 28 0 0 1 40 0"/><path class="arc a3" d="M32 32 a39 39 0 0 1 56 0"/></svg>
+            <svg class="scene s6" viewBox="0 0 120 80"><path class="bt" d="M48 26 L72 50 L60 62 V18 L72 30 L48 54"/><path class="arc a1" d="M78 30 a16 16 0 0 1 0 20"/><path class="arc a2" d="M84 24 a26 26 0 0 1 0 32"/></svg>
           </div>
         </div>
         <figcaption>
           <span class="c1"><span class="fig">Fig. 02</span> Plug it in with a data cable</span>
           <span class="c2"><span class="fig">Fig. 03</span> One image for every ESP32-S3 board</span>
           <span class="c3"><span class="fig">Fig. 04</span> Writing the firmware</span>
-          <span class="c4"><span class="fig">Fig. 05</span> A key of its own, then Wi-Fi</span>
-          <span class="c5"><span class="fig">Fig. 06</span> Your keys, your look</span>
+          <span class="c4"><span class="fig">Fig. 05</span> Your keys, your look (over USB)</span>
+          <span class="c5"><span class="fig">Fig. 06</span> Optional: wireless over 2.4 GHz Wi-Fi</span>
+          <span class="c6"><span class="fig">Fig. 07</span> Optional: Bluetooth keyboard ("KnoEnd")</span>
         </figcaption>
       </figure>
       </aside>
@@ -290,6 +295,7 @@
         <p class="muted small">Firmware source: <span id="fw-source"></span></p>
         <div class="actions">
           <button class="secondary" data-back="1">Back</button>
+          <button type="button" id="skip-install" class="secondary" hidden>Skip install (already installed)</button>
           <button id="install" class="primary" disabled>Install</button>
         </div>
       </article>
@@ -301,36 +307,15 @@
         <ol id="flash-log" class="log compact"></ol>
         <div class="actions">
           <button class="secondary" data-back="2" id="flash-back" hidden>Back</button>
-          <button id="to-pair" class="primary" disabled>Next</button>
+          <button id="to-pair" class="primary" disabled>Next: keys and look</button>
         </div>
       </article>
 
       <article class="card step" data-step="4" hidden>
-        <h2 id="step4-title">Pair and Wi-Fi</h2>
-        <p id="step4-intro">The board and this computer agree on a secret key over the cable. Wi-Fi lets the board work away from the desk; your password goes to the board over the cable only and is not stored here.</p>
-        <form id="pair-form" autocomplete="off">
-          <div class="row-head"><strong>Wi-Fi network</strong>
-            <button type="button" id="scan-wifi" class="secondary small-button">Find networks</button></div>
-          <p id="wifi-note" class="muted small">The board looks for networks itself. It hears 2.4 GHz only: a network that is 5 GHz only will not appear.</p>
-          <ul id="networks" class="networks" aria-label="Wi-Fi networks"></ul>
-          <label id="ssid-wrap" hidden>Network name
-            <input id="ssid" name="ssid" maxlength="32" placeholder="as written on the router"></label>
-          <label id="password-wrap">Password
-            <input id="password" name="password" type="password" maxlength="64"></label>
-          <div class="actions">
-            <button type="button" class="secondary" id="step4-back" data-back="3">Back</button>
-            <button type="submit" class="primary" id="step4-submit">Pair</button>
-          </div>
-        </form>
-        <ol id="pair-log" class="log compact"></ol>
-        <p id="pair-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
-      </article>
-
-      <article class="card step" data-step="5" hidden>
         <div class="grid2 look-setup">
           <div>
             <h2>How big should the keys be?</h2>
-            <p>Every page on the board uses this grid. An app's keys fill it in order; any that do not fit go on further pages you swipe through, so nothing is lost.</p>
+            <p>The board is connected over USB right now. Every page on the board uses this grid; an app's keys fill it in order, and any that do not fit go on further pages you swipe through.</p>
             <ul class="choices" id="key-size-setup"></ul>
             <h3>How should the screen look?</h3>
             <ul class="choices" id="theme-setup"></ul>
@@ -348,12 +333,59 @@
           </div>
           <div>
             <h3>Preview</h3>
-            <p class="muted small">Each choice shows here and on the board at once. You can change them any time on the dashboard.</p>
+            <p class="muted small">Each choice shows here and on the board at once over USB (or Wi-Fi). You can change them any time on the dashboard.</p>
             <div id="setup-preview" class="screen" aria-label="Preview of the board"></div>
           </div>
         </div>
-        <div class="actions"><button type="button" class="primary" id="key-size-save">Done</button></div>
-        <p id="setup-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
+        <div class="actions">
+          <button type="button" class="secondary" data-back="2">Back</button>
+          <button type="button" class="secondary" id="key-size-save">Finish (use over USB)</button>
+          <button type="button" class="secondary" id="to-bluetooth">Skip to Bluetooth (optional)</button>
+          <button type="button" class="primary" id="to-wifi">Next: Wi-Fi (optional)</button>
+        </div>
+        <p id="setup-done" class="success" hidden>All set over USB. The board is ready to use on the dashboard, or you can set up Wi-Fi or Bluetooth any time. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
+      </article>
+
+      <article class="card step" data-step="5" hidden>
+        <h2 id="step5-title">Wi-Fi (optional)</h2>
+        <p id="step5-intro">Wi-Fi lets the board work wirelessly anywhere on your 2.4 GHz network, away from the USB cable. Your password goes to the board over the USB cable only and is never stored here. If you keep the board plugged into this computer over USB, you can skip this step.</p>
+        <form id="pair-form" autocomplete="off">
+          <div class="row-head"><strong>Wi-Fi network</strong>
+            <button type="button" id="scan-wifi" class="secondary small-button">Find networks</button></div>
+          <p id="wifi-note" class="muted small">The board looks for networks itself. It hears 2.4 GHz only: a network that is 5 GHz only will not appear.</p>
+          <ul id="networks" class="networks" aria-label="Wi-Fi networks"></ul>
+          <label id="ssid-wrap" hidden>Network name
+            <input id="ssid" name="ssid" maxlength="32" placeholder="as written on the router"></label>
+          <label id="password-wrap">Password
+            <input id="password" name="password" type="password" maxlength="64"></label>
+          <div class="actions">
+            <button type="button" class="secondary" id="step5-back" data-back="4">Back</button>
+            <button type="button" class="secondary" id="skip-wifi">Skip Wi-Fi</button>
+            <button type="submit" class="primary" id="step5-submit">Join Wi-Fi</button>
+          </div>
+        </form>
+        <ol id="pair-log" class="log compact"></ol>
+        <p id="pair-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
+      </article>
+
+      <article class="card step" data-step="6" hidden>
+        <h2>Bluetooth (optional)</h2>
+        <p>The board also advertises as a Bluetooth Low Energy keyboard named <strong>KnoEnd</strong>.</p>
+        <ul class="small">
+          <li><strong>With Bluetooth paired:</strong> the board types keyboard shortcuts directly into this computer (or a tablet or phone) over Bluetooth.</li>
+          <li><strong>Without Bluetooth:</strong> this computer's KnoEnd companion types keyboard shortcuts for the board whenever it is connected over USB or Wi-Fi.</li>
+        </ul>
+        <ol class="small">
+          <li>Open this computer's Bluetooth settings.</li>
+          <li>Choose to add or pair a new device, then pick <strong>KnoEnd</strong>.</li>
+        </ol>
+        <p id="bluetooth-status" class="note" hidden></p>
+        <div class="actions">
+          <button type="button" class="secondary" data-back="5">Back</button>
+          <button type="button" class="secondary" id="open-bluetooth">Open Bluetooth settings</button>
+          <button type="button" class="primary" id="bluetooth-done-btn">Done</button>
+        </div>
+        <p id="bluetooth-done" class="success" hidden>All set. Your board is ready to use. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
       </article>
       </div>
       </div>

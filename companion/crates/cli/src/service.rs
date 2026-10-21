@@ -107,8 +107,10 @@ pub struct Status {
 pub struct Shared {
     pub status: RwLock<Status>,
     pub events: broadcast::Sender<Value>,
-    /// Held while a flash or provisioning job owns the USB serial port.
+    /// Held while a flash, provisioning, or live USB session owns the USB serial port.
     pub serial: Arc<tokio::sync::Mutex<()>>,
+    /// Signals a live USB serial session to release the port so a setup job can use it.
+    serial_preempt: std::sync::atomic::AtomicBool,
     pub firmware_source: String,
     /// Types keystrokes for a board that cannot (no Bluetooth host); connected on first use.
     typist: Arc<std::sync::Mutex<Option<knoend_input::Typist>>>,
@@ -127,12 +129,24 @@ pub struct Shared {
 impl Shared {
     pub fn new(firmware_source: String) -> Arc<Shared> {
         let (events, _) = broadcast::channel(256);
-        Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())), firmware_source,
+        Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())),
+                          serial_preempt: std::sync::atomic::AtomicBool::new(false), firmware_source,
                           typist: Arc::new(std::sync::Mutex::new(None)),
                           browser: Arc::new(crate::browser::Browser::default()),
                           media: knoend_media::Players::connect().ok().map(Arc::new),
                           inbox: std::sync::OnceLock::new(), edit: std::sync::Mutex::new(None),
                           viewers: std::sync::atomic::AtomicUsize::new(0) })
+    }
+
+    /// Acquires the USB serial lock for a setup job, asking any live USB board session to step aside first.
+    pub async fn acquire_serial(self: &Arc<Self>) -> Result<tokio::sync::OwnedMutexGuard<()>, String> {
+        if let Ok(guard) = self.serial.clone().try_lock_owned() {
+            return Ok(guard);
+        }
+        self.serial_preempt.store(true, std::sync::atomic::Ordering::SeqCst);
+        let result = tokio::time::timeout(Duration::from_secs(2), self.serial.clone().lock_owned()).await;
+        self.serial_preempt.store(false, std::sync::atomic::Ordering::SeqCst);
+        result.map_err(|_| "the USB port is busy with another job".to_string())
     }
 
     /// Publishes an event to the web app and prints it for the terminal.
@@ -377,7 +391,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             continue;
         }
         shared.update(|s| s.link = "searching".into()).await;
-        let (mut board, mut sender) = match connect(&pairings, events.clone()).await {
+        let (mut board, mut sender) = match connect(&pairings, &shared, events.clone()).await {
             Ok(link) => link,
             Err(e) => {
                 say!("{e}; retrying in 5 s");
@@ -396,7 +410,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             }
         };
         missing_since = None;
-        shared.emit("log", json!({"text": format!("Connected to board {} over Wi-Fi", board.id)}));
+        let transport = if board.address.starts_with("USB") { &board.address } else { "Wi-Fi" };
+        shared.emit("log", json!({"text": format!("Connected to board {} over {transport}", board.id)}));
         let board_status = board.clone();
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
@@ -978,44 +993,166 @@ fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
     });
 }
 
-async fn connect(pairings: &Pairings, events: mpsc::Sender<Event>) -> Result<(BoardStatus, wifi::WifiSender), String> {
+enum BoardSender {
+    Wifi(wifi::WifiSender),
+    Serial(mpsc::Sender<(String, Value)>),
+}
+
+impl BoardSender {
+    async fn send(&mut self, kind: &str, body: Value) -> Result<u32, String> {
+        match self {
+            BoardSender::Wifi(w) => w.send(kind, body).await.map_err(|e| e.to_string()),
+            BoardSender::Serial(tx) => {
+                tx.send((kind.to_string(), body)).await.map_err(|_| "USB serial link closed".to_string())?;
+                Ok(0)
+            }
+        }
+    }
+}
+
+/// Last USB port scan that had no paired board, so `connect` does not repeatedly open and reset an
+/// unpaired USB device when no paired board is on Wi-Fi.
+static UNPAIRED_USB_SCAN: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+async fn connect(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender<Event>) -> Result<(BoardStatus, BoardSender), String> {
     let wanted: Vec<String> = pairings.boards.keys().cloned().collect();
     let first = (wanted.len() == 1).then(|| wanted[0].clone());
-    let found = tokio::task::spawn_blocking(move || discover::discover(Duration::from_secs(10), first.as_deref()))
-        .await.map_err(|e| e.to_string())??;
-    let board = found.into_iter().find(|b| wanted.contains(&b.device_id))
-        .ok_or("no paired board found on the network")?;
-    let key = pairings.key_for(&board.device_id).ok_or("stored key is not valid hex")?;
-    let (sender, mut receiver) = wifi::connect((board.address, board.port).into(), &board.device_id, &pairings.companion, key, board.old_names)
-        .await.map_err(|e| e.to_string())?;
+    let has_usb = !knoend_flash::list_ports().is_empty();
+    let wifi_wait = if has_usb { Duration::from_secs(3) } else { Duration::from_secs(10) };
+    let wanted_wifi = wanted.clone();
+    let wifi_found = tokio::task::spawn_blocking(move || discover::discover(wifi_wait, first.as_deref()))
+        .await.map_err(|e| e.to_string())
+        .and_then(|r| r.map_err(|e| e.to_string()))
+        .ok()
+        .and_then(|found| found.into_iter().find(|b| wanted_wifi.contains(&b.device_id)));
 
-    let identity = receiver.recv().await.map_err(|e| e.to_string())?;
-    let status = BoardStatus {
-        id: board.device_id.clone(),
-        profile: identity.body["board"]["profile"].as_str().unwrap_or("?").to_string(),
-        firmware: identity.body["firmware"].as_str().unwrap_or("?").to_string(),
-        address: board.address.to_string(),
-        grid: identity_grid(&identity.body),
-        display: identity.body["board"].get("display").cloned(),
-        fonts: identity.body["board"].get("fonts").cloned(),
-        last_start: identity.body["lastStart"].as_str().map(str::to_string),
-    };
-    tokio::spawn(async move {
-        loop {
-            match receiver.recv().await {
-                Ok(packet) => {
-                    if events.send(Event::Board(packet)).await.is_err() {
-                        return;
+    if let Some(board) = wifi_found {
+        let key = pairings.key_for(&board.device_id).ok_or("stored key is not valid hex")?;
+        if let Ok((sender, mut receiver)) = wifi::connect((board.address, board.port).into(), &board.device_id, &pairings.companion, key, board.old_names).await {
+            if let Ok(identity) = receiver.recv().await {
+                let status = BoardStatus {
+                    id: board.device_id.clone(),
+                    profile: identity.body["board"]["profile"].as_str().unwrap_or("?").to_string(),
+                    firmware: identity.body["firmware"].as_str().unwrap_or("?").to_string(),
+                    address: board.address.to_string(),
+                    grid: identity_grid(&identity.body),
+                    display: identity.body["board"].get("display").cloned(),
+                    fonts: identity.body["board"].get("fonts").cloned(),
+                    last_start: identity.body["lastStart"].as_str().map(str::to_string),
+                };
+                tokio::spawn(async move {
+                    loop {
+                        match receiver.recv().await {
+                            Ok(packet) => {
+                                if events.send(Event::Board(packet)).await.is_err() {
+                                    return;
+                                }
+                            }
+                            Err(e) => {
+                                let _ = events.send(Event::LinkDown(e.to_string())).await;
+                                return;
+                            }
+                        }
                     }
-                }
-                Err(e) => {
-                    let _ = events.send(Event::LinkDown(e.to_string())).await;
+                });
+                return Ok((status, BoardSender::Wifi(sender)));
+            }
+        }
+    }
+
+    if let Some(serial_link) = connect_serial(pairings, shared, events).await {
+        return Ok(serial_link);
+    }
+    Err("no paired board found on Wi-Fi or USB".into())
+}
+
+/// Checks connected USB serial ports for a board paired with this computer and opens a live serial
+/// session if found. Skips probing when a setup job owns the USB lock or when the same ports and
+/// pairings were already checked and had no paired board.
+async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender<Event>) -> Option<(BoardStatus, BoardSender)> {
+    let guard = shared.serial.clone().try_lock_owned().ok()?;
+    let ports = knoend_flash::list_ports();
+    if ports.is_empty() {
+        return None;
+    }
+    let job_stamp = USB_JOB_ENDED.lock().ok().and_then(|t| *t).map(|t| format!("{t:?}")).unwrap_or_default();
+    let mut board_ids: Vec<&str> = pairings.boards.keys().map(String::as_str).collect();
+    board_ids.sort_unstable();
+    let scan_key = format!("{:?}|{:?}|{job_stamp}", ports.iter().map(|p| &p.name).collect::<Vec<_>>(), board_ids);
+    if UNPAIRED_USB_SCAN.lock().ok().and_then(|s| s.clone()).as_deref() == Some(scan_key.as_str()) {
+        return None;
+    }
+    let pairings_clone = Pairings::load();
+    let shared_check = shared.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        for p in ports {
+            if shared_check.serial_preempt.load(std::sync::atomic::Ordering::SeqCst) {
+                return None;
+            }
+            if let Some((identity, link)) = crate::provision::connect_paired(&p.name, &pairings_clone) {
+                return Some((p.name, identity, link));
+            }
+        }
+        None
+    }).await.ok().flatten();
+
+    let Some((port_name, identity, mut link)) = found else {
+        if let Ok(mut last) = UNPAIRED_USB_SCAN.lock() {
+            *last = Some(scan_key);
+        }
+        return None;
+    };
+    if let Ok(mut last) = UNPAIRED_USB_SCAN.lock() {
+        *last = None;
+    }
+    let id = identity["deviceId"].as_str().unwrap_or("?").to_string();
+    let status = BoardStatus {
+        id,
+        profile: identity["board"]["profile"].as_str().unwrap_or("?").to_string(),
+        firmware: identity["firmware"].as_str().unwrap_or("?").to_string(),
+        address: format!("USB ({port_name})"),
+        grid: identity_grid(&identity),
+        display: identity["board"].get("display").cloned(),
+        fonts: identity["board"].get("fonts").cloned(),
+        last_start: identity["lastStart"].as_str().map(str::to_string),
+    };
+    let (tx, mut rx) = mpsc::channel::<(String, Value)>(64);
+    let shared_loop = shared.clone();
+    std::thread::spawn(move || {
+        let _guard = guard;
+        loop {
+            if shared_loop.serial_preempt.load(std::sync::atomic::Ordering::SeqCst) {
+                let _ = events.blocking_send(Event::LinkDown("USB port needed for setup".into()));
+                return;
+            }
+            while let Ok((kind, body)) = rx.try_recv() {
+                if let Err(e) = link.send(&kind, body) {
+                    let _ = events.blocking_send(Event::LinkDown(e));
                     return;
+                }
+            }
+            if let Some(line) = link.read_line(Duration::from_millis(40)) {
+                if line.starts_with('{') {
+                    if let Ok(mut packet) = serde_json::from_str::<Packet>(&line) {
+                        packet.kind = knoend_core::protocol::current_name(&packet.kind);
+                        if events.blocking_send(Event::Board(packet)).is_err() {
+                            return;
+                        }
+                    }
+                } else if !line.trim().is_empty() {
+                    let trim = line.trim();
+                    if trim.starts_with("BLE ") || trim.starts_with("WIFI ") || trim.starts_with("KEY ")
+                        || trim.starts_with("READY ") || trim.starts_with("BOARD ")
+                        || trim.starts_with("E (") || trim.starts_with("W (")
+                        || trim.contains("panic") || trim.contains("rst:")
+                    {
+                        say!("Board: {trim}");
+                    }
                 }
             }
         }
     });
-    Ok((status, sender))
+    Some((status, BoardSender::Serial(tx)))
 }
 
 /// The largest grid a board says it draws (`board.grid` in its identity), 3x3 if it says nothing usable.
@@ -1032,7 +1169,7 @@ fn identity_grid(identity: &Value) -> Grid {
 /// media player, its play/pause key and the status bar follow what it plays. Sends nothing when the
 /// board already shows exactly this.
 #[allow(clippy::too_many_arguments)]
-async fn show(sender: &mut wifi::WifiSender, catalog: &Catalog, focus: &Focus, players: &[NowPlaying],
+async fn show(sender: &mut BoardSender, catalog: &Catalog, focus: &Focus, players: &[NowPlaying],
               shown: &mut Option<String>, shown_actions: &mut HashMap<u8, KeyRef>, paging: &mut Paging, calling: Option<&Calling>, shared: &Shared) {
     if shown.as_deref().is_some_and(|s| s.starts_with(APPROVE_SIGNATURE)) {
         return; // a permission request is on the board; it stays until answered
@@ -1207,7 +1344,7 @@ const LAUNCHER: &str = "system.launcher";
 /// The launcher: the most used and recent apps and sites, with their own icons (sent to the board
 /// first, once per connection), or a hint while there is no history yet.
 #[allow(clippy::too_many_arguments)]
-async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::Usage, apps: &[crate::launcher::AppInfo],
+async fn show_launcher(sender: &mut BoardSender, usage: &crate::launcher::Usage, apps: &[crate::launcher::AppInfo],
                        favicons: &HashMap<String, Vec<u8>>, sent_images: &mut HashSet<String>,
                        targets: &mut HashMap<u8, crate::launcher::Target>, paging: &mut Paging, shown: &mut Option<String>,
                        calling: Option<&Calling>, shared: &Shared) {
@@ -1268,7 +1405,7 @@ async fn show_launcher(sender: &mut wifi::WifiSender, usage: &crate::launcher::U
 /// Edit mode: the board shows the library being edited, whatever is focused. Every key only
 /// reports its tap (it selects the key in the web app; nothing is typed or asked twice). False when
 /// not editing.
-async fn show_edit(sender: &mut wifi::WifiSender, paging: &mut Paging, shown: &mut Option<String>, shared: &Shared) -> bool {
+async fn show_edit(sender: &mut BoardSender, paging: &mut Paging, shown: &mut Option<String>, shared: &Shared) -> bool {
     let Some((library, dirty)) = shared.edit.lock().ok().and_then(|e| e.as_ref().map(|e| (e.library.clone(), e.dirty()))) else {
         return false;
     };
@@ -1484,7 +1621,7 @@ fn fetch_fonts(board: &BoardStatus, wanted: &crate::display::Display, events: &m
 }
 
 /// Sends a font to the board in slices that fit a packet (spec/protocol.md 3.6e).
-async fn send_font(sender: &mut wifi::WifiSender, slot: &str, family: &str, bytes: &[u8]) {
+async fn send_font(sender: &mut BoardSender, slot: &str, family: &str, bytes: &[u8]) {
     use base64::Engine;
     let crc = crate::fonts::crc32(bytes);
     for (i, chunk) in bytes.chunks(2048).enumerate() {
@@ -1498,7 +1635,7 @@ async fn send_font(sender: &mut wifi::WifiSender, slot: &str, family: &str, byte
 }
 
 /// True when it asked (an answer or an error follows).
-async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &crate::display::Display) -> bool {
+async fn send_look(sender: &mut BoardSender, board: &BoardStatus, wanted: &crate::display::Display) -> bool {
     let identity = json!({"board": {"display": board.display}});
     match wanted.shown_by(&identity) {
         Some(true) => false,
@@ -1523,7 +1660,7 @@ async fn send_look(sender: &mut wifi::WifiSender, board: &BoardStatus, wanted: &
 
 /// Sends a 32x32 RGBA picture to the board in slices that fit a packet. False if the board
 /// refused the first slice (a board without picture support ignores the rest).
-async fn send_image(sender: &mut wifi::WifiSender, name: &str, rgba: &[u8]) -> bool {
+async fn send_image(sender: &mut BoardSender, name: &str, rgba: &[u8]) -> bool {
     use base64::Engine;
     let mut rgba = rgba.to_vec();
     if let Ok(theme) = PICTURE_THEME.lock() {
@@ -1777,7 +1914,7 @@ impl Approval {
 /// Shows a request on the board from its recipe: a permission request (Allow, Always when the
 /// agent offers it, Deny, Stop) or a question (its options, Done for several-choice, Decline),
 /// with the explanation in the panel between the rows.
-async fn show_approval(sender: &mut wifi::WifiSender, approval: &Approval, catalog: &Catalog, shown: &mut Option<String>, shared: &Shared) {
+async fn show_approval(sender: &mut BoardSender, approval: &Approval, catalog: &Catalog, shown: &mut Option<String>, shared: &Shared) {
     let screen = approval.screen(catalog);
     let question = approval.questions.get(approval.step);
     let keys: Vec<LayoutKey> = agent_keys(&screen, approval).into_iter().map(|k| {
@@ -1846,7 +1983,7 @@ fn answering_text(app: &str, questions: &[crate::agent_hooks::Question]) -> Stri
 }
 
 /// The board while the person answers on the computer: what is happening, and "Answer here".
-async fn show_answering(sender: &mut wifi::WifiSender, approval: &Approval, focus: &Focus, shown: &mut Option<String>, shared: &Shared) {
+async fn show_answering(sender: &mut BoardSender, approval: &Approval, focus: &Focus, shown: &mut Option<String>, shared: &Shared) {
     let app = focus.display_name().to_string();
     let detail = answering_text(&app, &approval.questions);
     let keys = vec![LayoutKey { key: ANSWER_HERE_SLOT, label: "Answer here".into(), speak: Some("Answer the questions here".into()),
@@ -1968,7 +2105,7 @@ fn unsupported_layout(focus: &Focus, paging: &mut Paging) -> LayoutBody {
 
 /// Handles a packet from the board; returns the app to configure when Configure was tapped.
 async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: &HashMap<u8, KeyRef>, players: &[NowPlaying],
-                         sender: &mut wifi::WifiSender, shared: &Arc<Shared>) -> Option<Focus> {
+                         sender: &mut BoardSender, shared: &Arc<Shared>) -> Option<Focus> {
     match packet.kind.as_str() {
         "knoend.layout.ack" if packet.body["ok"] != true => say!("  board rejected layout: {}", packet.body),
         "knoend.error" => problem!("board-error", "The board answered with an error: {}", packet.body),

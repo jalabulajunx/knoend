@@ -19,9 +19,12 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("identify", "ask the board on the chosen port what it is; restarts it briefly"),
     ("install", "install the firmware, keeping the board's Wi-Fi, pairing and settings"),
     ("install_erase", "erase the board first, then install: removes Wi-Fi, pairing and settings"),
-    ("pair", "pair the board with this computer over USB and give it Wi-Fi"),
+    ("pair", "pair the board with this computer over USB and optionally give it 2.4 GHz Wi-Fi"),
+    ("look_settings", "open the Keys and look step to configure key size, look (theme), orientation and fonts over USB or Wi-Fi"),
     ("change_wifi", "move a board that is already set up to another network over USB, keeping its pairing: for a new \
                      router, a changed password or another place"),
+    ("open_bluetooth_settings", "open this computer's Bluetooth settings to pair the board as the \"KnoEnd\" Bluetooth \
+                                 Low Energy keyboard (optional; the companion also types shortcuts over USB or Wi-Fi)"),
     ("dashboard", "go to the dashboard"),
     ("open_accessibility_settings", "macOS only: opens Privacy & Security > Accessibility, where the person switches on \
                                      the app named in system_checks.accessibility.app_to_allow"),
@@ -321,8 +324,11 @@ mod tests {
     fn change_wifi_is_offered_for_a_moved_board() {
         let prompt = system_prompt();
         assert!(prompt.contains("\"change_wifi\""));
+        assert!(prompt.contains("\"open_bluetooth_settings\""));
+        assert!(prompt.contains("\"look_settings\""));
         assert!(prompt.contains("router changed"), "the knowledge entry is in the prompt");
-        assert_eq!(parse(r#"{"answer": "Plug it in.", "actions": ["change_wifi"]}"#).actions, vec!["change_wifi"]);
+        assert_eq!(parse(r#"{"answer": "Plug it in.", "actions": ["change_wifi", "open_bluetooth_settings", "look_settings"]}"#).actions,
+                   vec!["change_wifi", "open_bluetooth_settings", "look_settings"]);
     }
 
     #[test]

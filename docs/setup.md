@@ -12,8 +12,10 @@ Mac, use v0.1.1 or later: v0.1.0 cannot follow the focused app and fails with ne
 
 - A supported ESP32-S3 touch board (see [Boards](#boards)) and a USB-C **data** cable. Many
   cables only charge.
-- 2.4 GHz Wi-Fi if you want the board to work away from the computer. The ESP32-S3 cannot join
-  5 GHz networks.
+- Optional: 2.4 GHz Wi-Fi if you want the board to work wirelessly away from the computer (the
+  ESP32-S3 cannot join 5 GHz networks), and/or Bluetooth if you want the board to type keyboard
+  shortcuts directly as the `"KnoEnd"` Bluetooth Low Energy keyboard. While plugged into the
+  computer over USB, the board works over USB serial without requiring Wi-Fi or Bluetooth.
 - Optional: an API key for an AI provider (Gemini, OpenAI, Anthropic or OpenRouter), a local model
   through Ollama, or Claude Code / Antigravity CLI / Codex CLI already signed in on this computer.
   The AI is used for the setup assistant and to draft layouts for apps and sites that have none.
@@ -100,18 +102,26 @@ then walks you through the setup:
 2. **Find the board.** Plug it in. The service lists the USB serial ports and identifies the chip.
    - Identifying can restart the board; that is normal.
 3. **Choose firmware.** The service suggests the most likely board. A board marked **Unverified**
-   has a definition written from the maker's documentation that nobody has tested yet.
-4. **Install.** Every part is checked against the manifest's checksums before it is written.
+   has a definition written from the maker's documentation that nobody has tested yet. If the board
+   already runs KnoEnd, you can click **Skip install** to pair over USB and go straight to
+   **Keys and look**.
+4. **Install.** Every part is checked against the manifest's checksums before it is written, and the
+   board is paired with this computer over USB right after installing.
    - Only erase if the board ran other firmware or misbehaves. Erasing removes its Wi-Fi settings
      and pairing.
-5. **Pair and Wi-Fi.** The board scans for networks; pick yours and type the password.
+5. **Keys and look.** Choose your key size (`2x2`, `3x3` or `4x4`), look (`Dark`, `White` or
+   `Sepia`), orientation (`Landscape` or `Portrait`) and optional Google Fonts immediately over USB.
+   You can finish here if you use the board over USB, or continue to the optional wireless steps.
+6. **Wi-Fi (optional).** The board scans for 2.4 GHz networks; pick yours and type the password (or
+   click **Skip Wi-Fi** to keep using USB).
    - The password goes only to the board over USB.
-   - The board and the computer exchange a pairing key. After that, every Wi-Fi message is
-     authenticated.
-6. **Dashboard.** Shows the connection, the focused app, and recent activity.
-
-You can now unplug the board from the computer and power it from any USB charger on the same
-network. The service finds it by mDNS.
+   - Once on Wi-Fi, you can unplug the board from the computer and power it from any USB charger on
+     the same network; the service finds it by mDNS.
+7. **Bluetooth (optional).** Pair the board as the **KnoEnd** Bluetooth Low Energy keyboard in your
+   computer's Bluetooth settings (the **Open Bluetooth settings** button opens the right page on
+   Windows, macOS and Linux). Even without Bluetooth, the companion types shortcuts for the board
+   whenever it is connected over USB or Wi-Fi.
+8. **Dashboard.** Shows the connection (`Wi-Fi` or `USB`), the focused app, and recent activity.
 
 ### Keep it running
 
