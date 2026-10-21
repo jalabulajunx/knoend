@@ -22,6 +22,7 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
     let shown = board.as_ref().and_then(|b| b.display.clone());
     let can_look = shown.is_some();
     let can_font = board.as_ref().is_some_and(|b| b.fonts.is_some());
+    let can_listen = board.as_ref().is_some_and(|b| b.mic);
     vec![
         describe("key_size", "Key size",
                  "The grid every page of keys on the board uses. A layout's keys fill it in order; the rest go on further \
@@ -55,6 +56,13 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
                         it at the new size at once, for 2 seconds, as a preview.",
                        d.start_size.into(), 24, 96,
                        if can_look { "at once, on the board (a 2-second preview)" } else { "after the board's firmware is updated" }),
+        signed_setting("listen_quiet", "Listening: quiet below",
+                       "While the board listens for notes (a Listen key), sounds quieter than this many dB below full \
+                        scale count as silence. Lower (-70) hears soft singing or a distant instrument but also the room; \
+                        higher (-45) ignores background noise but needs a louder note. The board's serial log prints how \
+                        loud each second was while it listens.",
+                       d.listen_quiet.into(), -80, -20,
+                       if can_listen { "the next time the board starts listening" } else { "on a board with a microphone (this one has none, or its firmware cannot listen)" }),
         describe("assistant_watches", "Assistant watches in the background",
                  "When on, problems the service notices by itself (the board dropping again and again, a step or a font \
                   that fails, the board refusing something) are put to the setup assistant without the person asking, \
@@ -83,6 +91,15 @@ fn number_setting(id: &str, title: &str, meaning: &str, current: u64, min: u64, 
     setting
 }
 
+/// A setting that takes a whole number between `min` and `max`, which may be below zero.
+fn signed_setting(id: &str, title: &str, meaning: &str, current: i64, min: i64, max: i64, shows: &str) -> Value {
+    let mut setting = describe(id, title, meaning, Value::Null, json!(current), shows);
+    setting["kind"] = json!("number");
+    setting["min"] = json!(min);
+    setting["max"] = json!(max);
+    setting
+}
+
 /// How a change reads to the person ("Key size: Big: 2x2"), or None when `value` is not one the
 /// setting takes.
 pub fn change_label(setting: &Value, value: &Value) -> Option<String> {
@@ -104,7 +121,7 @@ fn allowed(setting: &Value, value: &Value) -> bool {
         return value.as_str().is_some_and(|f| f.is_empty() || crate::fonts::valid_family(f));
     }
     if setting["kind"] == "number" {
-        return value.as_u64().is_some_and(|n| Some(n) >= setting["min"].as_u64() && Some(n) <= setting["max"].as_u64());
+        return value.as_i64().is_some_and(|n| Some(n) >= setting["min"].as_i64() && Some(n) <= setting["max"].as_i64());
     }
     setting["choices"].as_array().into_iter().flatten().any(|c| &c["value"] == value)
 }
@@ -131,6 +148,7 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
             "key_font" => d.key_font = value.as_str().unwrap_or_default().trim().to_string(),
             "start_font" => d.start_font = value.as_str().unwrap_or_default().trim().to_string(),
             "assistant_watches" => d.assistant_watches = value.as_bool().unwrap_or(true),
+            "listen_quiet" => d.listen_quiet = value.as_i64().and_then(|n| i8::try_from(n).ok()).ok_or("listening's quiet level must be -80 to -20")?,
             "start_size" => d.start_size = value.as_u64().and_then(|n| u8::try_from(n).ok()).ok_or("start size must be 24-96")?,
             _ => {}
         }
@@ -165,5 +183,7 @@ mod tests {
         let size = number_setting("start_size", "Start-up size", "", 64, 24, 96, "");
         assert!(allowed(&size, &json!(62)) && !allowed(&size, &json!(100)) && !allowed(&size, &json!("62")));
         assert_eq!(change_label(&size, &json!(62)).as_deref(), Some("62"));
+        let quiet = signed_setting("listen_quiet", "Listening: quiet below", "", -60, -80, -20, "");
+        assert!(allowed(&quiet, &json!(-70)) && !allowed(&quiet, &json!(-90)) && !allowed(&quiet, &json!(-10)));
     }
 }

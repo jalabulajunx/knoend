@@ -43,6 +43,8 @@ pub struct BoardStatus {
     /// Why the board last started (identity `lastStart`): "crash", "watchdog" and "brownout" mean it
     /// stopped on its own.
     pub last_start: Option<String>,
+    /// It has a microphone and can listen for notes (identity `features.mic`).
+    pub mic: bool,
 }
 
 /// Which page of the layout on the board is shown: the companion turns pages (spec/protocol.md
@@ -412,6 +414,13 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         missing_since = None;
         let transport = if board.address.starts_with("USB") { &board.address } else { "Wi-Fi" };
         shared.emit("log", json!({"text": format!("Connected to board {} over {transport}", board.id)}));
+        // A board that can listen: the KnoEnd MIDI device is made now, so music apps list it before
+        // the first note.
+        if board.mic {
+            if let Err(e) = tokio::task::spawn_blocking(crate::midi::open).await.unwrap_or_else(|e| Err(e.to_string())) {
+                say!("MIDI: {e}");
+            }
+        }
         let board_status = board.clone();
         shared.update(|s| { s.link = "connected".into(); s.board = Some(board_status); }).await;
         let mut shown: Option<String> = None;
@@ -1087,6 +1096,7 @@ async fn connect(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender
                     display: identity.body["board"].get("display").cloned(),
                     fonts: identity.body["board"].get("fonts").cloned(),
                     last_start: identity.body["lastStart"].as_str().map(str::to_string),
+                    mic: identity.body["features"]["mic"] == true,
                 };
                 tokio::spawn(async move {
                     loop {
@@ -1163,6 +1173,7 @@ async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc:
         display: identity["board"].get("display").cloned(),
         fonts: identity["board"].get("fonts").cloned(),
         last_start: identity["lastStart"].as_str().map(str::to_string),
+        mic: identity["features"]["mic"] == true,
     };
     let (tx, mut rx) = mpsc::channel::<(String, Value)>(64);
     let shared_loop = shared.clone();
@@ -2196,6 +2207,27 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
     match packet.kind.as_str() {
         "knoend.layout.ack" if packet.body["ok"] != true => say!("  board rejected layout: {}", packet.body),
         "knoend.error" => problem!("board-error", "The board answered with an error: {}", packet.body),
+        "knoend.listen.ack" => {
+            let on = packet.body["on"] == true;
+            crate::midi::set_listening(on);
+            if on {
+                say!("  board is listening for notes (quiet below {} dB, for {} s)", packet.body["quiet"], packet.body["seconds"]);
+            } else {
+                say!("  board stopped listening");
+            }
+            shared.emit("listening", json!({"on": on}));
+        }
+        "knoend.note" => {
+            let Some(midi) = packet.body["midi"].as_u64().and_then(|m| u8::try_from(m).ok()).filter(|m| *m < 128) else { return None };
+            let on = packet.body["on"] == true;
+            let velocity = packet.body["velocity"].as_u64().and_then(|v| u8::try_from(v).ok()).unwrap_or(64);
+            match crate::midi::note(midi, on, velocity) {
+                Ok(()) if on => say!("  note {} ({} Hz) sent as MIDI", crate::midi::name(midi), packet.body["hz"]),
+                Ok(()) => {}
+                Err(e) => raise!("midi", "A note the board heard could not be sent as MIDI: {e}"),
+            }
+            shared.emit("note", json!({"midi": midi, "on": on, "name": crate::midi::name(midi)}));
+        }
         "knoend.key" => {
             let layout = packet.body["layout"].as_str().unwrap_or("");
             let key = packet.body["key"].as_u64().unwrap_or(0);
@@ -2221,6 +2253,28 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
             }
             // A key whose action happens on the web page: the browser extension carries it out.
             let acting = u8::try_from(key).ok().and_then(|k| shown_actions.get(&k));
+            if let Some(library_key) = acting.filter(|k| matches!(k.action, Action::Listen)) {
+                let on = !crate::midi::listening();
+                if on {
+                    // The MIDI device first, so the music app can be pointed at it before a note comes.
+                    if let Err(e) = crate::midi::open() {
+                        raise!("midi", "{}: the notes would have nowhere to go: {e}", library_key.label);
+                    }
+                    // Straight into the app the key belongs to (its own MIDI input), when it has one open.
+                    if let Some(app) = focus.and_then(|f| crate::midi::app_word(f.display_name())) {
+                        let connected = crate::midi::connect_app(&app);
+                        if connected.is_empty() {
+                            say!("  {app} has no MIDI input open: choose \"KnoEnd\" as its MIDI input to get the notes");
+                        }
+                    }
+                }
+                let quiet = crate::display::load().listen_quiet;
+                let body = if on { json!({"on": true, "seconds": 600, "quiet": quiet}) } else { json!({"on": false}) };
+                if let Err(e) = sender.send("knoend.listen", body).await {
+                    say!("  {}: could not reach the board ({e})", library_key.label);
+                }
+                return None;
+            }
             if let Some(library_key) = acting {
                 // Media keys go to the focused app's media player first (like the keyboard's
                 // media keys): the browser then allows starting playback.

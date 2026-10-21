@@ -7,7 +7,7 @@
 
 #include "../main/pitch.h"
 
-#define RATE 16000
+#define RATE 8000
 static int failures;
 
 static void check(int ok, const char *what)

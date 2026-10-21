@@ -10,7 +10,8 @@
 #include "freertos/task.h"
 #include "pitch.h"
 
-#define RATE 16000
+#define MIC_RATE 16000
+#define RATE     8000 // what the pitch search looks at: every two microphone samples, averaged
 #define HOLD 3 // frames (about 100 ms) a note must hold before it counts
 
 static const char *TAG = "listen";
@@ -27,13 +28,34 @@ static void report(int off, int on, int velocity, float hz, bool ended)
     }
 }
 
+// `count` samples at RATE: the microphone's, two at a time, averaged (which also filters out what
+// lies above the new rate's reach).
+static void fill(int16_t *out, size_t count)
+{
+    static int16_t raw[2 * PITCH_HOP];
+    size_t done = 0;
+    while (done < count && !stop_asked) {
+        size_t want = 2 * (count - done);
+        if (want > sizeof(raw) / sizeof(raw[0])) {
+            want = sizeof(raw) / sizeof(raw[0]);
+        }
+        size_t got = 0;
+        while (got < want && !stop_asked) {
+            got += board_mic_read(raw + got, want - got, 200);
+        }
+        for (size_t i = 0; i + 1 < got; i += 2) {
+            out[done++] = (int16_t)(((int32_t)raw[i] + raw[i + 1]) / 2);
+        }
+    }
+}
+
 static void listen_task(void *arg)
 {
     (void)arg;
     int16_t *frame = heap_caps_malloc(PITCH_FRAME * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     pitch_tracker_t tracker;
     pitch_tracker_init(&tracker, HOLD);
-    if (frame == NULL || board_mic_start(RATE) != ESP_OK) {
+    if (frame == NULL || board_mic_start(MIC_RATE) != ESP_OK) {
         ESP_LOGE(TAG, "could not start the microphone");
         heap_caps_free(frame);
         running = false;
@@ -42,10 +64,7 @@ static void listen_task(void *arg)
         return;
     }
     // Fill the first frame, then slide by a hop at a time.
-    size_t have = 0;
-    while (have < PITCH_FRAME && !stop_asked) {
-        have += board_mic_read(frame + have, PITCH_FRAME - have, 200);
-    }
+    fill(frame, PITCH_FRAME);
     int64_t last_level_log = 0, busy_us = 0;
     float loudest = -120;
     while (!stop_asked && esp_timer_get_time() < until_us) {
@@ -74,10 +93,7 @@ static void listen_task(void *arg)
             loudest = -120;
         }
         memmove(frame, frame + PITCH_HOP, (PITCH_FRAME - PITCH_HOP) * sizeof(int16_t));
-        size_t got = 0;
-        while (got < PITCH_HOP && !stop_asked) {
-            got += board_mic_read(frame + PITCH_FRAME - PITCH_HOP + got, PITCH_HOP - got, 200);
-        }
+        fill(frame + PITCH_FRAME - PITCH_HOP, PITCH_HOP);
     }
     board_mic_stop();
     heap_caps_free(frame);

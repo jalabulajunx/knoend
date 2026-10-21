@@ -6,8 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define PITCH_FRAME 1024 // samples looked at each time (64 ms at 16 kHz)
-#define PITCH_HOP   512  // a new look every 512 samples (32 ms at 16 kHz)
+#define PITCH_FRAME 512 // samples looked at each time (64 ms at 8 kHz)
+#define PITCH_HOP   256 // a new look every 256 samples (32 ms at 8 kHz)
 
 typedef struct {
     bool voiced;   // a clear pitch was found
