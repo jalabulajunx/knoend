@@ -408,6 +408,7 @@ function renderEditPage() {
 }
 
 function describeAction(action) {
+  if (action.kind === "sequence") return `types ${action.keys.join(", then ")}`;
   const detail = action.url || action.selector || action.name || action.command || action.reply || "";
   return detail ? `${action.kind} ${detail}` : action.kind;
 }

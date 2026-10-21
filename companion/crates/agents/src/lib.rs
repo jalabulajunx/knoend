@@ -51,7 +51,7 @@ icon = "save"               # optional: one name from the icon list given with t
 action = { kind = "shortcut", keys = "Primary+S" }
 
 Rules:
-- Every action is kind = "shortcut". keys is zero or more modifiers from Primary, Ctrl, Shift, Alt,
+- Every action is kind = "shortcut" (a program in a terminal may also use "sequence", below). keys is zero or more modifiers from Primary, Ctrl, Shift, Alt,
   Meta, each followed by "+", then exactly one key from: A-Z, 0-9, F1-F24, Enter, Escape, Tab,
   Space, Backspace, Delete, Insert, Home, End, PageUp, PageDown, Up, Down, Left, Right, Backquote,
   Minus, Equal, BracketLeft, BracketRight, Backslash, Semicolon, Quote, Comma, Period, Slash.
@@ -76,7 +76,10 @@ shortcuts. Use Ctrl, never Primary: terminal programs read Ctrl on every system,
 name is a physical key, lower case: a program's capital-letter command needs Shift (htop's "P"
 sorts by CPU: Shift+P; less's "G" goes to the end: Shift+G; plain "P" types p). A
 program that asks questions as it runs (a package manager's "Proceed? [Y/n]") gets keys for its
-answers. Stopping it (Ctrl+C) has confirm = true. match is set for you."#;
+answers. A program that reads a whole line (pacman's "[Y/n]", rm -i, apt) needs the answer and
+then Enter: there use action = { kind = "sequence", keys = ["N", "Enter"] } (2 to 8 keys, each
+written like a shortcut's keys); a single key press (less, htop, a "press any key") stays a
+shortcut. Stopping it (Ctrl+C) has confirm = true. match is set for you."#;
 
 fn user_prompt(focus: &Focus, about: &[String]) -> String {
     let os = match focus.os {
@@ -192,6 +195,11 @@ fn constrain(toml_text: &str, focus: &Focus) -> Result<String, String> {
         return toml::to_string(&value).map_err(|e| e.to_string());
     }
 
+    let sequence = value.get("key").and_then(toml::Value::as_array).into_iter().flatten()
+        .any(|k| k.get("action").and_then(|a| a.get("kind")).and_then(toml::Value::as_str) == Some("sequence"));
+    if sequence {
+        return Err("kind = \"sequence\" is only for a program in a terminal: use one shortcut per key".into());
+    }
     let mut patterns = vec![toml::Value::String(focus.instance.clone())];
     if !focus.app.is_empty() && !focus.app.eq_ignore_ascii_case(&focus.instance) {
         patterns.push(focus.app.clone().into());
@@ -341,6 +349,12 @@ action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
         assert!(user_prompt(&pacman, &[]).starts_with("Terminal program: pacman (running in Xfce4-terminal)"));
         assert!(!user_prompt(&pacman, &[]).contains("secret title"));
         assert!(SYSTEM_PROMPT.contains("Shift+P") && SYSTEM_PROMPT.contains("never Primary"), "capitals and Ctrl in terminals");
+        assert!(SYSTEM_PROMPT.contains(r#"kind = "sequence", keys = ["N", "Enter"]"#), "an answer then Enter for programs that read a line");
+        let answer = "[pack]\n[[key]]\nlabel = \"No\"\naction = { kind = \"sequence\", keys = [\"N\", \"Enter\"] }\n";
+        let library = Library::parse(&constrain(answer, &pacman).unwrap()).unwrap();
+        assert_eq!(library.keys[0].action, knoend_core::library::Action::Sequence { keys: vec!["N".into(), "Enter".into()] });
+        assert!(constrain(answer, &focus()).is_err(), "not for a desktop app");
+        assert!(Library::parse(&constrain(&answer.replace("\"Enter\"", "\"Return\""), &pacman).unwrap()).is_err(), "each key is checked");
         let prompt = tab(&["fish"]);
         assert_eq!(slug(&prompt), "xfce4-terminal", "a shell at its prompt: the terminal app");
     }

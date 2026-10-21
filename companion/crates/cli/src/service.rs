@@ -2274,6 +2274,32 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                         return None;
                     }
                 }
+                // Several keys in a row: typed here, on this computer.
+                if let (Action::Sequence { keys }, Some(f)) = (&library_key.action, focus) {
+                    let chords: Result<Vec<_>, String> = keys.iter().map(|k| knoend_core::keys::parse_shortcut(k, f.os)).collect();
+                    let (typist, label, shared, keys) = (shared.typist.clone(), library_key.label.clone(), shared.clone(), keys.join(", "));
+                    tokio::task::spawn_blocking(move || {
+                        let result = chords.and_then(|chords| {
+                            let mut slot = typist.lock().map_err(|_| "typist lock".to_string())?;
+                            if slot.is_none() {
+                                *slot = Some(knoend_input::Typist::connect()?);
+                            }
+                            for chord in chords {
+                                slot.as_ref().expect("connected").tap(chord.modifiers, chord.usage)?;
+                                std::thread::sleep(Duration::from_millis(30));
+                            }
+                            Ok(())
+                        });
+                        match result {
+                            Ok(()) => shared.emit("typed", json!({"text": format!("  {label}: typed {keys} on this computer")})),
+                            Err(e) => {
+                                raise!("typing", "Could not type {label} ({keys}) on this computer: {e}");
+                                shared.emit("type-failed", json!({"text": format!("  {label}: could not type {keys}: {e}")}));
+                            }
+                        }
+                    });
+                    return None;
+                }
                 if library_key.action.is_web() {
                     let (shared, label) = (shared.clone(), library_key.label.clone());
                     let action = serde_json::to_value(&library_key.action).unwrap_or_default();
