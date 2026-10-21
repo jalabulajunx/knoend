@@ -337,12 +337,23 @@ Windows service in `drivers`), `keys_follow_apps: true`, and `service_can_type: 
   Allow and questions from the board).
 - **Keys for the program in a terminal tab (Claude Code, `less`/`man`):** in a terminal app
   (Terminal, iTerm2, Ghostty, Xfce Terminal...) the board shows keys for the program running in
-  the active tab, the one typed in last, and the terminal's own keys at a shell prompt. The
-  `last_terminal` check shows what the service saw. **The board shows the wrong tab's keys:** the
-  person switched tabs without typing; typing anything in the tab fixes it. **No change at all in
-  VS Code's terminal pane:** by design, an editor keeps its own keys (the board cannot tell the
-  editor from the pane). No permission is needed (seen on macOS 26.6 with Terminal.app,
-  2026-10-20; Linux not yet tried).
+  the active tab, and the terminal's own keys at a shell prompt. The active tab is found from the
+  window's title first (the terminal shows the active tab's title; fish and zsh put the running
+  command and the folder in it), then from the tab typed in last. The `last_terminal` check shows
+  what the service saw. **The board shows the wrong tab's keys:** the person switched tabs without
+  typing and the title does not tell the tabs apart (bash sets the same title in every tab of one
+  folder); typing anything in the tab fixes it, and on Linux it can take up to 8 s. **No change at
+  all in VS Code's terminal pane:** by design, an editor keeps its own keys (the board cannot tell
+  the editor from the pane). No permission is needed (seen on macOS 26.6 with Terminal.app,
+  2026-10-20; Linux with Xfce Terminal and fish, 2026-10-21).
+- **A program in a terminal tab with no keys of its own (`pacman`, `htop`):** the board shows the
+  terminal's keys plus a **Configure** key (on the last page when the terminal's keys fill the
+  first), and its status line says "No keys for pacman yet". Tapping it drafts keys for that
+  program with the AI; they apply to it in any terminal app. `sudo pacman` counts as pacman: sudo
+  runs its command on a terminal of its own, which belongs to the tab. Only the program's name and
+  its one-line manual description (`whatis`) go to the AI. Drafts are listed in Edit keys under
+  "Programs in a terminal". (Linux, 2026-10-21: before this, `sudo pacman` showed only the
+  terminal's keys and nothing offered to make pacman's.)
 - **A Claude Code session in a terminal tab:** its hooks name the tab (`knoend_tty`), so several
   questions show the "Answer here" panel only while that tab is in front, not in any terminal.
 - **Claude desktop's own screen is not readable yet:** with session accessibility on, the Electron app

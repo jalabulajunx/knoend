@@ -54,6 +54,23 @@ pub struct TerminalTab {
     pub programs: Vec<String>,
 }
 
+/// Shells, and programs that only start another (`sudo pacman`): never what a tab's keys are for.
+const NOT_THE_PROGRAM: &[&str] = &["bash", "zsh", "fish", "sh", "dash", "ksh", "tcsh", "csh", "nu", "elvish", "xonsh", "pwsh",
+                                   "login", "sudo", "doas", "su", "env", "nice", "nohup", "time", "command", "exec", "run0"];
+
+impl TerminalTab {
+    /// The program the person runs in the tab, the one keys would be for ("pacman" in
+    /// `sudo pacman -Syu`); None at a shell's prompt.
+    pub fn program(&self) -> Option<&str> {
+        self.programs.iter().map(String::as_str).find(|p| !NOT_THE_PROGRAM.contains(p))
+    }
+
+    /// Whether `name` is a shell or a program that starts another.
+    pub fn is_wrapper(name: &str) -> bool {
+        NOT_THE_PROGRAM.contains(&name)
+    }
+}
+
 /// A browser tab as the extension reports it (`spec/browser.md`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct WebPage {
