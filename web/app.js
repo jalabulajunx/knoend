@@ -682,7 +682,10 @@ function renderKnown() {
   if (fromKnown) delete $("apps-back").dataset.back; else $("apps-back").dataset.back = "6";
   if (!board) return;
   const wifi = !board.address.startsWith("USB");
-  $("known-text").textContent = `${board.profile} with firmware ${board.firmware}, connected ${wifi ? "over Wi-Fi" : "by USB"}. Pick what you'd like to do next.`;
+  const others = (s.boards || []).slice(1);
+  $("known-text").textContent = `${board.profile} with firmware ${board.firmware}, connected ${wifi ? "over Wi-Fi" : "by USB"}`
+    + (others.length ? `; also connected: ${others.map((b) => b.profile).join(", ")} (showing the same keys)` : "")
+    + ". Pick what you'd like to do next.";
   $("known-wifi-title").textContent = wifi ? "Change Wi-Fi" : "Wi-Fi";
   $("known-wifi").textContent = wifi ? "Move the board to another network (over the USB cable)" : "Use the board wirelessly, away from the cable (set over USB)";
   const waiting = apps.list.filter((a) => a.state === "none" && a.minutes > 0).length;
@@ -705,15 +708,28 @@ document.addEventListener("click", (e) => {
   if (e.target.closest("[data-known-back]")) { e.preventDefault(); backToBoard(); }
 });
 
+/** Forgets the board a set-up was about, so the next one starts clean (its id, identity, pairing). */
+function forgetSetupBoard() {
+  delete setup.boardId;
+  setup.identified = null;
+  setup.usbPaired = false;
+  setup.port = null;
+  setup.board = null;
+}
+
 document.querySelectorAll("[data-known]").forEach((b) => b.addEventListener("click", () => {
   setup.picked = true;
+  const shown = renderStatus.last?.board;
   const go = {
     apps: () => openApps(),
-    look: () => { setTask("setup"); keySizeStep(); },
+    // This board's own look (each board keeps its own).
+    look: () => { setTask("setup"); setup.boardId = shown?.id; keySizeStep(); },
+    // Another board: from "Find the board", with nothing carried over from this one.
+    another: () => { forgetSetupBoard(); setTask("setup"); step(1); scanPorts(); },
     // Joining or changing Wi-Fi goes over the USB cable: find the port, then the network.
     wifi: () => { setTask("wifi"); step(1); scanPorts(); },
     bluetooth: () => { setTask("setup"); step(6); },
-    install: () => { setTask("setup"); step(1); scanPorts(); },
+    install: () => { forgetSetupBoard(); setTask("setup"); step(1); scanPorts(); },
   }[b.dataset.known];
   renderKnown();
   go();
