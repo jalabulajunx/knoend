@@ -184,7 +184,7 @@ function connectEvents() {
 
 // rev counts local changes; sent is the last one the service has (its answers to older ones are
 // not shown over newer typing).
-const edit = { state: null, selected: null, timer: null, recording: false, rev: 0, sent: 0 };
+const edit = { state: null, selected: null, timer: null, recording: false, rev: 0, sent: 0, libraries: [] };
 
 // The shortcut grammar (spec/protocol.md section 5; the names in companion/crates/core/src/keys.rs).
 const MODIFIERS = ["Primary", "Ctrl", "Alt", "Shift", "Meta"];
@@ -272,17 +272,22 @@ async function editCommand(command, extra = {}) {
 async function loadEdit() {
   const list = await editCommand("list").catch(() => null);
   if (!list) return;
+  edit.libraries = list.libraries;
   const pick = $("edit-pick");
-  pick.replaceChildren(new Option("Choose...", ""));
-  const groups = { app: "Apps", site: "Sites", agent: "Agent screens" };
-  for (const [kind, title] of Object.entries(groups)) {
+  pick.replaceChildren(new Option("What the board shows", ""));
+  // Drafts a recipe replaced are never shown on the board (#38): listed last, apart.
+  const old = (l) => l.source === "ai" && l.replacedBy;
+  const groups = { app: ["Apps", (l) => l.kind === "app" && !old(l)], site: ["Sites", (l) => l.kind === "site" && !old(l)],
+                   old: ["Not in use (a recipe replaced them)", old] };
+  for (const [title, wanted] of Object.values(groups)) {
     const group = document.createElement("optgroup");
     group.label = title;
     // The person's own versions are reached through what they layer on.
-    const libs = list.libraries.filter((l) => l.kind === kind && !l.overrides).sort((a, b) => a.name.localeCompare(b.name));
+    const libs = list.libraries.filter((l) => wanted(l) && !l.overrides).sort((a, b) => a.name.localeCompare(b.name));
     for (const l of libs) {
-      const own = list.libraries.some((o) => o.overrides === l.id);
-      group.append(new Option(`${l.name} (${own ? "yours" : SOURCES[l.source] || l.source})`, l.id));
+      const own = list.libraries.find((o) => o.overrides === l.id);
+      const label = own ? (own.replacedBy ? "yours, on an old draft" : "yours") : old(l) ? "old AI draft" : SOURCES[l.source] || l.source;
+      group.append(new Option(`${l.name} (${label})`, l.id));
     }
     if (libs.length) pick.append(group);
   }
@@ -297,9 +302,14 @@ function onEditState(state, shown) {
   $("edit-toggle").textContent = on ? "Stop editing" : "Start editing";
   $("edit-main").hidden = !on;
   $("edit-dirty").hidden = !(on && edit.state.dirty);
+  $("edit-old").hidden = true;
   if (!on) {
     edit.selected = null;
-    if (shown && [...$("edit-pick").options].some((o) => o.value === shown)) $("edit-pick").value = shown;
+    // What the board shows (the recipe or draft under a version of the person's own), never a
+    // library picked earlier: Start editing begins there.
+    const lib = edit.libraries.find((l) => l.id === shown);
+    const id = lib && lib.overrides ? lib.overrides : shown;
+    $("edit-pick").value = [...$("edit-pick").options].some((o) => o.value === id) ? id : "";
     return;
   }
   const pack = edit.state.library.pack;
@@ -307,6 +317,13 @@ function onEditState(state, shown) {
   $("edit-remove").hidden = !(edit.state.own && edit.state.overrides);
   $("edit-save").disabled = $("edit-revert").disabled = !edit.state.dirty;
   $("edit-saved").textContent = edit.state.own ? "Saved as your own version." : "Not saved yet: saving makes your own version, on top of this one.";
+  const recipe = replacingRecipe();
+  if (recipe) {
+    $("edit-old-text").textContent = edit.state.own
+      ? `Your version is on an old AI draft. The recipe "${recipe.name}" replaced that draft, but your version hides it on the board. Remove my version to use the recipe.`
+      : `Not in use: the recipe "${recipe.name}" replaced this AI draft. Saving makes your version of the old draft, and the board then shows it instead of the recipe.`;
+    $("edit-old").hidden = false;
+  }
   if (edit.selected !== null && !edit.state.library.key[edit.selected]) edit.selected = null;
   renderEditPage();
   // Not while the person types in the key's form (it would move the cursor).
@@ -578,7 +595,23 @@ document.addEventListener("keydown", (e) => {
 }, true);
 $("edit-key-names").textContent = NAMED_KEYS.join(", ");
 $("edit-key").addEventListener("submit", (e) => e.preventDefault());
-$("edit-save").addEventListener("click", () => editCommand("save").then(loadEdit).catch(() => {}));
+/** The recipe that replaced the draft being edited (or the draft under the person's version), if any. */
+function replacingRecipe() {
+  const lib = edit.state && edit.libraries.find((l) => l.id === edit.state.library.pack.id);
+  return lib ? lib.replacedBy : null;
+}
+
+$("edit-save").addEventListener("click", () => {
+  const recipe = replacingRecipe();
+  if (recipe && !edit.state.own && !confirm(`The recipe "${recipe.name}" replaced this AI draft. Save your version of the old draft anyway? The board will show it instead of the recipe.`)) return;
+  editCommand("save").then(loadEdit).catch(() => {});
+});
+$("edit-use-recipe").addEventListener("click", () => {
+  const recipe = replacingRecipe();
+  if (!recipe || (edit.state.dirty && !confirm("Leave your unsaved changes?"))) return;
+  edit.selected = null;
+  editCommand("start", { id: recipe.id }).catch(() => {});
+});
 $("edit-revert").addEventListener("click", () => editCommand("revert").catch(() => {}));
 $("edit-remove").addEventListener("click", () => {
   if (confirm("Remove your version? The keys go back to the recipe or AI draft underneath.")) editCommand("remove").then(loadEdit).catch(() => {});
