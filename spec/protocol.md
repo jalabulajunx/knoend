@@ -450,7 +450,15 @@ label = "Settings"
 action = { kind = "shortcut", keys = "Primary+Comma" }
 ```
 
-Precedence when several libraries match: user override → installed library → AI draft → default keys.
+**Terminal programs.** `match.terminal = ["claude"]` names programs by their command name, on any
+OS. When the focused app is a terminal app (Terminal, iTerm2, Ghostty, Xfce Terminal...; not an
+editor's terminal pane), the companion looks at its active tab, the one typed in last, and at the
+programs in that tab's foreground: the leader first, then what it runs (`man` and its pager
+`less`). A library for one of those programs beats the terminal app's own library; a shell at its
+prompt has none, so the terminal's keys show.
+
+Precedence when several libraries match: a terminal program's library → the app's; then user
+override → installed library → AI draft → default keys.
 The web app's editor writes user overrides: `user-<name>.toml` in the person's library folder, id
 `user.<name>`, with `overrides` naming the recipe or draft it layers on (which stays, underneath).
 

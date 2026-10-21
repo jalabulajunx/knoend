@@ -23,6 +23,17 @@ mod unsupported;
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 pub use unsupported::{bring_to_front, Watcher};
 
+#[cfg(unix)]
+mod terminal;
+#[cfg(unix)]
+pub use terminal::active_tab;
+
+/// What runs in a terminal app's active tab (macOS and Linux only).
+#[cfg(not(unix))]
+pub fn active_tab(_app: u32) -> Option<knoend_core::focus::TerminalTab> {
+    None
+}
+
 /// The process id of an app's window, where the platform tells (Linux/X11 and Windows).
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn window_pid(_names: &[&str]) -> Option<u32> {

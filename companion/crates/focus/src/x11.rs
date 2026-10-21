@@ -13,6 +13,7 @@ pub struct Watcher {
     active: u32,
     wm_name: u32,
     utf8: u32,
+    wm_pid: u32,
 }
 
 impl Watcher {
@@ -22,11 +23,11 @@ impl Watcher {
         let atom = |name: &str| -> Result<u32, String> {
             Ok(conn.intern_atom(false, name.as_bytes()).map_err(|e| e.to_string())?.reply().map_err(|e| e.to_string())?.atom)
         };
-        let (active, wm_name, utf8) = (atom("_NET_ACTIVE_WINDOW")?, atom("_NET_WM_NAME")?, atom("UTF8_STRING")?);
+        let (active, wm_name, utf8, wm_pid) = (atom("_NET_ACTIVE_WINDOW")?, atom("_NET_WM_NAME")?, atom("UTF8_STRING")?, atom("_NET_WM_PID")?);
         conn.change_window_attributes(root, &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE))
             .map_err(|e| e.to_string())?;
         conn.flush().map_err(|e| e.to_string())?;
-        Ok(Watcher { conn, root, active, wm_name, utf8 })
+        Ok(Watcher { conn, root, active, wm_name, utf8, wm_pid })
     }
 
     /// The focused app now, or None (empty desktop, or a window without WM_CLASS).
@@ -43,7 +44,9 @@ impl Watcher {
         }
         let title = self.conn.get_property(false, window, self.wm_name, self.utf8, 0, 256).ok()
             .and_then(|c| c.reply().ok()).map(|r| String::from_utf8_lossy(&r.value).to_string()).unwrap_or_default();
-        Some(Focus { os: Os::Linux, app, instance, title, web: None })
+        let pid = self.conn.get_property(false, window, self.wm_pid, AtomEnum::CARDINAL, 0, 1).ok()
+            .and_then(|c| c.reply().ok()).and_then(|r| r.value32().and_then(|mut v| v.next()));
+        Some(Focus { os: Os::Linux, app, instance, title, web: None, pid, terminal: None })
     }
 
     /// Blocks until the focused app changes (title changes within the same app are ignored),

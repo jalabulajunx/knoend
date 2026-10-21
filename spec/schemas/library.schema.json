@@ -50,7 +50,8 @@
         "linux": { "$ref": "#/$defs/patterns" },
         "macos": { "$ref": "#/$defs/patterns" },
         "windows": { "$ref": "#/$defs/patterns" },
-        "agent": { "$ref": "#/$defs/patterns" }
+        "agent": { "$ref": "#/$defs/patterns" },
+        "terminal": { "$ref": "#/$defs/patterns", "description": "Programs in the active tab of a terminal app (claude, less), on any OS." }
       }
     },
     "page": {

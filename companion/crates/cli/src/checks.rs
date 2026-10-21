@@ -27,6 +27,13 @@ pub const ALL: &[(&str, &str)] = &[
       (\"Guru Meditation\", \"panic\", a backtrace) with its cause. Only runs while the board is not connected over \
       Wi-Fi (crashing, restarting or offline) and is plugged in by USB, because opening the port restarts some boards. \
       The way to find out why a board keeps restarting."),
+    ("last_terminal",
+     "The last terminal app the person was in and what the board made of it: its active tab (the one typed in last), \
+      the programs in that tab's foreground, the library that matched (a program's own, such as Claude Code or the \
+      pager, else the terminal's) and what the board showed (an agent's waiting request or edit mode win over it). Terminal apps only: in an editor's terminal pane (VS Code) the board keeps the editor's keys. \
+      When the board does not follow a terminal: no app pid or no tab means the terminal's processes were not found; \
+      a tab that is not the one in front means the person switched tabs without typing (the active tab is the one \
+      typed in last)."),
 ];
 
 pub fn describe() -> Value {
@@ -52,6 +59,7 @@ pub async fn run(id: &str, shared: &Shared) -> Value {
         "usb_now" => json!({"ports": tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default()}),
         "settings" => json!({"settings": crate::settings::all(shared).await}),
         "board_serial_log" => board_serial_log(shared).await,
+        "last_terminal" => crate::service::last_terminal(),
         _ => json!({"error": format!("no check called {id}")}),
     }
 }

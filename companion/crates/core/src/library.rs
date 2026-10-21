@@ -72,6 +72,9 @@ pub struct Match {
     pub windows: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agent: Vec<String>,
+    /// Programs in a terminal app's active tab ("claude", "less"), on any OS.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

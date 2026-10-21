@@ -206,7 +206,7 @@ fn main() {
             lines.map(|lines| lines.into_iter().for_each(|l| println!("{l}")))
         }
         Command::Draft { class, instance, save } => tokio::runtime::Runtime::new().expect("tokio")
-            .block_on(draft(Focus { os: Os::current(), app: class, instance, title: String::new(), web: None }, save)),
+            .block_on(draft(Focus { os: Os::current(), app: class, instance, title: String::new(), web: None, pid: None, terminal: None }, save)),
     };
     if let Err(message) = result {
         eprintln!("knoend: {message}");

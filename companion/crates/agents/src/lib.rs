@@ -200,7 +200,7 @@ mod tests {
     use super::*;
 
     fn focus() -> Focus {
-        Focus { os: Os::Linux, app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), title: "secret title".into(), web: None }
+        Focus { os: Os::Linux, app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), title: "secret title".into(), web: None, pid: None, terminal: None }
     }
 
     #[test]
@@ -288,7 +288,7 @@ action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
     #[test]
     fn slugs_are_safe() {
         assert_eq!(slug(&focus()), "xfce4-terminal");
-        let f = Focus { os: Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new(), web: None };
+        let f = Focus { os: Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new(), web: None, pid: None, terminal: None };
         assert_eq!(slug(&f), "com-anthropic-claude");
     }
 }
@@ -302,7 +302,7 @@ mod live {
     #[tokio::test]
     #[ignore]
     async fn live_draft_through_tools_on_this_computer() {
-        let focus = Focus { os: Os::Linux, app: "Gnome-calculator".into(), instance: "gnome-calculator".into(), title: String::new(), web: None };
+        let focus = Focus { os: Os::Linux, app: "Gnome-calculator".into(), instance: "gnome-calculator".into(), title: String::new(), web: None, pid: None, terminal: None };
         for provider in [Provider::ClaudeCode, Provider::Antigravity] {
             let config = AgentConfig { provider, ..Default::default() };
             let started = std::time::Instant::now();

@@ -278,6 +278,7 @@ async function loadEdit() {
   // Drafts a recipe replaced are never shown on the board (#38): listed last, apart.
   const old = (l) => l.source === "ai" && l.replacedBy;
   const groups = { app: ["Apps", (l) => l.kind === "app" && !old(l)], site: ["Sites", (l) => l.kind === "site" && !old(l)],
+                   terminal: ["Programs in a terminal", (l) => l.kind === "terminal"],
                    old: ["Not in use (a recipe replaced them)", old] };
   for (const [title, wanted] of Object.values(groups)) {
     const group = document.createElement("optgroup");
