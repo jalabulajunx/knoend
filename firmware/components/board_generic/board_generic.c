@@ -80,6 +80,7 @@ typedef struct {
     bool even_areas;        // the panel only takes updates that start and end on even pixels
     bool dcs_brightness;    // no backlight: brightness is the panel's own command (0x51)
     int corner_radius;      // a screen with rounded corners (most AMOLED watches), px
+    bool oled;              // pixels that burn in (OLED, AMOLED)
     line_t lcd_reset;
     bool reset_active_high;
     init_cmd_t init_cmds[MAX_INIT_CMDS];
@@ -95,6 +96,10 @@ typedef struct {
     line_t touch_reset;
     int touch_max_x, touch_max_y;
     bool touch_swap_xy, touch_mirror_x, touch_mirror_y;
+    int button_gpio[4];     // buttons to ground, -1 when unused
+    uint32_t button_action[4];
+    int power_chip_address; // an AXP2101 power chip whose power key is a button; 0 when none
+    uint32_t power_key_action;
     int mic_clk, mic_data;  // a PDM microphone; -1 when there is none
     bool mic_right;         // the microphone answers in the right slot
     bool mic_slot_fixed;    // the definition names the slot; otherwise the louder one is used
@@ -190,6 +195,7 @@ static esp_err_t parse(const char *text)
     }
     def.x_gap = get_int(display, "x_gap", 0);
     def.corner_radius = get_int(display, "corner_radius", 0);
+    def.oled = get_bool(display, "oled");
     def.y_gap = get_int(display, "y_gap", 0);
     def.even_areas = get_bool(display, "even_areas");
     def.dcs_brightness = strcmp(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(display, "brightness")) ?: "", "panel") == 0;
@@ -229,6 +235,25 @@ static esp_err_t parse(const char *text)
     def.touch_swap_xy = get_bool(touch_json, "swap_xy");
     def.touch_mirror_x = get_bool(touch_json, "mirror_x");
     def.touch_mirror_y = get_bool(touch_json, "mirror_y");
+    // Buttons: [{"gpio": 0, "action": "page"}, {"power_key": "axp2101", "address": 52, "action": "screen"}].
+    for (int i = 0; i < 4; i++) {
+        def.button_gpio[i] = -1;
+    }
+    int buttons = 0;
+    const cJSON *button;
+    cJSON_ArrayForEach(button, cJSON_GetObjectItemCaseSensitive(root, "buttons")) {
+        char action[8], key[12];
+        get_str(button, "action", action, sizeof(action));
+        get_str(button, "power_key", key, sizeof(key));
+        const uint32_t what = strcmp(action, "screen") == 0 ? BOARD_BUTTON_SCREEN : strcmp(action, "page") == 0 ? BOARD_BUTTON_PAGE : 0;
+        if (strcmp(key, "axp2101") == 0) {
+            def.power_chip_address = get_int(button, "address", 0x34);
+            def.power_key_action = what;
+        } else if (buttons < 4 && get_int(button, "gpio", -1) >= 0) {
+            def.button_gpio[buttons] = get_int(button, "gpio", -1);
+            def.button_action[buttons++] = what;
+        }
+    }
     get_str(mic_json, "driver", mic_driver, sizeof(mic_driver));
     get_str(mic_json, "slot", mic_slot, sizeof(mic_slot));
     const bool pdm = strcmp(mic_driver, "pdm") == 0;
@@ -245,7 +270,8 @@ static esp_err_t parse(const char *text)
     // board or the chip if it were wrong.
     const int pins[] = { def.sda, def.scl, def.sclk, def.mosi, def.dc, def.cs, def.backlight_gpio,
                          def.lcd_reset.gpio, def.touch_reset.gpio, def.mic_clk, def.mic_data,
-                         def.data[0], def.data[1], def.data[2], def.data[3] };
+                         def.data[0], def.data[1], def.data[2], def.data[3],
+                         def.button_gpio[0], def.button_gpio[1], def.button_gpio[2], def.button_gpio[3] };
     for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         ESP_RETURN_ON_FALSE(pin_ok(pins[i]), ESP_ERR_INVALID_ARG, TAG, "GPIO %d is not usable on the ESP32-S3", pins[i]);
     }
@@ -684,6 +710,62 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t 
     return ESP_OK;
 }
 
+// ---- buttons ----
+
+#define AXP2101_INTEN2  0x41 // interrupt enables, second byte
+#define AXP2101_INTSTS2 0x49 // interrupt status, second byte; write 1 to clear
+#define AXP2101_PKEY_SHORT 0x08 // power key short press (XPowersLib, MIT: PKEY_SHORT_IRQ = bit 11)
+
+static i2c_master_dev_handle_t power_chip;
+static bool button_down[4];
+
+static esp_err_t power_chip_write(uint8_t reg, uint8_t value)
+{
+    const uint8_t buf[2] = { reg, value };
+    return i2c_master_transmit(power_chip, buf, sizeof(buf), 20);
+}
+
+static esp_err_t buttons_init(void)
+{
+    for (int i = 0; i < 4 && def.button_gpio[i] >= 0; i++) {
+        const gpio_config_t config = { .pin_bit_mask = 1ULL << def.button_gpio[i], .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE };
+        ESP_RETURN_ON_ERROR(gpio_config(&config), TAG, "button gpio %d", def.button_gpio[i]);
+    }
+    if (def.power_chip_address == 0 || i2c_bus == NULL) {
+        return ESP_OK;
+    }
+    ESP_RETURN_ON_ERROR(i2c_master_probe(i2c_bus, def.power_chip_address, 50), TAG, "no power chip answers at 0x%02x", def.power_chip_address);
+    const i2c_device_config_t config = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = def.power_chip_address, .scl_speed_hz = 400000 };
+    ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(i2c_bus, &config, &power_chip), TAG, "power chip");
+    // Enable the short-press flag (other enables kept), then clear anything already latched.
+    uint8_t reg = AXP2101_INTEN2, enabled = 0;
+    ESP_RETURN_ON_ERROR(i2c_master_transmit_receive(power_chip, &reg, 1, &enabled, 1, 20), TAG, "power chip read");
+    ESP_RETURN_ON_ERROR(power_chip_write(AXP2101_INTEN2, enabled | AXP2101_PKEY_SHORT), TAG, "power chip enable");
+    power_chip_write(AXP2101_INTSTS2, AXP2101_PKEY_SHORT);
+    ESP_LOGI(TAG, "power key on the AXP2101 at 0x%02x", def.power_chip_address);
+    return ESP_OK;
+}
+
+uint32_t board_button_presses(void)
+{
+    uint32_t presses = 0;
+    for (int i = 0; i < 4 && def.button_gpio[i] >= 0; i++) {
+        const bool down = gpio_get_level(def.button_gpio[i]) == 0;
+        if (down && !button_down[i]) {
+            presses |= def.button_action[i];
+        }
+        button_down[i] = down;
+    }
+    if (power_chip != NULL) {
+        uint8_t reg = AXP2101_INTSTS2, status = 0;
+        if (i2c_master_transmit_receive(power_chip, &reg, 1, &status, 1, 20) == ESP_OK && (status & AXP2101_PKEY_SHORT)) {
+            power_chip_write(AXP2101_INTSTS2, AXP2101_PKEY_SHORT);
+            presses |= def.power_key_action;
+        }
+    }
+    return presses;
+}
+
 board_serial_t board_serial(void)
 {
     return def.serial;
@@ -703,6 +785,7 @@ esp_err_t board_init(void)
         // A rectangle's corner clears a rounded corner of radius r when it sits r(1 - 1/sqrt 2)
         // (0.29 r) in from both edges; a little more, for the keys' own edges.
         .inset = (uint16_t)((def.corner_radius * 3 + 9) / 10),
+        .oled = def.oled,
     };
     set_size(def.rotation);
     ESP_LOGI(TAG, "definition %s: %s display, %s touch", def.id, def.display_driver, def.touch_driver);
@@ -715,6 +798,11 @@ esp_err_t board_init(void)
     panel_io = io;
     // A screen without touch still shows the board's state; a touch that does not answer is logged
     // rather than leaving the screen dark.
+    // Buttons are extras: one that cannot start is logged and the board runs without it.
+    if (buttons_init() != ESP_OK) {
+        ESP_LOGE(TAG, "buttons did not start; running without them");
+        power_chip = NULL;
+    }
     err = touch_attach();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "touch did not start (%s); running without touch", esp_err_to_name(err));

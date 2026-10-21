@@ -290,6 +290,10 @@
           "minimum": 0,
           "maximum": 255,
           "description": "Radius of the screen's rounded corners in px (AMOLED watches); keys and text keep clear of them."
+        },
+        "oled": {
+          "type": "boolean",
+          "description": "An OLED or AMOLED screen: still pictures burn in, so the board dims after a minute idle, goes dark after ten, and shifts the picture slowly."
         }
       },
       "allOf": [
@@ -408,6 +412,51 @@
         "maxLength": 300
       },
       "description": "Where the facts in this definition come from (manufacturer pages, schematics, board-support code)."
+    },
+    "buttons": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "Physical buttons and what each does: page (next page of keys) or screen (screen off, or back on). A button to ground on a GPIO, or the power key of an AXP2101 power chip on the I2C bus (its own long press still powers the board off).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "gpio": {
+            "$ref": "#/$defs/pin"
+          },
+          "power_key": {
+            "enum": [
+              "axp2101"
+            ]
+          },
+          "address": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 119
+          },
+          "action": {
+            "enum": [
+              "page",
+              "screen"
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "gpio"
+            ]
+          },
+          {
+            "required": [
+              "power_key"
+            ]
+          }
+        ]
+      }
     }
   },
   "$defs": {

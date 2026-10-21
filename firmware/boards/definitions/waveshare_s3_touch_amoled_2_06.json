@@ -27,6 +27,7 @@
     "x_gap": 22,
     "even_areas": true,
     "corner_radius": 80,
+    "oled": true,
     "pclk_hz": 40000000,
     "brightness": "panel",
     "rotation": 0,
@@ -112,6 +113,17 @@
     "max_x": 410,
     "max_y": 502
   },
+  "buttons": [
+    {
+      "gpio": 0,
+      "action": "page"
+    },
+    {
+      "power_key": "axp2101",
+      "address": 52,
+      "action": "screen"
+    }
+  ],
   "sources": [
     "https://www.waveshare.com/esp32-s3-touch-amoled-2.06.htm (ESP32-S3R8, 32 MB flash, 2.06\" AMOLED 410x502 on QSPI, FT3168 touch)",
     "Waveshare's board support package waveshare/esp32_s3_touch_amoled_2_06 2.0.0, Apache-2.0 (components.espressif.com): pins, the panel's start-up commands, x offset 22, even-aligned updates; read 2026-10-21"
