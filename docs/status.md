@@ -1,6 +1,6 @@
 # What's on main
 
-As of 2026-10-20 (evening). A one-page map for anyone (person or coding agent) picking the project up.
+As of 2026-10-21. A one-page map for anyone (person or coding agent) picking the project up.
 How to set it up: [`setup.md`](setup.md). Day-by-day detail, including what was tested and how:
 [`log.md`](log.md). Working rules: [`../AGENTS.md`](../AGENTS.md). Picking up dynamic layouts or
 terminal-aware keys: read the "Handoff for Tom's agents" section of the 2026-10-18 log entry first;
@@ -26,6 +26,9 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | Windows: layout follows the foreground window, keys typed via `SendInput`, USB bus scan (`setupapi`), app icons (`SHGetFileInfoW`), native messaging + agent hooks over authenticated local TCP, startup service (`HKCU\...\Run`) | `focus/src/windows.rs`, `input/src/windows.rs`, `desktop/src/win_apps.rs`, `cli/src/browser.rs`, `cli/src/agent_hooks.rs`, `cli/src/background.rs` | `knoend devices`, `knoend serve`, `knoend browser install` on Windows |
 | USB-Serial-JTAG serial line (native-USB boards): identify, install, pair | `firmware/main/`, `companion/crates/flash` | Freenove FNK0104B on macOS |
 | Installing from the published release (v0.2.0, 2026-10-20: grids, the rename, looks and fonts, the assistant that listens, the freeze fix) through the web app | `companion/crates/cli/src/firmware.rs` | default firmware source |
+| Keys for your apps: set-up step 7 (and Set up apps on the dashboard) lists installed apps, marks which have keys, and the AI drafts keys for up to 12 picked apps, two at a time (Linux tested; macOS and Windows listing untested) | `desktop/src/installed.rs`, `cli/src/app_setup.rs`, `web/` | Set up a board, Your apps |
+| A board already set up: Set up a board offers apps, look, Wi-Fi, Bluetooth or installing again instead of starting over | `web/app.js` (`renderKnown`) | open Set up a board with a board connected |
+| The board listens (boards with a mic: ONX + Nextion Dual MIC): a Listen key, notes found on the board (only notes leave it), sent as MIDI from the "KnoEnd" device; on Linux also into Midi Through, so MuseScore takes them unset (Linux tested; macOS/Windows MIDI untested). Spec 3.6f awaits Tom's review | `firmware/main/listen.c`, `pitch.c`, `cli/src/midi.rs`, `recipes/apps/musescore.toml` | open MuseScore, Note input, Listen, sing |
 | CI: spec, companion on Linux + macOS + Windows, firmware build | `.github/workflows/ci.yml`, `.github/workflows/release.yml` | every push and PR |
 
 ## Browser, desktop apps, coding agents (added 2026-10-18; Linux + Windows tested, macOS partly)
