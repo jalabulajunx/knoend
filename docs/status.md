@@ -11,7 +11,7 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | Piece | Where | Try it |
 | --- | --- | --- |
 | Universal firmware image + board definitions | `firmware/components/board_generic`, `firmware/boards/` | `idf.py -B build/universal build` |
-| Web app: AI or manual setup, find, identify, install, pair, Wi-Fi from a scan, dashboard | `web/`, `companion/crates/cli/src/web.rs` | `knoend serve --firmware ../dist/firmware` |
+| Web app: AI or manual setup, find, identify, install, pair, Keys & look over USB, separate optional Wi-Fi and Bluetooth steps, dashboard | `web/`, `companion/crates/cli/src/web.rs` | `knoend serve --firmware ../dist/firmware` |
 | Identify and flash boards, manifest with SHA-256 per part | `companion/crates/flash`, `tools/release_firmware.py` | `knoend devices`, `knoend flash` |
 | Setup assistant grounded in the knowledge base | `companion/crates/agents/src/assistant.rs`, `docs/knowledge/setup.md` | "Ask the assistant" in the web app |
 | Key grid, status bar, confirm-tap for risky keys | `firmware/main/ui.c` | tap a key; console prints `KEY n ...` |

@@ -11,11 +11,19 @@ When you learn something new on the bench, add it here (symptom, cause, fix, how
   touch controller, pins and serial line it has. Without a definition it still boots, with no
   display ("BOARD no definition"), so it can be fixed over USB.
 - **The companion service** (`knoend serve`) runs on the computer: it flashes and pairs boards
-  over USB, then talks to the board over Wi-Fi (or USB serial), follows the focused app and pushes
+  over USB, then talks to the board over Wi-Fi (when on the same 2.4 GHz network) or directly over
+  USB serial (when plugged in by USB cable without Wi-Fi), follows the focused app and pushes
   matching layouts. Its web app is at `http://127.0.0.1:7342/`.
+- **Three communication options.** During setup (`Set up a board`), the board is connected over
+  **USB** first, paired with this computer over USB right after installing (or when clicking
+  **Skip install** on a board that already runs KnoEnd), and **Keys and look** (Step 4) is
+  configured immediately over USB. **Wi-Fi** (Step 5, 2.4 GHz wireless) and **Bluetooth** (Step 6,
+  the `"KnoEnd"` BLE keyboard) are separate optional steps that can be configured during setup or
+  skipped and configured later.
 - **Keys reach the computer two ways.** The board can type by itself as a Bluetooth keyboard (no
-  software needed). If no Bluetooth host is connected, it sends the keystroke to the companion,
-  which types it (X11 XTest on Linux; keyboard events on macOS; Win32 `SendInput` on Windows).
+  software needed). If no Bluetooth host is connected, it sends the keystroke to the companion over
+  Wi-Fi or USB serial, which types it (X11 XTest on Linux; keyboard events on macOS; Win32
+  `SendInput` on Windows).
 
 ## Boards we know
 
@@ -202,6 +210,11 @@ C3, C6) are not supported.
 
 ### Bluetooth keyboard
 
+- **Windows says "Try connecting your device again" when pairing "KnoEnd".** The Windows Bluetooth
+  radio adapter or stack frequently hangs or holds a half-formed handshake attempt. Fix: toggle
+  Bluetooth off and back on in Windows Settings (or press Win+A > Bluetooth), or remove "KnoEnd"
+  from Bluetooth & devices if listed, then click it again. If the modern Settings flyout still
+  fails, run `devicepairingwizard.exe` (Win+R > `devicepairingwizard`).
 - **Laptop Bluetooth off or soft-blocked** (`rfkill list bluetooth` shows "Soft blocked: yes").
   Keys still work through the companion; Bluetooth is only needed without the companion.
   `rfkill unblock bluetooth`.
