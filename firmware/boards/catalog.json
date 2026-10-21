@@ -43,6 +43,16 @@
       ],
       "status": "unverified",
       "note": "Definition written from Espressif's board-support code; not yet run on the board. Early TT21100-touch units not supported."
+    },
+    "waveshare_s3_touch_amoled_2_06": {
+      "name": "Waveshare ESP32-S3-Touch-AMOLED-2.06",
+      "image": "universal-esp32s3",
+      "flash_size": "32MB",
+      "bridges": [
+        "espressif-native"
+      ],
+      "status": "unverified",
+      "note": "AMOLED: dark look and dimming recommended (burn-in)."
     }
   }
 }

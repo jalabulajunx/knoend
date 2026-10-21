@@ -125,19 +125,17 @@
       "required": [
         "driver",
         "sclk",
-        "mosi",
-        "dc",
         "cs",
         "width",
         "height",
-        "pclk_hz",
-        "backlight"
+        "pclk_hz"
       ],
       "properties": {
         "driver": {
           "enum": [
             "st7789",
-            "ili9341"
+            "ili9341",
+            "sh8601"
           ]
         },
         "sclk": {
@@ -247,8 +245,116 @@
               }
             }
           }
+        },
+        "bus": {
+          "enum": [
+            "spi",
+            "qspi"
+          ],
+          "description": "spi (default): one data line plus dc; qspi: four data lines, no dc (AMOLED panels: sh8601, which also drives the CO5300)."
+        },
+        "data": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/pin"
+          },
+          "description": "QSPI data lines 0-3."
+        },
+        "x_gap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Column where the visible area starts in the panel's memory."
+        },
+        "y_gap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Row where the visible area starts."
+        },
+        "even_areas": {
+          "type": "boolean",
+          "description": "The panel only takes updates that start and end on even pixels (many AMOLED panels)."
+        },
+        "brightness": {
+          "enum": [
+            "backlight",
+            "panel"
+          ],
+          "description": "backlight (default): a PWM backlight on backlight.gpio; panel: no backlight, the panel's own brightness command (0x51)."
+        },
+        "corner_radius": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Radius of the screen's rounded corners in px (AMOLED watches); keys and text keep clear of them."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "bus": {
+                "const": "qspi"
+              }
+            },
+            "required": [
+              "bus"
+            ]
+          },
+          "then": {
+            "required": [
+              "data"
+            ]
+          },
+          "else": {
+            "required": [
+              "mosi",
+              "dc"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "brightness": {
+                "const": "panel"
+              }
+            },
+            "required": [
+              "brightness"
+            ]
+          },
+          "then": {},
+          "else": {
+            "required": [
+              "backlight"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "driver": {
+                "const": "sh8601"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "bus",
+              "data"
+            ],
+            "properties": {
+              "bus": {
+                "const": "qspi"
+              }
+            }
+          }
+        }
+      ]
     },
     "touch": {
       "type": "object",
@@ -262,10 +368,11 @@
           "enum": [
             "cst816",
             "cst826",
+            "ft5x06",
             "ft6336",
             "gt911"
           ],
-          "description": "cst816/cst826/ft6336 share the FocalTech register layout (points from 0x02); gt911 uses 16-bit registers (status 0x814E) and answers at 0x5D or 0x14."
+          "description": "cst816/cst826/ft6336/ft5x06 share the FocalTech register layout (points from 0x02); gt911 uses 16-bit registers (status 0x814E) and answers at 0x5D or 0x14."
         },
         "address": {
           "type": "integer",

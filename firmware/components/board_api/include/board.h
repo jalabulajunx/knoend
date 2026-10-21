@@ -22,6 +22,7 @@ typedef struct {
     bool has_speaker;
     bool has_native_usb; // true when the USB-C port can enumerate as a USB keyboard
     bool has_mic;        // a microphone named by the board definition ("mic")
+    uint16_t inset;      // keep content this far from every edge: a screen with rounded corners
 } board_info_t;
 
 // Which line the companion talks to over USB.

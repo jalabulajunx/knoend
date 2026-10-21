@@ -488,8 +488,8 @@ static void draw_keys_locked(void)
 void ui_max_grid(int *cols, int *rows)
 {
     const board_info_t *board = board_info();
-    *cols = board->width / MIN_KEY_W;
-    *rows = (board->height - STATUS_HEIGHT) / MIN_KEY_H;
+    *cols = (board->width - 2 * board->inset) / MIN_KEY_W;
+    *rows = (board->height - STATUS_HEIGHT - 2 * board->inset) / MIN_KEY_H;
     if (board->width == 0) {
         *cols = *rows = 3; // no display (no board definition): what the default layout uses
     }
@@ -516,11 +516,15 @@ static void apply_theme_locked(void)
 static void size_screen_locked(void)
 {
     const board_info_t *board = board_info();
-    grid_w = board->width;
-    grid_h = board->height - STATUS_HEIGHT;
-    lv_obj_set_size(status_bar, board->width, STATUS_HEIGHT);
+    // On a screen with rounded corners everything sits inside the inset (children are placed in
+    // the screen's content area, inside its padding).
+    const int inset = board->inset;
+    lv_obj_set_style_pad_all(lv_scr_act(), inset, 0);
+    grid_w = board->width - 2 * inset;
+    grid_h = board->height - STATUS_HEIGHT - 2 * inset;
+    lv_obj_set_size(status_bar, grid_w, STATUS_HEIGHT);
     lv_obj_align(status_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
+    lv_obj_set_width(status_label, grid_w - 2 * GRID_GAP);
 }
 
 // Back to the built-in key font; the chosen one is freed. Called with the LVGL lock held.
