@@ -14,6 +14,9 @@ pub struct App {
     pub icon: String,
     /// The window class its windows carry (StartupWMClass), when given.
     pub wm_class: String,
+    /// The program it runs ("mscore" from `Exec=mscore %U`), without its folder; empty when the entry
+    /// runs it through `env`, `flatpak` or a shell.
+    pub program: String,
 }
 
 fn home() -> PathBuf {
@@ -54,7 +57,19 @@ pub fn parse_entry(id: &str, text: &str) -> Option<App> {
         name: fields.get("Name")?.to_string(),
         icon: fields.get("Icon").unwrap_or(&"").to_string(),
         wm_class: fields.get("StartupWMClass").unwrap_or(&"").to_string(),
+        program: program(fields.get("Exec").copied().unwrap_or("")),
     })
+}
+
+/// The program an `Exec=` line runs: its first word without folders or quotes, or empty when that
+/// is a launcher of other programs.
+fn program(exec: &str) -> String {
+    let first = exec.split_whitespace().next().unwrap_or("").trim_matches('"');
+    let name = first.rsplit('/').next().unwrap_or(first);
+    if ["env", "flatpak", "sh", "bash", "snap", "gtk-launch", "python3", "python"].contains(&name) {
+        return String::new();
+    }
+    name.to_string()
 }
 
 /// Every app the menus would show; a user's own entry wins over the system one.
@@ -186,7 +201,7 @@ mod tests {
         let app = parse_entry("firefox", text).unwrap();
         assert_eq!((app.name.as_str(), app.icon.as_str(), app.wm_class.as_str()), ("Firefox", "firefox", "firefox"));
         assert!(parse_entry("x", "[Desktop Entry]\nName=X\nNoDisplay=true\n").is_none());
-        let apps = vec![app, App { id: "org.gnome.Nautilus".into(), name: "Files".into(), icon: String::new(), wm_class: String::new() }];
+        let apps = vec![app, App { id: "org.gnome.Nautilus".into(), name: "Files".into(), icon: String::new(), wm_class: String::new(), program: "nautilus".into() }];
         assert_eq!(for_window(&apps, "firefox", "Navigator").unwrap().id, "firefox");
         assert_eq!(for_window(&apps, "Org.gnome.Nautilus", "org.gnome.Nautilus").unwrap().id, "org.gnome.Nautilus");
         assert!(for_window(&apps, "Code", "code").is_none());

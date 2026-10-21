@@ -103,6 +103,9 @@
       </div>
       <div class="grid2">
         <article class="card">
+          <h2>Your apps</h2>
+          <p id="apps-summary" class="muted">Keys for the apps on this computer, drafted by AI before you open them.</p>
+          <div class="actions left"><button type="button" class="secondary" data-apps>Set up apps</button></div>
           <h2>AI drafts <span class="muted small">unreviewed</span></h2>
           <ul id="drafts" class="list"><li class="muted">None yet. Tap Configure on the board for an app with no layout.</li></ul>
         </article>
@@ -250,6 +253,7 @@
         <li data-step="4" id="step4-name">Keys and look</li>
         <li data-step="5" id="step5-name">Wi-Fi (optional)</li>
         <li data-step="6" id="step6-name">Bluetooth (optional)</li>
+        <li data-step="7">Your apps</li>
       </ol>
       <!-- The board, acting out the step: plug in, the chip, installing, look, Wi-Fi, Bluetooth. -->
       <figure class="stage" aria-hidden="true">
@@ -264,6 +268,7 @@
             <svg class="scene s4" viewBox="0 0 120 80"><g class="grid9"><rect x="22" y="12" width="22" height="16" rx="3"/><rect x="49" y="12" width="22" height="16" rx="3"/><rect x="76" y="12" width="22" height="16" rx="3"/><rect x="22" y="32" width="22" height="16" rx="3"/><rect x="49" y="32" width="22" height="16" rx="3"/><rect x="76" y="32" width="22" height="16" rx="3"/><rect x="22" y="52" width="22" height="16" rx="3"/><rect x="49" y="52" width="22" height="16" rx="3"/><rect x="76" y="52" width="22" height="16" rx="3"/></g></svg>
             <svg class="scene s5" viewBox="0 0 120 80"><circle class="dot" cx="60" cy="58" r="4"/><path class="arc a1" d="M48 48 a17 17 0 0 1 24 0"/><path class="arc a2" d="M40 40 a28 28 0 0 1 40 0"/><path class="arc a3" d="M32 32 a39 39 0 0 1 56 0"/></svg>
             <svg class="scene s6" viewBox="0 0 120 80"><path class="bt" d="M48 26 L72 50 L60 62 V18 L72 30 L48 54"/><path class="arc a1" d="M78 30 a16 16 0 0 1 0 20"/><path class="arc a2" d="M84 24 a26 26 0 0 1 0 32"/></svg>
+            <svg class="scene s7" viewBox="0 0 120 80"><g class="tiles"><rect class="t1" x="20" y="22" width="22" height="22" rx="5"/><rect class="t2" x="49" y="22" width="22" height="22" rx="5"/><rect class="t3" x="78" y="22" width="22" height="22" rx="5"/></g><path class="spark" d="M60 52 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5z"/></svg>
           </div>
         </div>
         <figcaption>
@@ -273,6 +278,7 @@
           <span class="c4"><span class="fig">Fig. 05</span> Your keys, your look (over USB)</span>
           <span class="c5"><span class="fig">Fig. 06</span> Optional: wireless over 2.4 GHz Wi-Fi</span>
           <span class="c6"><span class="fig">Fig. 07</span> Optional: Bluetooth keyboard ("KnoEnd")</span>
+          <span class="c7"><span class="fig">Fig. 08</span> Keys for the apps you use, drafted by AI</span>
         </figcaption>
       </figure>
       </aside>
@@ -345,7 +351,7 @@
           <button type="button" class="secondary" id="to-bluetooth">Skip to Bluetooth (optional)</button>
           <button type="button" class="primary" id="to-wifi">Next: Wi-Fi (optional)</button>
         </div>
-        <p id="setup-done" class="success" hidden>All set over USB. The board is ready to use on the dashboard, or you can set up Wi-Fi or Bluetooth any time. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
+        <p id="setup-done" class="success" hidden>All set over USB. The board is ready to use on the dashboard, or you can set up Wi-Fi or Bluetooth any time. <a href="#" data-apps>Next: keys for your apps</a> or <a href="#" data-goto="dashboard">open the dashboard</a></p>
       </article>
 
       <article class="card step" data-step="5" hidden>
@@ -367,7 +373,7 @@
           </div>
         </form>
         <ol id="pair-log" class="log compact"></ol>
-        <p id="pair-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
+        <p id="pair-done" class="success" hidden>All set. The board will appear on the dashboard in a few seconds. <a href="#" data-apps>Next: keys for your apps</a> or <a href="#" data-goto="dashboard">open the dashboard</a></p>
       </article>
 
       <article class="card step" data-step="6" hidden>
@@ -385,9 +391,33 @@
         <div class="actions">
           <button type="button" class="secondary" data-back="5">Back</button>
           <button type="button" class="secondary" id="open-bluetooth">Open Bluetooth settings</button>
-          <button type="button" class="primary" id="bluetooth-done-btn">Done</button>
+          <button type="button" class="secondary" id="bluetooth-done-btn">Done</button>
+          <button type="button" class="primary" data-apps>Next: your apps</button>
         </div>
         <p id="bluetooth-done" class="success" hidden>All set. Your board is ready to use. <a href="#" data-goto="dashboard">Open the dashboard</a></p>
+      </article>
+
+      <article class="card step" data-step="7" hidden>
+        <h2>Keys for your apps</h2>
+        <p id="apps-intro">KnoEnd looked at the apps on this computer. The ones with a recipe already have keys. Pick others you use, and the AI drafts keys for each, a few at a time, while you watch. Only the names of the apps you pick go to the AI.</p>
+        <p id="apps-ai-off" class="note" hidden>Drafting needs the AI. <a href="#" id="apps-ai-setup">Set up the AI</a> (an API key, or a coding agent already on this computer), then come back here.</p>
+        <div class="apps-tools">
+          <input id="apps-search" type="search" placeholder="Find an app" autocomplete="off" aria-label="Find an app">
+          <span id="apps-count" class="muted small"></span>
+        </div>
+        <h3>Suggested <span class="muted small">apps you use, and apps with ready keys</span></h3>
+        <ul id="apps-suggested" class="app-grid" aria-label="Suggested apps"><li class="muted">Looking for apps...</li></ul>
+        <details id="apps-more-wrap">
+          <summary>Everything else on this computer <span id="apps-more-count" class="muted small"></span></summary>
+          <ul id="apps-more" class="app-grid" aria-label="Other installed apps"></ul>
+        </details>
+        <div class="apps-bar">
+          <span id="apps-chosen" class="muted">Pick up to 12 apps</span>
+          <button type="button" class="secondary" data-back="6">Back</button>
+          <button type="button" id="apps-draft" class="primary" disabled>Draft keys</button>
+        </div>
+        <p id="apps-status" class="note" hidden></p>
+        <p id="apps-done" class="success" hidden>Done. Open one of those apps and its keys are on the board. Change any of them in <a href="#" data-goto="edit">Edit keys</a>, or <a href="#" data-goto="dashboard">open the dashboard</a>.</p>
       </article>
       </div>
       </div>

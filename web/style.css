@@ -332,6 +332,49 @@ code { font: .9em var(--mono); }
 #bar { height: 100%; width: 0; background: var(--signal); transition: width .25s var(--ease); }
 #mode-card { margin-bottom: 8px; }
 
+/* Keys for your apps (setup step 7): a grid of installed apps to pick from. */
+.apps-tools { display: flex; align-items: center; gap: 14px; margin: 18px 0 4px; }
+.apps-tools input { flex: 1; max-width: 360px; }
+.app-grid { list-style: none; padding: 0; margin: 10px 0 18px; display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.app-tile { position: relative; }
+.app-tile label { display: flex; align-items: center; gap: 12px; margin: 0; padding: 10px 12px; min-height: 58px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--raise); cursor: pointer;
+  transition: border-color .2s, box-shadow .2s, transform .2s var(--ease); }
+.app-tile label:hover { border-color: var(--faint); }
+.app-tile input { position: absolute; opacity: 0; pointer-events: none; }
+.app-tile input:focus-visible + .app-icon { outline: 2px solid var(--signal); outline-offset: 2px; }
+.app-tile.picked label { border-color: var(--text); box-shadow: inset 3px 0 0 var(--signal); transform: translateY(-1px); }
+.app-tile:has(input:disabled) label { cursor: default; }
+.app-icon { flex: none; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center;
+  background: var(--line); color: var(--muted); font: 600 14px/1 var(--sans); overflow: hidden; }
+.app-icon img { width: 32px; height: 32px; }
+.app-text { min-width: 0; flex: 1; }
+.app-text strong { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-text .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
+.app-chip { flex: none; font: 500 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  padding: 5px 7px; border-radius: 999px; color: var(--muted); background: var(--line); }
+.app-chip.c-ready, .app-chip.c-done { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.app-chip.c-yours { color: var(--text); }
+.app-chip.c-drafted { color: var(--signal); background: var(--signal-soft); }
+.app-chip.c-failed { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.app-tile .small-button { position: absolute; right: 10px; bottom: -10px; }
+/* While drafting: waiting tiles breathe, the drafting one has a moving signal edge. */
+.app-tile.s-waiting label { opacity: .6; animation: breathe 1.6s var(--ease) infinite; }
+.app-tile.s-drafting label { border-color: var(--signal);
+  background: linear-gradient(90deg, var(--raise) 0%, var(--signal-soft) 50%, var(--raise) 100%) 0 0 / 200% 100%;
+  animation: drafting 1.4s linear infinite; }
+.app-tile.s-done label { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.app-tile.s-failed label { border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); }
+@keyframes breathe { 50% { opacity: .35; } }
+@keyframes drafting { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .app-tile label, .s7 * { animation: none !important; } }
+#apps-more-wrap summary { cursor: pointer; font-weight: 500; margin: 6px 0; }
+.apps-bar { position: sticky; bottom: 72px; display: flex; gap: 10px; align-items: center; justify-content: flex-end;
+  flex-wrap: wrap; padding: 10px 12px; margin-top: 16px; border: 1px solid var(--line); border-radius: 14px;
+  background: color-mix(in srgb, var(--raise) 88%, transparent); backdrop-filter: blur(10px); }
+.apps-bar #apps-chosen { margin-right: auto; }
+
 /* Wi-Fi networks */
 .networks { list-style: none; margin: 12px 0; padding: 0; max-height: 320px; overflow-y: auto;
   border: 1px solid var(--line); border-radius: 12px; background: var(--raise); }
@@ -511,10 +554,12 @@ code { font: .9em var(--mono); }
 .scene { grid-area: 1 / 1; width: 100%; height: 100%; opacity: 0; transition: opacity .5s var(--ease); }
 .scene * { fill: none; stroke: #ece8df; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .setup-flow[data-step="1"] .s1, .setup-flow[data-step="2"] .s2, .setup-flow[data-step="3"] .s3,
-.setup-flow[data-step="4"] .s4, .setup-flow[data-step="5"] .s5, .setup-flow[data-step="6"] .s6 { opacity: 1; }
+.setup-flow[data-step="4"] .s4, .setup-flow[data-step="5"] .s5, .setup-flow[data-step="6"] .s6,
+.setup-flow[data-step="7"] .s7 { opacity: 1; }
 .stage figcaption > span { display: none; }
 .setup-flow[data-step="1"] .c1, .setup-flow[data-step="2"] .c2, .setup-flow[data-step="3"] .c3,
-.setup-flow[data-step="4"] .c4, .setup-flow[data-step="5"] .c5, .setup-flow[data-step="6"] .c6 { display: inline; }
+.setup-flow[data-step="4"] .c4, .setup-flow[data-step="5"] .c5, .setup-flow[data-step="6"] .c6,
+.setup-flow[data-step="7"] .c7 { display: inline; }
 /* 1: the cable goes into the port on the board's edge; the screen wakes, the ° lights. */
 .stage { padding-left: 48px; }
 .usb { position: absolute; right: 100%; top: 50%; height: 12px; margin-top: -6px; display: flex; align-items: center;
@@ -549,6 +594,13 @@ code { font: .9em var(--mono); }
 .s5 .a2, .s6 .a2 { animation-delay: .3s; } .s5 .a3 { animation-delay: .6s; }
 .s6 .bt { stroke: var(--signal); }
 @keyframes ring { 30% { opacity: 1; stroke: var(--signal); } 70% { opacity: .2; } }
+/* 7: app tiles fill in one by one as the spark passes: keys drafted for each. */
+.s7 .tiles rect { stroke: #ece8df; opacity: .25; animation: tile 3s var(--ease) infinite; }
+.s7 .t2 { animation-delay: .5s; } .s7 .t3 { animation-delay: 1s; }
+.s7 .spark { fill: var(--signal); stroke: none; transform-origin: 60px 60px; animation: spark 3s var(--ease) infinite; }
+@keyframes tile { 0%, 15% { opacity: .25; fill: none; } 35%, 85% { opacity: 1; fill: rgb(255 106 51 / .18); stroke: var(--signal); } }
+@keyframes spark { 0% { transform: translateX(-30px) scale(.6); opacity: 0; } 20% { opacity: 1; }
+  60% { transform: translateX(30px) scale(1); opacity: 1; } 80%, 100% { transform: translateX(30px) scale(.6); opacity: 0; } }
 .flow-main { min-width: 0; }
 .flow-main .card.step { padding-top: 0; border-top: 0; }
 .flow-main .card.step h2 { font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.03em; font-weight: 600; margin-bottom: 14px; }

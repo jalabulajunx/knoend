@@ -165,6 +165,7 @@ function connectEvents() {
     if (event.kind === "flash") onFlash(d);
     if (event.kind === "provision") logTo($("pair-log"), d.text);
     if (event.kind === "configured") loadDrafts();
+    if (event.kind === "app-setup") onAppSetup(d);
     if (event.kind === "edit") onEditEvent(d);
     if (event.kind === "edit.tap") onEditTap(d);
     if (event.kind === "noticed") onNoticed(d);
@@ -1502,6 +1503,7 @@ const ACTIONS = {
   pair: ["Set up Wi-Fi", () => { setTask("setup"); step(5); scanWifi(); show("setup"); }],
   change_wifi: ["Change Wi-Fi", () => { setTask("wifi"); step(1); show("setup"); }],
   open_bluetooth_settings: ["Open Bluetooth settings", () => openBluetoothSettings().catch(() => {})],
+  app_setup: ["Keys for your apps", () => openApps()],
   dashboard: ["Open the dashboard", () => show("dashboard")],
   open_accessibility_settings: ["Open Accessibility settings", () => openOnMac("accessibility_settings")],
   open_driver_settings: ["Open Driver Extensions", () => openOnMac("driver_settings")],
@@ -1738,6 +1740,193 @@ function renderSuggestions() {
   }));
 }
 
+// ---- keys for the apps on this computer (step 7, and "Set up apps" on the dashboard) ----
+
+const apps = { list: [], chosen: new Set(), progress: new Map(), icons: new Map(), drafting: false };
+const APPS_MOST = 12;
+const APP_STATE = {
+  ready: ["Ready", "keys from a recipe"],
+  yours: ["Yours", "your own keys"],
+  drafted: ["Drafted", "AI keys, unreviewed"],
+  none: ["", "the AI can draft keys"],
+};
+
+function openApps() {
+  if (setup.task !== "setup") setTask("setup");
+  show("setup");
+  step(7);
+  document.querySelector('.step[data-step="7"]').scrollIntoView({ block: "start" });
+  loadApps().catch((e) => appsStatus(`Could not list the apps: ${e.message}`, true));
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-apps]")) { e.preventDefault(); openApps(); }
+});
+$("apps-ai-setup").addEventListener("click", (e) => {
+  e.preventDefault();
+  setMode("ai");
+  $("mode-card").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+$("apps-search").addEventListener("input", () => renderApps());
+
+function appsStatus(text, error) {
+  const el = $("apps-status");
+  el.hidden = !text;
+  el.className = error ? "note error" : "note";
+  el.textContent = text || "";
+}
+
+async function loadApps() {
+  const r = await api("/apps");
+  apps.list = r.apps || [];
+  $("apps-ai-off").hidden = aiReady;
+  renderApps();
+  const ready = apps.list.filter((a) => a.state !== "none").length;
+  $("apps-summary").textContent = `${apps.list.length} apps on this computer; ${ready} have keys. The AI drafts keys for the others before you open them.`;
+}
+
+/** Used for a while, or with keys already: shown first. */
+function suggested(app) {
+  return app.minutes > 0 || app.state !== "none";
+}
+
+function appTile(app) {
+  const li = document.createElement("li");
+  const progress = apps.progress.get(app.id);
+  const state = progress ? progress.state : app.state;
+  li.className = `app-tile s-${state}`;
+  const label = document.createElement("label");
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = apps.chosen.has(app.id);
+  // Apps with keys of their own, or being drafted now, are not picked again here.
+  box.disabled = apps.drafting || ["ready", "yours", "waiting", "drafting", "done"].includes(state);
+  box.addEventListener("change", () => {
+    if (box.checked && apps.chosen.size >= APPS_MOST) { box.checked = false; return; }
+    box.checked ? apps.chosen.add(app.id) : apps.chosen.delete(app.id);
+    renderChosen();
+    li.classList.toggle("picked", box.checked);
+  });
+  li.classList.toggle("picked", box.checked);
+  const icon = document.createElement("span");
+  icon.className = "app-icon";
+  icon.textContent = app.name.slice(0, 1);
+  loadIcon(app.id, icon);
+  const text = document.createElement("span");
+  text.className = "app-text";
+  const name = document.createElement("strong");
+  name.textContent = app.name;
+  const sub = document.createElement("span");
+  sub.className = "sub";
+  sub.textContent = tileLine(app, progress);
+  text.append(name, sub);
+  label.append(box, icon, text);
+  const chip = APP_STATE[state] ? APP_STATE[state][0] : "";
+  if (chip) {
+    const badge = document.createElement("span");
+    badge.className = `app-chip c-${state}`;
+    badge.textContent = chip;
+    label.append(badge);
+  }
+  li.append(label);
+  if (progress && progress.state === "failed") {
+    const again = document.createElement("button");
+    again.type = "button";
+    again.className = "secondary small-button";
+    again.textContent = "Ask why";
+    again.addEventListener("click", () => ask(`Drafting keys for ${app.name} failed: ${progress.error}. Why, and what should I do?`, progress.error));
+    li.append(again);
+  }
+  return li;
+}
+
+function tileLine(app, progress) {
+  if (progress) {
+    return { waiting: "Waiting for its turn", drafting: "Drafting keys...", done: `${progress.keys} keys drafted`,
+             failed: "Could not draft keys" }[progress.state] || "";
+  }
+  const used = app.minutes >= 60 ? `used ${Math.round(app.minutes / 60)} h` : app.minutes > 0 ? `used ${app.minutes} min` : "";
+  const what = app.keys ? `${app.keys} keys` : APP_STATE[app.state][1];
+  return [what, used].filter(Boolean).join(" · ");
+}
+
+async function loadIcon(id, el) {
+  let url = apps.icons.get(id);
+  if (url === undefined) {
+    url = null;
+    try {
+      const r = await fetch(`/api/apps/icon/${encodeURIComponent(id)}`, { headers: { "x-knoend-token": TOKEN } });
+      if (r.ok) url = URL.createObjectURL(await r.blob());
+    } catch { /* the letter stays */ }
+    apps.icons.set(id, url);
+  }
+  if (url) {
+    el.textContent = "";
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    el.append(img);
+  }
+}
+
+function renderApps() {
+  const query = $("apps-search").value.trim().toLowerCase();
+  const shown = apps.list.filter((a) => !query || a.name.toLowerCase().includes(query));
+  const top = shown.filter(suggested);
+  const rest = shown.filter((a) => !suggested(a));
+  $("apps-suggested").replaceChildren(...(top.length ? top.map(appTile) : [Object.assign(document.createElement("li"), { className: "muted", textContent: query ? "None of these match." : "None yet." })]));
+  $("apps-more").replaceChildren(...rest.map(appTile));
+  $("apps-more-count").textContent = `(${rest.length})`;
+  if (query && rest.length) $("apps-more-wrap").open = true;
+  $("apps-count").textContent = query ? `${shown.length} of ${apps.list.length}` : `${apps.list.length} apps`;
+  renderChosen();
+}
+
+function renderChosen() {
+  const n = apps.chosen.size;
+  $("apps-chosen").textContent = n ? `${n} picked${n >= APPS_MOST ? " (the most at once)" : ""}` : `Pick up to ${APPS_MOST} apps`;
+  $("apps-draft").disabled = !n || apps.drafting || !aiReady;
+  $("apps-draft").textContent = n ? `Draft keys for ${n} app${n === 1 ? "" : "s"}` : "Draft keys";
+}
+
+$("apps-draft").addEventListener("click", async () => {
+  const ids = [...apps.chosen];
+  apps.drafting = true;
+  $("apps-done").hidden = true;
+  for (const id of ids) apps.progress.set(id, { state: "waiting" });
+  renderApps();
+  appsStatus(`Drafting keys for ${ids.length} app${ids.length === 1 ? "" : "s"}, two at a time. You can keep using the computer.`);
+  try {
+    await api("/apps/draft", { ids });
+  } catch (e) {
+    apps.drafting = false;
+    for (const id of ids) apps.progress.delete(id);
+    renderApps();
+    appsStatus(`Could not start: ${e.message}`, true);
+  }
+});
+
+/** An "app-setup" event: how one app's draft is going. */
+function onAppSetup(d) {
+  apps.progress.set(d.id, d);
+  const pending = [...apps.progress.values()].filter((p) => p.state === "waiting" || p.state === "drafting").length;
+  if (!pending && apps.drafting) {
+    apps.drafting = false;
+    apps.chosen.clear();
+    const done = [...apps.progress.values()].filter((p) => p.state === "done").length;
+    const failed = [...apps.progress.values()].filter((p) => p.state === "failed").length;
+    appsStatus(failed ? `${done} drafted, ${failed} could not be drafted (Ask why on each).` : "");
+    $("apps-done").hidden = !done;
+    loadApps().then(() => {
+      // The list now says "Drafted"; keep the results showing until the person moves on.
+      for (const [id, p] of apps.progress) if (p.state !== "failed") apps.progress.delete(id);
+      renderApps();
+    }).catch(() => {});
+    loadDrafts().catch(() => {});
+    return;
+  }
+  renderApps();
+}
+
 /** A small ° on every section title: ask the assistant about that part of the page. */
 function addAskButtons() {
   for (const h2 of document.querySelectorAll("main .card h2")) {
@@ -1769,6 +1958,7 @@ const TIPS = {
   ],
   setup: [
     "Guided by AI: when a step fails, the assistant reads what happened and tells you the next step.",
+    "Keys for your apps: pick a few on the last step and the AI drafts them before you open the apps.",
     "Installing without erasing keeps the board's Wi-Fi and pairing.",
     "The board hears 2.4 GHz Wi-Fi only.",
   ],
@@ -1851,4 +2041,5 @@ setScheme(document.documentElement.dataset.theme || "auto");
   loadDrafts().catch(() => {});
   const info = await loadAi().catch(() => ({}));
   setMode(storeGet("knoend.mode") || "ai"); // guided is the recommended default
+  loadApps().catch(() => {});
 })();

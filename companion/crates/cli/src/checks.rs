@@ -22,6 +22,9 @@ pub const ALL: &[(&str, &str)] = &[
       board in or changed the cable."),
     ("settings",
      "Every setting the person can change, its meaning, choices and current value (also in the snapshot)."),
+    ("installed_apps",
+     "The apps installed on this computer, most used first, each with whether it has keys (ready: a recipe; yours; \
+      drafted: by the AI; none) and minutes used: to suggest which apps to set up (the app_setup action drafts them)."),
     ("board_serial_log",
      "Reads what the board itself prints on its USB serial line for 12 s: start-up, Wi-Fi, fonts, and any crash \
       (\"Guru Meditation\", \"panic\", a backtrace) with its cause. Only runs while the board is not connected over \
@@ -59,6 +62,15 @@ pub async fn run(id: &str, shared: &Shared) -> Value {
         "usb_now" => json!({"ports": tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default()}),
         "settings" => json!({"settings": crate::settings::all(shared).await}),
         "board_serial_log" => board_serial_log(shared).await,
+        "installed_apps" => {
+            let mut list = crate::app_setup::list().await;
+            // The used ones and those with keys, then a count of the rest: enough to suggest from.
+            let apps = list["apps"].as_array().cloned().unwrap_or_default();
+            let (shown, rest): (Vec<Value>, Vec<Value>) = apps.into_iter().partition(|a| a["minutes"].as_f64() > Some(0.0) || a["state"] != "none");
+            list["apps"] = Value::Array(shown.into_iter().take(60).collect());
+            list["other_apps_without_keys"] = json!(rest.iter().take(80).map(|a| a["name"].clone()).collect::<Vec<_>>());
+            list
+        }
         "last_terminal" => crate::service::last_terminal(),
         _ => json!({"error": format!("no check called {id}")}),
     }

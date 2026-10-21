@@ -1793,3 +1793,30 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   a few seconds before offering it. Bash at a prompt sets the same title in every tab of one folder:
   typing still decides there. Edit keys shows a sequence key as "types N, then Enter" (not editable
   yet).
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - Keys for your apps: installed apps, drafted by AI in a batch
+
+- Changed:
+  - Set-up step 7 "Your apps" (also "Set up apps" on the dashboard): the apps installed on this
+    computer, most used first, each marked Ready (a recipe), Yours, Drafted (AI) or not set up, with
+    real icons and a search. The person picks up to 12; the configure agent drafts them two at a
+    time, each tile showing waiting / drafting / done / failed ("Ask why" hands the error to the
+    assistant). Drafts are saved like ones made from the board and go to the board at once.
+  - `knoend_desktop::installed`: installed apps on every OS, named as their windows will be
+    (Linux: desktop entries, class StartupWMClass or the program, instance the program; macOS: `.app`
+    bundles, bundle id and name; Windows: `App Paths` exe names). Desktop entries now record their
+    program (`Exec=`).
+  - `cli/src/app_setup.rs`; API `GET /apps`, `POST /apps/draft`, `GET /apps/icon/{id}`; progress
+    as `app-setup` events. Only the names of the picked apps reach the AI provider.
+  - Setup assistant: check `installed_apps`, action `app_setup` (web app button "Keys for your apps").
+- Tested (Arch Linux, i3; ONX over Wi-Fi; OpenAI gpt-6-sol):
+  - 147 apps listed; the ones used and those with recipes first, statuses right (Firefox, Thunar,
+    Okular, Spectacle, Code - OSS ready; Claude yours).
+  - Darktable and OBS Studio drafted together in about 18 s: 9 and 7 keys; matches `darktable` and
+    `obs`, the window classes those apps use. Not yet opened to see the keys on the board.
+  - Asked the assistant "Which of my apps should I make keys for next?": it ran `installed_apps` by
+    itself, suggested MuseScore (used, no keys) and offered the app_setup button. No prompt edit.
+  - macOS and Windows listing: compiles in CI only, untested.
+- Open:
+  - "Bulk Rename" shows Thunar's keys (its entry runs `thunar`); harmless, but it reads oddly.
+  - Linux lists system tools (Avahi, Bluetooth Adapters); they sit under "Everything else".
