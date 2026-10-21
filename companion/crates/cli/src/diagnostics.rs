@@ -156,6 +156,8 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
         "ai_tools_on_this_computer": knoend_agents::cli_tool::tools_on_this_computer().await,
         // What the person can change (a fix may set any of them) and what the assistant may check.
         "settings": crate::settings::all(shared).await,
+        // Every paired board's own look (the settings above show one board's: see its "board").
+        "board_looks": crate::display::load().boards,
         "checks_available": crate::checks::describe(),
         "from_the_web_app": ui_context,
     })

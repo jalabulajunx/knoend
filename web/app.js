@@ -108,7 +108,8 @@ let displayState = { key_size: "medium", theme: "dark", turn: 0 };
  */
 function drawScreen(el, layout, look) {
   if (!el) return;
-  const portrait = look.turn % 2 === 1;
+  // A board that is tall as it comes (an AMOLED watch) is portrait at turn 0.
+  const portrait = (look.turn % 2 === 1) !== !!look.native_portrait;
   el.className = `screen ${["white", "sepia"].includes(look.theme) ? look.theme : ""} ${portrait ? "portrait" : ""}`;
   // The keys as the board shows them now (it already follows the key size); turned to portrait, the
   // same slots in at most 3 columns and 4 rows.
@@ -766,11 +767,17 @@ const THEMES = [
 ];
 
 const TURNS = [
-  ["0", "Landscape", "Wide, as the board comes."],
-  ["1", "Portrait", "Tall: the board turned a quarter clockwise. Three keys across at most."],
-  ["2", "Landscape, upside down", "Wide, turned half way round: for a cable that has to come out of the other side."],
-  ["3", "Portrait, upside down", "Tall, turned a quarter anticlockwise."],
+  ["0", "Landscape", "As the board comes."],
+  ["1", "Portrait", "The board turned a quarter clockwise."],
+  ["2", "Landscape, upside down", "Turned half way round: for a cable that has to come out of the other side."],
+  ["3", "Portrait, upside down", "Turned a quarter anticlockwise."],
 ];
+
+/** The turns named for how this board usually sits (`turns` from /display): on an AMOLED watch,
+ * which is tall as it comes, turn 0 is Portrait. */
+function turnsFor(d) {
+  return TURNS.map(([v, label, sub], i) => [v, d?.turns?.[i]?.label || label, sub]);
+}
 
 // ---- fonts from Google Fonts: the list live from the service, previews loaded by the browser ----
 
@@ -840,10 +847,17 @@ for (const [id, field] of [["key-font", "key_font"], ["key-font-setup", "key_fon
   });
 }
 
+/** The board whose look the dashboard (and the set-up's look step) shows and changes: each board
+ * keeps its own (#15). Null: the first connected board. */
+let lookBoard = null;
+/** The set-up's look step for a board that is not paired yet: choices change the preview only. */
+let lookPreviewOnly = false;
+
 async function saveDisplay(change) {
   displayState = { ...displayState, ...change };
   redrawScreens();
-  const saved = await api("/display", change);
+  if (lookPreviewOnly) return displayState;
+  const saved = await api("/display", lookBoard ? { ...change, board: lookBoard } : change);
   displayState = { ...displayState, ...saved };
   $("key-size").value = saved.key_size;
   $("theme").value = saved.theme;
@@ -855,23 +869,46 @@ async function saveDisplay(change) {
 
 /** Fills the dashboard's choices; the look only when the board's firmware can change it. */
 async function loadDisplay() {
-  const d = await api("/display");
-  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font };
+  const d = await api(lookBoard ? `/display?board=${encodeURIComponent(lookBoard)}` : "/display");
+  lookBoard = d.board || null;
+  showLookBoards(d);
+  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font, native_portrait: d.native_portrait };
   showFonts(d);
   redrawScreens();
   $("key-size").value = d.key_size;
   $("theme").value = d.theme;
+  turnsFor(d).forEach(([v, label]) => { const o = $("turn").querySelector(`option[value="${v}"]`); if (o) o.textContent = label; });
   $("turn").value = String(d.turn);
   // Kept and shown in the preview either way; the board takes it once its firmware can.
   $("theme").title = d.board_can_change_look ? "" : "This board's firmware has one look only: the preview shows it, and the board takes it after a firmware update.";
   return d;
 }
 
+/** The board picker above the look: shown when more than one board is paired. */
+function showLookBoards(d) {
+  const boards = d.boards || [];
+  $("look-board-wrap").hidden = boards.length < 2;
+  $("look-board").replaceChildren(...boards.map((b) => {
+    const option = document.createElement("option");
+    option.value = b.id;
+    option.textContent = `${b.profile || b.id}${b.connected ? "" : " (not connected)"}`;
+    option.selected = b.id === d.board;
+    return option;
+  }));
+}
+$("look-board").addEventListener("change", (e) => { lookBoard = e.target.value; loadDisplay().catch(() => {}); });
+
 /** Setup step 4: keys and look, available right after USB install/identify (before Wi-Fi or Bluetooth). */
 async function keySizeStep() {
   step(4);
   $("setup-done").hidden = true;
-  const current = await api("/display").catch(() => ({ key_size: "medium", theme: "dark", board_can_change_look: false }));
+  // The board being set up: its own look, not another board's.
+  const settingUp = setup.boardId || setup.identified?.running?.deviceId || null;
+  lookPreviewOnly = !settingUp;
+  if (lookPreviewOnly) logTo($("activity"), "This board is not paired with this computer yet: the look shows in the preview, and is saved for the board once it is paired.");
+  lookBoard = settingUp;
+  const current = await api(lookBoard ? `/display?board=${encodeURIComponent(lookBoard)}` : "/display")
+    .catch(() => ({ key_size: "medium", theme: "dark", board_can_change_look: false }));
   const fill = (list, name, choices, value, disabled) => {
     list.replaceChildren();
     for (const [v, title, sub] of choices) {
@@ -883,10 +920,11 @@ async function keySizeStep() {
   fill($("key-size-setup"), "key-size-choice", KEY_SIZES, current.key_size);
   // The preview shows every look; the board follows when its firmware can.
   fill($("theme-setup"), "theme-choice", THEMES, current.theme);
-  fill($("turn-setup"), "turn-choice", TURNS, String(current.turn || 0));
+  fill($("turn-setup"), "turn-choice", turnsFor(current), String(current.turn || 0));
   const canLook = !!(current.board_can_change_look || setup.justInstalled || setup.identified?.running?.hasDisplay);
   $("theme-note").hidden = canLook;
-  displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0, key_font: current.key_font, start_font: current.start_font };
+  displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0, key_font: current.key_font, start_font: current.start_font,
+                   native_portrait: current.native_portrait };
   showFonts(current);
   redrawScreens();
   // Each choice applies at once: on the board (over USB or Wi-Fi), and in the preview.
@@ -900,7 +938,7 @@ async function keySizeStep() {
 }
 
 // Every choice is applied as it is made; the buttons let the person finish over USB or continue to optional Wi-Fi / Bluetooth.
-$("key-size-save").addEventListener("click", () => { $("setup-done").hidden = false; });
+$("key-size-save").addEventListener("click", () => { $("setup-done").hidden = false; lookPreviewOnly = false; });
 $("to-wifi").addEventListener("click", () => { step(5); scanWifi(); });
 $("to-bluetooth").addEventListener("click", () => bluetoothStep());
 
@@ -1019,7 +1057,8 @@ $("identify").addEventListener("click", async () => {
     setup.identified = {
       chip: result.chip,
       chipError: result.chipError,
-      running: result.running ? { firmware: result.running.firmware, profile: result.running.board?.profile, hasDisplay: !!result.running.board?.display } : null,
+      running: result.running ? { firmware: result.running.firmware, profile: result.running.board?.profile, hasDisplay: !!result.running.board?.display,
+                                  deviceId: result.running.deviceId } : null,
       candidates: result.candidates,
       known: result.known !== false,
       summary: result.summary,
@@ -1052,6 +1091,7 @@ async function pairOverUsb(logList) {
   try {
     const result = await api("/provision", { port: setup.port, ssid: null, password: null });
     setup.usbPaired = true;
+    setup.boardId = result.board; // the look chosen next is this board's own
     if (logList) logTo(logList, `Paired with board ${result.board} over USB.`);
     return true;
   } catch (e) {

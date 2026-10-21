@@ -170,6 +170,16 @@ C3, C6) are not supported.
 
 ### How the board looks
 
+- **Several boards (#15):** every paired board the computer reaches is connected at once, and they
+  mirror each other: the same keys, a tap on any of them runs it. **Each board keeps its own look**
+  (key size, theme, way round, fonts, start-up size; `board_looks` in the snapshot); a board paired
+  later starts from the defaults (Dark, its usual way round, medium keys, built-in font), and the
+  settings list's "board" says which board the look settings show. While several are connected,
+  pages use the smallest of their key-size grids, so they show the same pages; each board draws
+  them at its own size. **Way round is named for how each board usually sits**: an AMOLED watch is
+  portrait at turn 0, so its "Portrait" is turn 0 and "Landscape" turn 1. **A board shows the wrong
+  look after pairing:** check that the change named that board (`board` in the settings fix).
+
 - **Key size, Look and Way round** are settings (dashboard, setup's "Keys and look" step, and the
   assistant's settings list). Key size is the grid every page uses (Big 2x2, Medium 3x3 by default,
   Small 4x4); an app's keys fill it in order and the rest go on further pages. The look (Dark,

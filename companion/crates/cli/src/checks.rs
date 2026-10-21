@@ -22,7 +22,7 @@ pub const ALL: &[(&str, &str)] = &[
      "Lists the USB serial ports again now, with each chip, without opening any of them: after the person plugged a \
       board in or changed the cable."),
     ("settings",
-     "Every setting the person can change, its meaning, choices and current value (also in the snapshot)."),
+     "Every setting the person can change, its meaning, choices and current value (also in the snapshot), and every paired board's own look (board_looks)."),
     ("installed_apps",
      "The apps installed on this computer, most used first, each with whether it has keys (ready: a recipe; yours; \
       drafted: by the AI; none) and minutes used: to suggest which apps to set up (the app_setup action drafts them)."),
@@ -67,7 +67,7 @@ pub async fn run(id: &str, shared: &Shared) -> Value {
         }
         "service_log" => json!({"lines": crate::journal::recent(300)}),
         "usb_now" => json!({"ports": tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default()}),
-        "settings" => json!({"settings": crate::settings::all(shared).await}),
+        "settings" => json!({"settings": crate::settings::all(shared).await, "board_looks": crate::display::load().boards}),
         "board_serial_log" => board_serial_log(shared).await,
         "identify_board" => identify_board(shared).await,
         "installed_apps" => {

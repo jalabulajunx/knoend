@@ -55,6 +55,9 @@ pub struct BoardStatus {
     pub last_start: Option<String>,
     /// It has a microphone and can listen for notes (identity `features.mic`).
     pub mic: bool,
+    /// Its screen is taller than wide as it usually sits (turn 0): an AMOLED watch, not a
+    /// landscape LCD. Names the turns for the person ("Portrait" is turn 0 there).
+    pub native_portrait: bool,
 }
 
 /// Which page of the layout on the board is shown: the companion turns pages (spec/protocol.md
@@ -190,9 +193,10 @@ impl Shared {
 
     /// Tells the service loop the key size changed (it is saved already); the next connection
     /// reads it from the file anyway.
-    pub fn look_changed(&self, display: crate::display::Display) {
+    /// Board `id`'s look changed (already saved): it is sent to that board.
+    pub fn look_changed(&self, id: String) {
         if let Some(inbox) = self.inbox.get() {
-            let _ = inbox.try_send(Event::Look(display));
+            let _ = inbox.try_send(Event::Look(id));
         }
     }
 
@@ -310,7 +314,7 @@ enum Event {
     Joined(BoardStatus, Link),
     Configured(Focus, Result<(PathBuf, Library), String>),
     /// The person chose another theme or turn in the web app (already saved).
-    Look(crate::display::Display),
+    Look(String),
     /// A font fetched for a slot ("keys", "start"): its family (empty: back to the built-in font),
     /// the TrueType bytes, and the board it is for.
     Font(String, String, Result<Vec<u8>, String>, String),
@@ -455,15 +459,13 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         let mut boards: Vec<BoardStatus> = Vec::new();
         let mut heard: HashMap<String, tokio::time::Instant> = HashMap::new();
         let mut sent_images: HashSet<String> = HashSet::new();
-        let wanted = crate::display::load();
-        let mut paging = Paging::new(Grid::DEFAULT, wanted.key_size);
+        let mut paging = Paging::new(Grid::DEFAULT, crate::display::KeySize::default());
         let mut asked_look = false;
         for (board, link) in found {
             asked_look |= join_board(board, link, &mut sender, &mut boards, &mut heard, &events, &shared).await;
         }
         paging.board = common_grid(&boards);
-        paging.max = crate::display::shown_grid(paging.board, wanted.key_size);
-        set_picture_theme(boards[0].display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
+        paging.max = mirror_grid(&boards);
         publish_boards(&boards, &shared).await;
         let mut shown: Option<String> = None;
         if focus.is_none() {
@@ -638,15 +640,15 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // Edit mode: a tap selects the key in the web app; nothing runs.
                     shared.emit("edit.tap", json!({"page": paging.page, "slot": packet.body["key"]}));
                 }
-                Event::Look(wanted) => {
-                    // Each board is told only what it does not show yet.
-                    asked_look = false;
-                    for board in &boards {
-                        sender.only = Some(board.id.clone());
-                        asked_look |= send_look(&mut sender, board, &wanted).await;
+                Event::Look(id) => {
+                    // That board's own look, to that board only.
+                    if let Some(board) = boards.iter().find(|b| b.id == id) {
+                        let wanted = crate::display::for_board(&id);
+                        sender.only = Some(id.clone());
+                        asked_look = send_look(&mut sender, board, &wanted).await;
+                        sender.only = None;
                         fetch_fonts(board, &wanted, &events, true);
                     }
-                    sender.only = None;
                 }
                 Event::Font(slot, family, font, board_id) => match font {
                     Ok(bytes) if family.is_empty() => {
@@ -696,18 +698,20 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     asked_look = false;
                     let reason = packet.body["message"].as_str().unwrap_or("the board refused it").to_string();
                     problem!("display", "The board refused the display settings: {reason}");
-                    let mut saved = crate::display::load();
+                    let mut all = crate::display::load();
+                    let mut saved = all.for_board(&from);
                     if let Some(shown) = boards.iter().find(|b| b.id == from).and_then(|b| b.display.as_ref()) {
                         saved.theme = crate::display::Theme::named(shown["theme"].as_str().unwrap_or("dark"));
                         saved.turn = shown["turn"].as_u64().and_then(|t| u8::try_from(t).ok()).unwrap_or(0);
                     }
-                    let _ = crate::display::save(&saved);
+                    all.set_board(&from, &saved);
+                    let _ = crate::display::save(&all);
                     shared.emit("display", json!({"text": format!("The board could not show that: {reason}. Its firmware may need updating."),
                                                   "theme": saved.theme, "turn": saved.turn}));
                 }
                 Event::KeySize(key_size) => {
-                    paging.max = crate::display::shown_grid(paging.board, key_size);
-                    say!("Key size: {key_size:?}, pages up to {}x{}", paging.max.cols, paging.max.rows);
+                    paging.max = mirror_grid(&boards);
+                    say!("Key size: {key_size:?}; pages up to {}x{} on every board", paging.max.cols, paging.max.rows);
                     // Shown again at the new size.
                     shown = None;
                     if approvals.is_empty() {
@@ -856,8 +860,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                     paging.board = common_grid(&boards);
-                    paging.max = crate::display::shown_grid(paging.board, crate::display::load().key_size);
-                    set_picture_theme(packet.body["theme"].as_str().unwrap_or("dark"));
+                    paging.max = mirror_grid(&boards);
+                    sender.set_theme(&from, packet.body["theme"].as_str().unwrap_or("dark"));
                     publish_boards(&boards, &shared).await;
                     sent_images.clear();
                     shown = None;
@@ -1022,7 +1026,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                     // The others carry on; a smaller board leaving may allow a bigger grid.
                     paging.board = common_grid(&boards);
-                    paging.max = crate::display::shown_grid(paging.board, crate::display::load().key_size);
+                    paging.max = mirror_grid(&boards);
                     scout.watch(boards.iter().map(|b| b.id.clone()).collect());
                     publish_boards(&boards, &shared).await;
                 }
@@ -1032,7 +1036,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                     asked_look |= join_board(board, link, &mut sender, &mut boards, &mut heard, &events, &shared).await;
                     paging.board = common_grid(&boards);
-                    paging.max = crate::display::shown_grid(paging.board, crate::display::load().key_size);
+                    paging.max = mirror_grid(&boards);
                     scout.watch(boards.iter().map(|b| b.id.clone()).collect());
                     publish_boards(&boards, &shared).await;
                     // Everything the others show, on the new one too.
@@ -1166,11 +1170,13 @@ pub struct BoardSender {
     links: Vec<(String, Link)>,
     only: Option<String>,
     failed: Vec<String>,
+    /// Each board's theme, for pictures: toned grey or sepia to match it (send_image).
+    themes: HashMap<String, crate::display::Theme>,
 }
 
 impl BoardSender {
     fn new() -> BoardSender {
-        BoardSender { links: Vec::new(), only: None, failed: Vec::new() }
+        BoardSender { links: Vec::new(), only: None, failed: Vec::new(), themes: HashMap::new() }
     }
 
     fn add(&mut self, id: String, link: Link) {
@@ -1181,6 +1187,12 @@ impl BoardSender {
     fn remove(&mut self, id: &str) {
         self.links.retain(|(i, _)| i != id);
         self.failed.retain(|f| f != id);
+        self.themes.remove(id);
+    }
+
+    /// The theme board `id` shows (from its identity or its answer to a look).
+    fn set_theme(&mut self, id: &str, name: &str) {
+        self.themes.insert(id.to_string(), crate::display::Theme::named(name));
     }
 
     async fn send(&mut self, kind: &str, body: Value) -> Result<u32, String> {
@@ -1220,8 +1232,9 @@ async fn join_board(board: BoardStatus, link: Link, sender: &mut BoardSender, bo
         problem!("board-crash", "Board {} started again after a {reason} (it stopped on its own; firmware {})", board.id, board.firmware);
     }
     sender.add(board.id.clone(), link);
+    sender.set_theme(&board.id, board.display.as_ref().and_then(|d| d["theme"].as_str()).unwrap_or("dark"));
     heard.insert(board.id.clone(), tokio::time::Instant::now());
-    let wanted = crate::display::load();
+    let wanted = crate::display::for_board(&board.id);
     sender.only = Some(board.id.clone());
     let asked = send_look(sender, &board, &wanted).await;
     sender.only = None;
@@ -1278,6 +1291,16 @@ fn spawn_scout(events: mpsc::Sender<Event>, shared: Arc<Shared>, connected: Vec<
         }
     });
     Scout { task, connected }
+}
+
+/// The grid pages are shown in: each board's key size within what it draws, the smallest of
+/// those, so every board shows the same pages (mirror). One board alone: its own choice.
+fn mirror_grid(boards: &[BoardStatus]) -> Grid {
+    let display = crate::display::load();
+    let grids: Vec<Grid> = boards.iter().map(|b| crate::display::shown_grid(b.grid, display.for_board(&b.id).key_size)).collect();
+    let cols = grids.iter().map(|g| g.cols).min().unwrap_or(Grid::DEFAULT.cols);
+    let rows = grids.iter().map(|g| g.rows).min().unwrap_or(Grid::DEFAULT.rows);
+    Grid { cols, rows }
 }
 
 /// The grid every connected board can draw: the smallest of their largest grids, so the boards
@@ -1361,7 +1384,15 @@ fn board_status(id: &str, identity: &Value, address: String) -> BoardStatus {
         fonts: identity["board"].get("fonts").cloned(),
         last_start: identity["lastStart"].as_str().map(str::to_string),
         mic: identity["features"]["mic"] == true,
+        native_portrait: native_portrait(identity),
     }
+}
+
+/// Whether the board is taller than wide at turn 0, from its size and turn now.
+fn native_portrait(identity: &Value) -> bool {
+    let (w, h) = (identity["board"]["width"].as_u64().unwrap_or(0), identity["board"]["height"].as_u64().unwrap_or(0));
+    let turned = identity["board"]["display"]["turn"].as_u64().unwrap_or(0) % 2 == 1;
+    (w < h) != turned
 }
 
 /// Checks connected USB serial ports for a board paired with this computer and opens a live serial
@@ -1928,15 +1959,6 @@ fn board_restart_expected(shared: &Shared) -> bool {
         || USB_JOB_ENDED.lock().ok().and_then(|e| *e).is_some_and(|at| at.elapsed() < Duration::from_secs(90))
 }
 
-/// The connected board's theme, for the tones pictures are sent in.
-static PICTURE_THEME: std::sync::Mutex<crate::display::Theme> = std::sync::Mutex::new(crate::display::Theme::Dark);
-
-fn set_picture_theme(name: &str) {
-    if let Ok(mut theme) = PICTURE_THEME.lock() {
-        *theme = crate::display::Theme::named(name);
-    }
-}
-
 /// Sends the person's theme and turn when the board shows something else; the board stores and
 /// shows them, and answers with its new size (spec/protocol.md 3.6d).
 /// Fetches (in the background) each font the person chose that the board does not hold, or asks
@@ -2010,19 +2032,30 @@ async fn send_look(sender: &mut BoardSender, board: &BoardStatus, wanted: &crate
 /// refused the first slice (a board without picture support ignores the rest).
 async fn send_image(sender: &mut BoardSender, name: &str, rgba: &[u8]) -> bool {
     use base64::Engine;
-    let mut rgba = rgba.to_vec();
-    if let Ok(theme) = PICTURE_THEME.lock() {
-        theme.tone(&mut rgba);
-    }
-    let pixels = crate::launcher::board_pixels(&rgba);
-    for (i, chunk) in pixels.chunks(2048).enumerate() {
-        let body = json!({"name": name, "w": 32, "h": 32, "offset": i * 2048, "total": pixels.len(),
-                          "data": base64::engine::general_purpose::STANDARD.encode(chunk)});
-        if sender.send("knoend.image", body).await.is_err() {
-            return false;
+    // Each board gets the picture in its own theme's tones.
+    let boards: Vec<(String, crate::display::Theme)> = sender.links.iter()
+        .filter(|(id, _)| sender.only.as_ref().is_none_or(|o| o == id))
+        .map(|(id, _)| (id.clone(), sender.themes.get(id).copied().unwrap_or_default())).collect();
+    let only = sender.only.take();
+    let mut sent = false;
+    for (id, theme) in boards {
+        let mut toned = rgba.to_vec();
+        theme.tone(&mut toned);
+        let pixels = crate::launcher::board_pixels(&toned);
+        sender.only = Some(id);
+        let mut ok = true;
+        for (i, chunk) in pixels.chunks(2048).enumerate() {
+            let body = json!({"name": name, "w": 32, "h": 32, "offset": i * 2048, "total": pixels.len(),
+                              "data": base64::engine::general_purpose::STANDARD.encode(chunk)});
+            if sender.send("knoend.image", body).await.is_err() {
+                ok = false;
+                break;
+            }
         }
+        sent |= ok;
     }
-    true
+    sender.only = only;
+    sent
 }
 
 /// Fetches a site's icon (http(s), or a data: URL) and shrinks it to 32x32, off the loop.

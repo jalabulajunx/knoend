@@ -157,6 +157,9 @@ changes until they press Apply. Include it only when the evidence points to that
   that setting's "choices". That list is everything the person can change and says what each one
   means, what it is now and when a change shows; read it rather than assuming what exists. For
   example keys too small or too hard to read: "key_size"; a screen hard to read in daylight: "theme".
+  Settings marked "per_board" are one board's own (each board keeps its own look; board_looks has
+  every paired board's): add "board": "<board id>" to "settings" to change that board's, else they
+  change the board the list names. Never change one board's look to fix another.
 - For the AI settings: "model" (a name from from_the_web_app.ai_models_available when that list is
   given), "base_url" (an http(s) address, or "" for the provider's usual one), "options" (request
   settings to add; null leaves a setting out, e.g. {{"temperature": null}}), "timeout_secs" (10 to
@@ -333,6 +336,12 @@ mod tests {
         assert!(prompt.contains("last_board_identified") && prompt.contains("identify_board"));
         assert!(prompt.contains("outweigh an app's") && prompt.contains("knoend_firmware_drives"));
         assert!(prompt.contains("not to install KnoEnd on it"));
+    }
+
+    #[test]
+    fn a_look_fix_names_its_board() {
+        let prompt = system_prompt();
+        assert!(prompt.contains("\"per_board\"") && prompt.contains("board_looks") && prompt.contains("\"board\": \"<board id>\""));
     }
 
     #[test]
