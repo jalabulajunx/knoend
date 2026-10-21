@@ -1857,3 +1857,12 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - Pluggable connectors for other apps (Sundar's idea: an AI writes the bridge): proposal in the
     decision record, for Tom.
   - Tom: review spec 3.6f, the board schema `mic` and library action `listen`.
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - Set up a board: a way back to the board's options
+
+- Changed: after picking from "Your board is set up" (apps, look, Wi-Fi, Bluetooth, install), a
+  "← Your board" link above the step returns to those options, as do Back on the apps step and the
+  apps step's done message. Before, the only way back was the Set up a board tab (Sundar). "1 keys"
+  now reads "1 key".
+- Tested (web app, Arch Linux, board on Wi-Fi): apps → back link and Back return to the options;
+  look → back link returns; Bluetooth's own Back still goes to the Wi-Fi step.
