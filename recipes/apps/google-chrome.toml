@@ -75,6 +75,7 @@ kind = "shortcut"
 
 [match]
 linux = ["google-chrome"]
+windows = ["chrome.exe"]
 
 [pack]
 description = "Common navigation and tab management shortcuts for Google Chrome on Linux."

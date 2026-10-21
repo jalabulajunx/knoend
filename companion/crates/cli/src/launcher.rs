@@ -31,15 +31,37 @@ impl Target {
 
     /// Opens it, detached from the service.
     pub fn open(&self) -> Result<(), String> {
-        let (program, args): (&str, Vec<String>) = match self {
-            Target::App { id } if cfg!(target_os = "macos") => ("open", vec!["-b".into(), id.clone()]),
-            Target::App { id } => ("gtk-launch", vec![id.clone()]),
-            Target::Site { host } if cfg!(target_os = "macos") => ("open", vec![format!("https://{host}/")]),
-            Target::Site { host } => ("xdg-open", vec![format!("https://{host}/")]),
-        };
-        std::process::Command::new(program).args(&args)
-            .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
-            .spawn().map(|_| ()).map_err(|e| format!("{program}: {e}"))
+        #[cfg(target_os = "windows")]
+        match self {
+            Target::App { id } => {
+                if knoend_focus::bring_to_front(&[id.as_str()]).is_ok() {
+                    return Ok(());
+                }
+                if let Some(exe) = knoend_desktop::win_apps::exe_path(id) {
+                    if knoend_focus::spawn_on_input_desktop(&format!("\"{}\"", exe.display())).is_ok() {
+                        return Ok(());
+                    }
+                }
+                return knoend_focus::spawn_on_input_desktop(&format!("cmd.exe /C start \"\" \"{id}\""));
+            }
+            Target::Site { host } => {
+                let _ = knoend_focus::bring_to_front(&["msedge.exe", "chrome.exe", "firefox.exe", "brave.exe"]);
+                let url = format!("https://{host}/");
+                return knoend_focus::spawn_on_input_desktop(&format!("rundll32.exe url.dll,FileProtocolHandler {url}"));
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let (program, args): (&str, Vec<String>) = match self {
+                Target::App { id } if cfg!(target_os = "macos") => ("open", vec!["-b".into(), id.clone()]),
+                Target::App { id } => ("gtk-launch", vec![id.clone()]),
+                Target::Site { host } if cfg!(target_os = "macos") => ("open", vec![format!("https://{host}/")]),
+                Target::Site { host } => ("xdg-open", vec![format!("https://{host}/")]),
+            };
+            std::process::Command::new(program).args(&args)
+                .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+                .spawn().map(|_| ()).map_err(|e| format!("{program}: {e}"))
+        }
     }
 }
 
@@ -120,6 +142,21 @@ pub fn usage_key(focus: &Focus, apps: &[AppInfo]) -> Option<(String, Entry)> {
         return (!focus.app.is_empty()).then(|| (format!("app:{}", focus.app),
                                                  entry(focus.display_name().to_string(), Target::App { id: focus.app.clone() })));
     }
+    if cfg!(target_os = "windows") {
+        if focus.app.is_empty() {
+            return None;
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(pid) = knoend_focus::window_pid(&[focus.app.as_str(), focus.instance.as_str()]) {
+            if let Some(exe) = knoend_focus::process_exe(pid) {
+                knoend_desktop::win_apps::remember_exe(&focus.app, exe);
+            }
+        }
+        return Some((
+            format!("app:{}", focus.app.to_ascii_lowercase()),
+            entry(focus.display_name().to_string(), Target::App { id: focus.app.clone() }),
+        ));
+    }
     let app = apps.iter().find(|a| a.matches(&focus.app, &focus.instance))?;
     Some((format!("app:{}", app.id), entry(app.name.clone(), Target::App { id: app.id.clone() })))
 }
@@ -129,6 +166,7 @@ pub fn usage_key(focus: &Focus, apps: &[AppInfo]) -> Option<(String, Entry)> {
 pub struct AppInfo {
     pub id: String,
     pub name: String,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub icon: String,
     wm_class: String,
 }
@@ -170,7 +208,12 @@ pub fn icon_pixels(target: &Target, name: &str, apps: &[AppInfo], favicons: &Has
             let _ = apps;
             knoend_desktop::mac_apps::icon(id, name, 32)
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(target_os = "windows")]
+        Target::App { id } => {
+            let _ = (name, apps);
+            knoend_desktop::win_apps::icon(id, 32)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         Target::App { .. } => {
             let _ = (name, apps);
             None
@@ -190,7 +233,10 @@ pub fn board_pixels(rgba: &[u8]) -> Vec<u8> {
 /// Saved favicons (32x32 RGBA PNG per site) in the cache folder.
 pub fn favicon_dir() -> PathBuf {
     std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from)
-        .unwrap_or_else(|| std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".cache"))
+        .unwrap_or_else(|| {
+            let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).unwrap_or_default();
+            PathBuf::from(home).join(".cache")
+        })
         .join("knoend/favicons")
 }
 

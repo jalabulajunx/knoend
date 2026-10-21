@@ -1497,3 +1497,119 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   terminal) instead of by app name.
 - **A firmware build that misses a new `sdkconfig.defaults` value:** delete
   `build/universal/sdkconfig` and build again.
+
+## 2026-10-20 - Sundar (Antigravity) - Windows companion support
+
+- Branch `sundar/windows-support`.
+- Changed:
+  - `companion/crates/focus/src/windows.rs`, `focus/src/lib.rs`, `core/src/focus.rs`: Win32 active
+    window watcher (`GetForegroundWindow`, `GetClassNameW`, `GetWindowThreadProcessId`,
+    `QueryFullProcessImageNameW`), UWP `ApplicationFrameHost.exe` child-window resolution
+    (`EnumChildWindows`), desktop/taskbar filtering (`Progman`, `WorkerW`, `Shell_TrayWnd` report
+    `None` so the launcher appears when clicking the desktop or taskbar while `CabinetWClass`
+    reports `explorer.exe`), `is_main_window` filtering in `find_window` (excludes DWM-cloaked,
+    `WS_EX_TOOLWINDOW`, `WS_EX_NOACTIVATE`, owned non-`WS_EX_APPWINDOW`, and untitled helper
+    `HWND`s), `bring_to_front` (unlocks the Windows Foreground Lock via `AttachThreadInput`,
+    `AllowSetForegroundWindow`, and `VK_NONAME`, restores/raises above `WorkerW` "Show Desktop", and
+    calls `SetForegroundWindow` + `SwitchToThisWindow`), `spawn_on_input_desktop` (`CreateProcessW`
+    with `lpDesktop = "Winsta0\\Default"`), `window_pid`, `process_exe`, and
+    `attach_input_desktop()` (`OpenInputDesktop` + `SetThreadDesktop`). `Focus::display_name()`
+    strips `.exe`/`.EXE` and `.Root`/`.root` before splitting on `.` so Windows executable names
+    display as the app name (`Antigravity.exe` -> `Antigravity`, `WhatsApp.Root.exe` -> `WhatsApp`).
+  - `companion/crates/input/src/windows.rs`, `input/src/lib.rs`: Win32 `SendInput` keyboard synthesis
+    (`INPUT_KEYBOARD`, 40-byte `INPUT` union including `MouseInput` to match the 64-bit Win32 ABI,
+    `MapVirtualKeyW`, `KEYEVENTF_EXTENDEDKEY`, modifiers, and `attach_input_desktop()`).
+  - `companion/crates/flash/src/usb.rs`: gated Linux `sysfs_devices_and_their_drivers` with
+    `#[cfg(unix)]` and implemented `raw_devices()` on Windows via `setupapi.dll`
+    (`SetupDiGetClassDevsW` for present `USB\*` devices, reading `SPDRP_HARDWAREID`,
+    `SPDRP_FRIENDLYNAME`/`SPDRP_DEVICEDESC`, and `SPDRP_SERVICE`) so the setup assistant sees
+    boards on the USB bus even before a COM port driver is installed.
+  - `companion/crates/desktop/src/win_apps.rs`, `desktop/src/lib.rs`, `cli/src/launcher.rs`,
+    `cli/src/app_facts.rs`, `transport/src/pairing.rs`, `agents/src/secrets.rs`: Windows executable
+    path persistence (`win-apps.txt`), 32x32 RGBA icon extraction (`SHGetFileInfoW` + `GetIconInfo`
+    + `GetDIBits`), `USERPROFILE`/`COMPUTERNAME` fallbacks, launcher opening (`cmd /C start`) and
+    icon rendering, and Windows Electron (`resources\app.asar`, `product.json`) package inspection
+    for the Configure agent.
+  - `companion/crates/cli/src/browser.rs`, `cli/src/agent_hooks.rs`: `clean_exe_path()` (strips
+    `\\?\` verbatim prefixes from `current_exe()`), Windows local authenticated loopback TCP IPC
+    (`127.0.0.1` + 32-byte random token in `browser.addr` / `agents.addr` under
+    `%LOCALAPPDATA%\knoend\run`), and Windows Registry (`HKCU\Software\...\NativeMessagingHosts`)
+    registration for Chrome, Edge, Brave, Chromium and Firefox.
+  - `companion/crates/cli/src/background.rs`: `knoend service install|uninstall|status` on Windows
+    using `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` and `CREATE_NO_WINDOW`.
+  - `companion/crates/cli/src/diagnostics.rs`, `agents/src/assistant.rs`, `agents/src/cli_tool.rs`,
+    `agents/src/provider.rs`, `cli/src/web.rs`, `web/index.html`, `web/app.js`,
+    `docs/knowledge/setup.md`: added `windows_checks` (`keyboard_typing`, `usb_serial_driver`),
+    Windows `noPortAdvice`, Windows 30 KiB command-line prompt cap for CLI AI tools
+    (`AGY_MAX_PROMPT`), Windows Registry PATH + app-bundle lookup for `claude.exe` (inside
+    `%APPDATA%\Claude\claude-code\<ver>` and Windows Store MSIX `Packages\Claude_*\LocalCache\Roaming\Claude\claude-code\<ver>`)
+    and `codex.exe` (inside `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>` and
+    `%USERPROFILE%\.codex\plugins\.plugin-appserver`), full `Provider::Codex` (`codex exec` in a
+    locked-down ephemeral read-only sandbox) support, and Windows troubleshooting in
+    `docs/knowledge/setup.md`.
+  - `recipes/apps/antigravity.toml`, `claude-desktop.toml`, `firefox.toml`, `google-chrome.toml`:
+    added `windows = [...]` executable match entries.
+  - `.github/workflows/ci.yml`, `.github/workflows/release.yml`: added `windows-latest` and
+    `x86_64-pc-windows-msvc.zip` release asset packaging.
+- Tested (ONX2432G028 on `COM4`, Windows 11):
+  - `cargo test --locked`: all 111 unit tests across all 9 crates pass with 0 warnings (including
+    Win32 icon extraction for `explorer.exe`, USB hardware ID parsing, display name stripping, and
+    authenticated local TCP IPC round-trip).
+  - `knoend.exe devices`: detected the connected ONX2432G028 on `COM4` (`usb 1a86:7522 ch340
+    USB-SERIAL CH340K (COM4)`, `chip esp32s3 v0.2 flash 16MB mac 80:b5:4e:db:cd:b8`, ranked
+    `ONX2432G028` first with score 20).
+  - `knoend.exe browser install`: wrote manifests and registered `HKCU\Software\...\NativeMessagingHosts`
+    for Chrome, Edge, and Firefox.
+  - `knoend.exe serve --no-open`: `/api/ports` returned `COM4` (`ch340`, `1a86:7522`), and
+    `/api/events` reported `"app": "Antigravity"` for the focused foreground window.
+  - `cargo test -p knoend-agents live::real_codex -- --ignored --nocapture`: `tools_on_this_computer()`
+    found both `Claude Code 2.1.271` (inside MSIX `Claude_pzs8sxrjxfjjc`) and `Codex CLI
+    0.163.0-alpha.10.2` (`signed_in: true`), and `complete_codex` returned `Ok("{\"ok\":true}")` in
+    5.77 s.
+  - Installed Python 3.12 (`winget install Python.Python.3.12 --scope user`) and ESP-IDF v5.4.4
+    (`~/esp/esp-idf`) locally on Windows 11: `python tools/validate_spec.py` (`28 valid, 19 invalid
+    examples checked; 0 problem(s)`), `python tools/build_extension.py` (`dist/extension/chrome`
+    and `dist/extension/firefox`), `idf.py -B build/universal build` (`v0.1.1-134`), and
+    `python tools/release_firmware.py --version 0.1.2-dev --out dist/firmware` all succeeded.
+  - End-to-end bench verification on Windows 11 with the ONX2432G028 over `COM4` and Wi-Fi:
+    - Flashed `0.1.2-dev` (`v0.1.1-134`) from the web app, paired, joined Wi-Fi (`192.168.50.54`).
+    - Look & fonts live on the ONX: `sepia` and `dark` themes, portrait rotation (`turn: 1`, 240x320,
+      `3x4` grid) and landscape (`turn: 0`, 320x240, `4x4` and `3x3` grids), and Google Font
+      `Silkscreen` (18,444 bytes) sent to the `start` font slot.
+    - AI layout drafting on Windows via Codex CLI (`codex/default`) and Edit keys in the web app:
+      drafted and edited `PowerPoint` (`ai.powerpnt` -> `user.powerpnt`, 2 pages), `Microsoft Edge`
+      (`ai.msedge`, 2 pages), `WhatsApp` (`ai.whatsapp-root`, 9 keys), and `File Explorer`
+      (`ai.explorer`, 14 keys across 2 pages), and verified Win32 `SendInput` key typing across
+      pages in PowerPoint (`POWERPNT.EXE`), Microsoft Edge (`msedge.exe`), WhatsApp
+      (`WhatsApp.Root.exe`), File Explorer (`explorer.exe`), and Antigravity.
+    - Desktop launcher (`system.launcher`): verified clicking the Windows 11 desktop shows the
+      launcher on the board with extracted 32x32 app icons and site favicons, and tapping app and
+      site icons (`POWERPNT`, `WhatsApp`, `explorer`, `msedge`, `Antigravity`, `docs.google.com`,
+      `drive.google.com`) restores and brings their windows to the front on `Winsta0\Default`.
+    - Browser extension (`0.1.1`) loaded unpacked in Microsoft Edge on Windows 11: connected via
+      native messaging + authenticated local TCP IPC (`Browser extension connected (chrome 0.1.1)`),
+      switched board layouts across Google Drive (`builtin.site-drive-google-com`), Google Slides
+      editing (`builtin.site-docs-google-com`), and full-screen Google Slides presenting
+      (`builtin.google-slides-present`: `Present`, `Next`, `Prev`, `Laser`, `White`, `Black`, `Last`,
+      `First`, `Exit`).
+  - Confirmed and fixed a subtle Windows desktop-station trap: when `knoend` is spawned from a
+    coding agent's sandboxed shell on Windows (such as Antigravity's `codex-windows-sandbox-service`),
+    the child process inherits an isolated non-interactive desktop (`CreateDesktopW`) where
+    `GetForegroundWindow()` returns `0`. Calling `OpenInputDesktop(0, 0, GENERIC_ALL)` +
+    `SetThreadDesktop` on the focus and input threads attaches them to the active interactive
+    desktop (`Default`), making `GetForegroundWindow()` immediately return the real foreground
+    window (`hwnd=198218`, `Antigravity.exe`). Also filtered Windows shell overlay processes
+    (`PickerHost.exe`, `SearchHost.exe`, `StartMenuExperienceHost.exe`, `ShellExperienceHost.exe`,
+    `LockApp.exe`, `TextInputHost.exe`) in `focus/src/windows.rs` so system overlays do not pollute
+    the launcher.
+- Decided:
+  - Zero new Cargo dependencies (`Cargo.lock` unchanged so `--locked` builds pass across all
+    platforms): Win32 (`user32`, `kernel32`, `shell32`, `gdi32`, `setupapi`) is linked directly via
+     minimal `extern "system"` FFI modules in `focus`, `input`, `desktop`, and `flash`.
+  - Local IPC for `browser-host` and `claude-hook` on Windows uses loopback TCP (`127.0.0.1:0`) with
+    a 32-byte per-start authentication token stored in `%LOCALAPPDATA%\knoend\run\*.addr`, keeping
+    full sync `Read`/`Write` compatibility with the Unix socket path.
+- Open:
+  - End-to-end key typing against elevated (Run as Administrator) windows on Windows (UIPI blocks
+    unelevated `SendInput` into elevated windows; documented in `docs/knowledge/setup.md`).
+  - Windows media controls (`SystemMediaTransportControls`) and desktop notifications (`companion/crates/media`, `desktop`).

@@ -12,9 +12,14 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::{accessibility_trusted, launching_app, Typist};
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+pub use windows::Typist;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod unsupported;
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 pub use unsupported::Typist;
 
 /// The layout-independent name of a key, from its USB HID usage ID (US positions for punctuation).

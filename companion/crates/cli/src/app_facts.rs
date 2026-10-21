@@ -8,10 +8,13 @@ use serde_json::Value;
 
 /// Facts about the app in `focus`, one per line; empty when nothing could be read.
 pub fn about(focus: &Focus) -> Vec<String> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     {
         let Some(pid) = knoend_focus::window_pid(&[focus.app.as_str(), focus.instance.as_str()]) else { return Vec::new() };
+        #[cfg(target_os = "linux")]
         let Ok(exe) = std::fs::read_link(format!("/proc/{pid}/exe")) else { return Vec::new() };
+        #[cfg(target_os = "windows")]
+        let Some(exe) = knoend_focus::process_exe(pid) else { return Vec::new() };
         let mut facts = Vec::new();
         if let Some(name) = exe.file_name().and_then(|n| n.to_str()) {
             facts.push(format!("Program file: {name}"));
@@ -21,7 +24,7 @@ pub fn about(focus: &Focus) -> Vec<String> {
         }
         facts
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         let _ = focus;
         Vec::new()
@@ -30,7 +33,7 @@ pub fn about(focus: &Focus) -> Vec<String> {
 
 /// "Antigravity 2.23.1: Antigravity - Agentic Desktop Application" from an Electron app's package
 /// (`resources/app.asar`, or `resources/app/` for VS Code-style apps, whose product.json names them).
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "linux", target_os = "windows")), allow(dead_code))]
 fn electron_package(resources: &std::path::Path) -> Option<String> {
     let app = resources.join("app");
     let product = std::fs::read_to_string(app.join("product.json")).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok());
@@ -49,7 +52,7 @@ fn electron_package(resources: &std::path::Path) -> Option<String> {
 }
 
 /// One file at the top of an asar archive (Electron's: a size-prefixed JSON index, then the files).
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "linux", target_os = "windows")), allow(dead_code))]
 fn asar_file(path: &std::path::Path, name: &str) -> Option<Vec<u8>> {
     use std::io::{Read, Seek, SeekFrom};
     let mut file = std::fs::File::open(path).ok()?;

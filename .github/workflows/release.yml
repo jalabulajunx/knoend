@@ -42,6 +42,8 @@ jobs:
             target: aarch64-apple-darwin
           - os: macos-latest
             target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -52,9 +54,15 @@ jobs:
           targets: ${{ matrix.target }}
       - run: cargo build --locked --release --target ${{ matrix.target }}
         working-directory: companion
-      - run: |
+      - if: runner.os != 'Windows'
+        run: |
           mkdir -p out
           tar -C companion/target/${{ matrix.target }}/release -czf out/knoend-${{ matrix.target }}.tar.gz knoend
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Compress-Archive -Path "companion/target/${{ matrix.target }}/release/knoend.exe" -DestinationPath "out/knoend-${{ matrix.target }}.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: service-${{ matrix.target }}

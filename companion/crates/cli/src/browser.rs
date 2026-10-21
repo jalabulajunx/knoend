@@ -46,9 +46,34 @@ fn socket_in(folder: &str) -> PathBuf {
     }
 }
 
-/// Binds a Unix socket only this user can open (its folder 0700, the socket 0600).
+/// The current binary's canonical path, without Windows's `\\?\` verbatim prefix.
+pub fn clean_exe_path() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    if let Some(s) = exe.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        return Ok(PathBuf::from(s));
+    }
+    Ok(exe)
+}
+
 #[cfg(unix)]
-pub fn bind_private(path: &std::path::Path) -> std::io::Result<tokio::net::UnixListener> {
+pub type PrivateStream = std::os::unix::net::UnixStream;
+#[cfg(windows)]
+pub type PrivateStream = std::net::TcpStream;
+
+#[cfg(unix)]
+pub struct PrivateListener(tokio::net::UnixListener);
+
+#[cfg(windows)]
+pub struct PrivateListener {
+    listener: tokio::net::TcpListener,
+    token: String,
+}
+
+/// Binds a local socket only this user can open (Unix: 0600 Unix socket; Windows: 127.0.0.1 TCP
+/// listener whose port and per-start random auth token are stored in `path`).
+#[cfg(unix)]
+pub fn bind_private(path: &std::path::Path) -> std::io::Result<PrivateListener> {
     use std::os::unix::fs::PermissionsExt;
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
@@ -57,7 +82,69 @@ pub fn bind_private(path: &std::path::Path) -> std::io::Result<tokio::net::UnixL
     let _ = std::fs::remove_file(path);
     let listener = tokio::net::UnixListener::bind(path)?;
     let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    Ok(listener)
+    Ok(PrivateListener(listener))
+}
+
+#[cfg(windows)]
+pub fn bind_private(path: &std::path::Path) -> std::io::Result<PrivateListener> {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let std_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    std_listener.set_nonblocking(true)?;
+    let addr = std_listener.local_addr()?;
+    let token = knoend_transport::auth::nonce();
+    std::fs::write(path, format!("{addr} {token}\n"))?;
+    let listener = tokio::net::TcpListener::from_std(std_listener)?;
+    Ok(PrivateListener { listener, token })
+}
+
+#[cfg(unix)]
+impl PrivateListener {
+    pub async fn accept(&self) -> std::io::Result<(tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>, tokio::net::unix::OwnedWriteHalf)> {
+        let (stream, _) = self.0.accept().await?;
+        let (r, w) = stream.into_split();
+        Ok((tokio::io::BufReader::new(r), w))
+    }
+}
+
+#[cfg(windows)]
+impl PrivateListener {
+    pub async fn accept(&self) -> std::io::Result<(tokio::io::BufReader<tokio::net::tcp::OwnedReadHalf>, tokio::net::tcp::OwnedWriteHalf)> {
+        use tokio::io::AsyncBufReadExt;
+        loop {
+            let (stream, _) = self.listener.accept().await?;
+            let (r, w) = stream.into_split();
+            let mut reader = tokio::io::BufReader::new(r);
+            let mut auth_line = String::new();
+            let ok = tokio::time::timeout(Duration::from_secs(2), reader.read_line(&mut auth_line))
+                .await
+                .ok()
+                .and_then(|r| r.ok())
+                .is_some_and(|_| auth_line.trim() == format!("AUTH {}", self.token));
+            if ok {
+                return Ok((reader, w));
+            }
+        }
+    }
+}
+
+/// Connects to the local socket bound by `bind_private`.
+#[cfg(unix)]
+pub fn connect_private(path: &std::path::Path) -> std::io::Result<PrivateStream> {
+    std::os::unix::net::UnixStream::connect(path)
+}
+
+#[cfg(windows)]
+pub fn connect_private(path: &std::path::Path) -> std::io::Result<PrivateStream> {
+    let info = std::fs::read_to_string(path)?;
+    let (addr, token) = info
+        .trim()
+        .split_once(' ')
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid socket file"))?;
+    let mut stream = std::net::TcpStream::connect(addr)?;
+    stream.write_all(format!("AUTH {token}\n").as_bytes())?;
+    Ok(stream)
 }
 
 /// Whether the browser started this binary as its native messaging host: Chrome passes the
@@ -170,7 +257,7 @@ pub enum BrowserEvent {
 }
 
 /// Listens for hosts; tab changes go to `tabs`.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub async fn serve(browser: Arc<Browser>, tabs: mpsc::Sender<BrowserEvent>) {
     let listener = match bind_private(&socket_path()) {
         Ok(l) => l,
@@ -185,19 +272,27 @@ pub async fn serve(browser: Arc<Browser>, tabs: mpsc::Sender<BrowserEvent>) {
             Some(old) => tokio::select! { s = listener.accept() => s, s = old.accept() => s },
             None => listener.accept().await,
         };
-        let Ok((stream, _)) = stream else { continue };
+        let Ok((read, write)) = stream else { continue };
         let number = browser.next.fetch_add(1, Ordering::Relaxed);
-        tokio::spawn(connection(number, stream, browser.clone(), tabs.clone()));
+        tokio::spawn(connection(number, read, write, browser.clone(), tabs.clone()));
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub async fn serve(_browser: Arc<Browser>, _tabs: mpsc::Sender<BrowserEvent>) {}
 
-#[cfg(unix)]
-async fn connection(id: u64, stream: tokio::net::UnixStream, browser: Arc<Browser>, tabs: mpsc::Sender<BrowserEvent>) {
+#[cfg(any(unix, windows))]
+async fn connection<R, W>(
+    id: u64,
+    read: tokio::io::BufReader<R>,
+    mut write: W,
+    browser: Arc<Browser>,
+    tabs: mpsc::Sender<BrowserEvent>,
+) where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-    let (read, mut write) = stream.into_split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     browser.links.lock().unwrap().insert(id, tx);
     let writer = tokio::spawn(async move {
@@ -207,7 +302,7 @@ async fn connection(id: u64, stream: tokio::net::UnixStream, browser: Arc<Browse
             }
         }
     });
-    let mut lines = tokio::io::BufReader::new(read).lines();
+    let mut lines = read.lines();
     while let Ok(Some(line)) = lines.next_line().await {
         let Ok(message) = serde_json::from_str::<Value>(&line) else { continue };
         match message["type"].as_str() {
@@ -294,11 +389,10 @@ fn write_frame(output: &mut impl Write, body: &[u8]) -> std::io::Result<()> {
 
 /// Relays between the browser (stdin/stdout) and the service socket until the browser closes
 /// stdin. Never prints anything else to stdout: the browser reads it as messages.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub fn run_host() -> Result<(), String> {
-    use std::os::unix::net::UnixStream;
     let stdout = Arc::new(Mutex::new(std::io::stdout()));
-    let socket: Arc<Mutex<Option<UnixStream>>> = Arc::new(Mutex::new(None));
+    let socket: Arc<Mutex<Option<PrivateStream>>> = Arc::new(Mutex::new(None));
     // What to replay to a service that (re)starts: the extension's hello and its last tab.
     let replay: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -308,7 +402,7 @@ pub fn run_host() -> Result<(), String> {
         std::thread::spawn(move || {
             let mut told_down = false;
             loop {
-                match UnixStream::connect(socket_path()) {
+                match connect_private(&socket_path()) {
                     Ok(stream) => {
                         let mut writer = stream.try_clone().expect("socket clone");
                         for line in replay.lock().unwrap().iter() {
@@ -357,7 +451,7 @@ pub fn run_host() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub fn run_host() -> Result<(), String> {
     Err("the browser link is not available on this OS yet".into())
 }
@@ -367,7 +461,7 @@ pub fn run_host() -> Result<(), String> {
 /// Native messaging host folders for the browsers on this computer (only browsers whose own
 /// settings folder exists), with whether each is Firefox.
 fn host_dirs() -> Vec<(&'static str, PathBuf, bool)> {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).unwrap_or_default();
     let candidates: Vec<(&str, PathBuf, PathBuf, bool)> = if cfg!(target_os = "macos") {
         let support = home.join("Library/Application Support");
         vec![
@@ -376,6 +470,17 @@ fn host_dirs() -> Vec<(&'static str, PathBuf, bool)> {
             ("Edge", support.join("Microsoft Edge"), support.join("Microsoft Edge/NativeMessagingHosts"), false),
             ("Brave", support.join("BraveSoftware/Brave-Browser"), support.join("BraveSoftware/Brave-Browser/NativeMessagingHosts"), false),
             ("Firefox", support.join("Mozilla"), support.join("Mozilla/NativeMessagingHosts"), true),
+        ]
+    } else if cfg!(target_os = "windows") {
+        let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| home.join("AppData/Local"));
+        let roaming = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| home.join("AppData/Roaming"));
+        let hosts_root = knoend_transport::pairing::config_dir().join("native-messaging-hosts");
+        vec![
+            ("Chrome", local.join("Google/Chrome/User Data"), hosts_root.join("chrome"), false),
+            ("Chromium", local.join("Chromium/User Data"), hosts_root.join("chromium"), false),
+            ("Edge", local.join("Microsoft/Edge/User Data"), hosts_root.join("edge"), false),
+            ("Brave", local.join("BraveSoftware/Brave-Browser/User Data"), hosts_root.join("brave"), false),
+            ("Firefox", roaming.join("Mozilla/Firefox"), hosts_root.join("firefox"), true),
         ]
     } else {
         let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".config"));
@@ -390,9 +495,22 @@ fn host_dirs() -> Vec<(&'static str, PathBuf, bool)> {
     candidates.into_iter().filter(|(_, browser, _, _)| browser.is_dir()).map(|(n, _, dir, f)| (n, dir, f)).collect()
 }
 
+#[cfg(target_os = "windows")]
+fn windows_registry_key(browser_name: &str, host: &str) -> Option<String> {
+    let base = match browser_name {
+        "Chrome" => r"HKCU\Software\Google\Chrome\NativeMessagingHosts",
+        "Chromium" => r"HKCU\Software\Chromium\NativeMessagingHosts",
+        "Edge" => r"HKCU\Software\Microsoft\Edge\NativeMessagingHosts",
+        "Brave" => r"HKCU\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts",
+        "Firefox" => r"HKCU\Software\Mozilla\NativeMessagingHosts",
+        _ => return None,
+    };
+    Some(format!(r"{base}\{host}"))
+}
+
 /// Writes the host manifest for every browser found; returns one line per browser.
 pub fn install() -> Result<Vec<String>, String> {
-    let exe = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| e.to_string())?;
+    let exe = clean_exe_path()?;
     let mut done = Vec::new();
     for (name, dir, firefox) in host_dirs() {
         // Under the current name and the one from before the rename, both running this program.
@@ -411,6 +529,12 @@ pub fn install() -> Result<Vec<String>, String> {
             std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
             let path = dir.join(format!("{host}.json"));
             std::fs::write(&path, serde_json::to_string_pretty(&manifest).unwrap() + "\n").map_err(|e| format!("{}: {e}", path.display()))?;
+            #[cfg(target_os = "windows")]
+            if let Some(reg_key) = windows_registry_key(name, host) {
+                let _ = std::process::Command::new("reg")
+                    .args(["add", &reg_key, "/ve", "/t", "REG_SZ", "/d", &path.to_string_lossy(), "/f"])
+                    .output();
+            }
             done.push(format!("{name}: {}", path.display()));
         }
     }
@@ -422,16 +546,27 @@ pub fn install() -> Result<Vec<String>, String> {
 
 /// Removes the host manifests `install` wrote.
 pub fn uninstall() -> Vec<String> {
-    host_dirs().into_iter().flat_map(|(name, dir, _)| [HOST_NAME, OLD_HOST_NAME].map(|host| (name, dir.join(format!("{host}.json")))))
-        .filter_map(|(name, path)| std::fs::remove_file(&path).ok().map(|_| format!("{name}: removed {}", path.display())))
+    host_dirs().into_iter().flat_map(|(name, dir, _)| [HOST_NAME, OLD_HOST_NAME].map(|host| (name, host, dir.join(format!("{host}.json")))))
+        .filter_map(|(name, host, path)| {
+            #[cfg(target_os = "windows")]
+            if let Some(reg_key) = windows_registry_key(name, host) {
+                let _ = std::process::Command::new("reg").args(["delete", &reg_key, "/f"]).output();
+            }
+            let _ = host;
+            std::fs::remove_file(&path).ok().map(|_| format!("{name}: removed {}", path.display()))
+        })
         .collect()
 }
 
 /// Whether a focused app is a web browser the extension can run in.
 pub fn is_browser(app: &str, instance: &str) -> bool {
-    let names = [app.to_ascii_lowercase(), instance.to_ascii_lowercase()];
-    const BROWSERS: &[&str] = &["firefox", "navigator", "google-chrome", "chromium", "microsoft-edge", "msedge",
-                                "brave-browser", "org.mozilla.firefox", "com.google.chrome", "org.chromium.chromium",
+    let clean = |s: &str| {
+        let lower = s.to_ascii_lowercase();
+        lower.strip_suffix(".exe").unwrap_or(&lower).to_string()
+    };
+    let names = [clean(app), clean(instance)];
+    const BROWSERS: &[&str] = &["firefox", "navigator", "google-chrome", "chrome", "chromium", "microsoft-edge", "msedge",
+                                "brave-browser", "brave", "org.mozilla.firefox", "com.google.chrome", "org.chromium.chromium",
                                 "com.microsoft.edgemac", "com.brave.browser"];
     names.iter().any(|n| BROWSERS.contains(&n.as_str()))
 }
@@ -491,6 +626,30 @@ mod tests {
         assert!(is_browser("firefox", "Navigator"));
         assert!(is_browser("Google-chrome", "google-chrome"));
         assert!(is_browser("org.mozilla.firefox", "Firefox"));
+        assert!(is_browser("chrome.exe", "chrome"));
+        assert!(is_browser("msedge.exe", "msedge"));
         assert!(!is_browser("Code", "code"));
+    }
+
+    #[tokio::test]
+    async fn private_local_socket_authenticates_and_round_trips() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+        let path = std::env::temp_dir().join(format!("knoend-sock-test-{}", std::process::id()));
+        let listener = bind_private(&path).expect("bind_private");
+        let client_path = path.clone();
+        let client = std::thread::spawn(move || {
+            let mut stream = connect_private(&client_path).expect("connect_private");
+            stream.write_all(b"ping\n").unwrap();
+            let mut reply = String::new();
+            BufReader::new(&stream).read_line(&mut reply).unwrap();
+            reply
+        });
+        let (mut read, mut write) = listener.accept().await.expect("accept");
+        let mut line = String::new();
+        read.read_line(&mut line).await.unwrap();
+        assert_eq!(line, "ping\n");
+        write.write_all(b"pong\n").await.unwrap();
+        assert_eq!(client.join().unwrap(), "pong\n");
+        let _ = std::fs::remove_file(&path);
     }
 }

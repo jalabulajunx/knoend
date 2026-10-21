@@ -47,13 +47,12 @@ pub enum AgentEvent {
 
 /// Runs as the agent's hook: reads the event from stdin, asks the service, prints the decision.
 /// Any problem (no service, no answer) prints nothing, which leaves the agent's own prompt.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub fn run_hook(kind: &str) -> Result<(), String> {
-    use std::os::unix::net::UnixStream;
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input).map_err(|e| e.to_string())?;
     let Ok(event) = serde_json::from_str::<Value>(&input) else { return Ok(()) };
-    let Ok(mut stream) = UnixStream::connect(socket_path()) else { return Ok(()) };
+    let Ok(mut stream) = crate::browser::connect_private(&socket_path()) else { return Ok(()) };
     let _ = stream.set_read_timeout(Some(WAIT_FOR_BOARD));
     let line = json!({"type": kind, "event": event}).to_string();
     if stream.write_all(format!("{line}\n").as_bytes()).is_err() || kind != "permission" {
@@ -84,7 +83,7 @@ pub fn run_hook(kind: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub fn run_hook(_kind: &str) -> Result<(), String> {
     Ok(())
 }
@@ -92,7 +91,7 @@ pub fn run_hook(_kind: &str) -> Result<(), String> {
 // ---- the service side ----
 
 /// Listens for hooks and hands their requests to the service loop.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub async fn serve(events: mpsc::Sender<AgentEvent>) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
     let path = socket_path();
@@ -106,11 +105,10 @@ pub async fn serve(events: mpsc::Sender<AgentEvent>) {
             Some(old) => tokio::select! { s = listener.accept() => s, s = old.accept() => s },
             None => listener.accept().await,
         };
-        let Ok((stream, _)) = stream else { continue };
+        let Ok((read, mut write)) = stream else { continue };
         let events = events.clone();
         tokio::spawn(async move {
-            let (read, mut write) = stream.into_split();
-            let mut lines = tokio::io::BufReader::new(read).lines();
+            let mut lines = read.lines();
             let Ok(Some(line)) = lines.next_line().await else { return };
             let Ok(message) = serde_json::from_str::<Value>(&line) else { return };
             let event = message["event"].clone();
@@ -143,7 +141,7 @@ pub async fn serve(events: mpsc::Sender<AgentEvent>) {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub async fn serve(_events: mpsc::Sender<AgentEvent>) {}
 
 /// A tool's input without what the person filled in: when AskUserQuestion finishes, its input
@@ -271,7 +269,11 @@ pub fn destructive(request: &Value) -> bool {
 // ---- installing the hooks into Claude Code ----
 
 fn claude_settings() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".claude/settings.json")
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_default()
+        .join(".claude/settings.json")
 }
 
 /// Whether a hook entry is one of ours.
@@ -323,7 +325,7 @@ pub fn without_hooks(mut settings: Value) -> Value {
 
 /// Adds the hooks to `~/.claude/settings.json` (after a backup next to it).
 pub fn install() -> Result<Vec<String>, String> {
-    let exe = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| e.to_string())?;
+    let exe = crate::browser::clean_exe_path()?;
     let path = claude_settings();
     let current: Value = match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{} is not valid JSON ({e}); not changed", path.display()))?,

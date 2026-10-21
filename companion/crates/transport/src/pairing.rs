@@ -20,8 +20,10 @@ pub struct Pairings {
 }
 
 fn config_root() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
+    std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| {
+        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).unwrap_or_default();
+        PathBuf::from(home).join(".config")
+    })
 }
 
 pub fn config_dir() -> PathBuf {
@@ -46,7 +48,11 @@ fn path() -> PathBuf {
 impl Pairings {
     pub fn load() -> Pairings {
         fs::read_to_string(path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| {
-            let host = fs::read_to_string("/etc/hostname").map(|h| h.trim().to_lowercase()).unwrap_or_default();
+            let host = fs::read_to_string("/etc/hostname").ok()
+                .or_else(|| std::env::var("COMPUTERNAME").ok())
+                .or_else(|| std::env::var("HOSTNAME").ok())
+                .map(|h| h.trim().to_lowercase())
+                .unwrap_or_default();
             Pairings {
                 companion: format!("companion-{}", &crate::auth::nonce()[..6]),
                 companion_name: if host.is_empty() { "Computer".into() } else { host },

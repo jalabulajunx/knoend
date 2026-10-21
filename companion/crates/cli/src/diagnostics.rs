@@ -110,12 +110,25 @@ pub fn wch_driver_state() -> String {
         .unwrap_or_else(|| "not installed".into())
 }
 
+#[cfg(target_os = "windows")]
+fn windows_checks(ports: &[knoend_flash::Port]) -> Value {
+    json!({
+        // USB-serial chips present on the Windows USB bus, whether or not a COM port driver is installed,
+        // along with the Windows service bound to each ("CH341SER_A64", "silabser", "usbser", or empty).
+        "usb_serial_devices": knoend_flash::usb_serial_devices(ports),
+        "keys_follow_apps": true,
+        "service_can_type": true,
+    })
+}
+
 fn system_checks(ports: &[knoend_flash::Port]) -> Value {
     #[cfg(target_os = "linux")]
     return linux_checks(ports);
     #[cfg(target_os = "macos")]
     return macos_checks(ports);
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(target_os = "windows")]
+    return windows_checks(ports);
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         let _ = ports;
         Value::Null

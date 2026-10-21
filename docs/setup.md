@@ -5,9 +5,8 @@ part 2 is for people working on the code. When something goes wrong, see
 [`knowledge/setup.md`](knowledge/setup.md), which lists every failure seen so far and its fix. The
 web app's setup assistant reads the same file.
 
-Tested on Arch Linux (X11, i3) and on macOS 26.6 (Apple silicon) with an ONX2432G028. On a Mac,
-use v0.1.1 or later: v0.1.0 cannot follow the focused app and fails with newer OpenAI models.
-Windows is not supported yet.
+Tested on Arch Linux (X11, i3), macOS 26.6 (Apple silicon) and Windows 11 with an ONX2432G028. On a
+Mac, use v0.1.1 or later: v0.1.0 cannot follow the focused app and fails with newer OpenAI models.
 
 ## What you need
 
@@ -15,9 +14,9 @@ Windows is not supported yet.
   cables only charge.
 - 2.4 GHz Wi-Fi if you want the board to work away from the computer. The ESP32-S3 cannot join
   5 GHz networks.
-- Optional: an API key for an AI provider (Gemini, OpenAI, Anthropic or OpenRouter), or a local
-  model through Ollama. The AI is used for the setup assistant and to draft layouts for apps that
-  have none.
+- Optional: an API key for an AI provider (Gemini, OpenAI, Anthropic or OpenRouter), a local model
+  through Ollama, or Claude Code / Antigravity CLI / Codex CLI already signed in on this computer.
+  The AI is used for the setup assistant and to draft layouts for apps and sites that have none.
 
 ## Part 1: set up a board
 
@@ -25,7 +24,8 @@ Windows is not supported yet.
 
 Download it from the [latest release](https://github.com/jalabulajunx/knoend/releases/latest):
 `knoend-x86_64-unknown-linux-gnu.tar.gz` (Linux), `knoend-aarch64-apple-darwin.tar.gz` (Apple
-silicon Mac) or `knoend-x86_64-apple-darwin.tar.gz` (Intel Mac), and unpack it:
+silicon Mac), `knoend-x86_64-apple-darwin.tar.gz` (Intel Mac), or
+`knoend-x86_64-pc-windows-msvc.zip` (Windows), and unpack it:
 
 ```bash
 tar xzf knoend-*.tar.gz
@@ -58,6 +58,12 @@ unplug and replug the board.
 ```bash
 sudo usermod -aG uucp $USER
 ```
+
+**Windows USB driver.** Windows Update usually installs the WCH CH340 (`CH341SER`) or Silicon Labs
+CP210x serial driver automatically; if the board shows under "Other devices" in Device Manager with
+no `COM` port, check Windows Update > Advanced options > Optional updates > Driver updates (or
+install `CH341SER.EXE` from WCH). Native-USB boards (`303a:1001`) use Windows's built-in `usbser`
+driver with no extra install.
 
 ### 2. Firmware (nothing to do)
 
@@ -118,17 +124,22 @@ started at login and restarted if it stops:
 
 On Linux this is a systemd user service (`journalctl --user -u knoend -f` shows its log); on a
 Mac, a LaunchAgent (log in `~/Library/Logs/knoend.log`; allow `knoend` itself under
-Accessibility so it can type keys). `./knoend service status` and `./knoend service uninstall`
+Accessibility so it can type keys); on Windows, a startup entry in
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` running `knoend serve --no-open` in the
+background with no console window. `./knoend service status` and `./knoend service uninstall`
 check and remove it. Stop any `knoend serve` you started by hand first: two copies fight over the
 board.
 
 ### 4. Use it
 
 - **Switch apps.** The board's layout follows the focused window. VS Code has a built-in layout.
+  Clicking the desktop or taskbar shows the **launcher** with your most-used apps and sites; tapping
+  one brings its window to the front or opens it.
 - **Unsupported apps.** An app with no layout shows *Unsupported app: <name>* with a **Configure**
   key. Tapping it asks the AI to draft a layout.
   - Drafts are saved in `~/.config/knoend/libraries/ai/` and marked unreviewed.
-  - To keep your own edits, change `source` to `"user"` in the file.
+  - To keep your own edits, change `source` to `"user"` in the file (or edit and save in the web
+    app's **Edit keys** panel).
 - **How keys reach the computer:**
   - If the board is paired as a Bluetooth keyboard ("KnoEnd"), it types by itself, with nothing
     else running.
@@ -141,8 +152,10 @@ board.
 ### Websites (browser extension)
 
 The board can follow the website in your browser and press things on the page. Run
-`./knoend browser install` once, add the extension (see `extension/README.md`), and turn board
-buttons on per site from the extension's popup. YouTube has a built-in layout.
+`./knoend browser install` once (and `python3 tools/build_extension.py` if building from source to
+produce `dist/extension/chrome` and `dist/extension/firefox`), add the extension in Chrome, Edge or
+Firefox (see `extension/README.md`), and turn board buttons on per site from the extension's popup.
+YouTube, Google Drive and Google Slides have built-in layouts.
 
 ### Where things are kept
 
@@ -208,10 +221,10 @@ cargo test
 | --- | --- |
 | `core` | protocol, libraries, validation, matching |
 | `transport` | serial, Wi-Fi (mDNS + authenticated WebSocket), pairing |
-| `focus` | focused app (X11 on Linux, the window server's front window on macOS) |
-| `input` | typing keys (XTest on Linux, Core Graphics on macOS) |
-| `flash` | identify and flash boards (espflash), firmware manifest |
-| `agents` | AI providers, setup assistant, layout drafting, key storage |
+| `focus` | focused app (X11 on Linux, the window server's front window on macOS, Win32 `GetForegroundWindow` on Windows) |
+| `input` | typing keys (XTest on Linux, Core Graphics on macOS, Win32 `SendInput` on Windows) |
+| `flash` | identify and flash boards (espflash), firmware manifest, USB bus scan |
+| `agents` | AI providers (API + local CLI tools), setup assistant, layout drafting, key storage |
 | `cli` | the `knoend` binary and the web API |
 
 The web app (`web/`) is plain HTML, CSS and JS, built into the binary. Rebuild the binary after
@@ -246,8 +259,8 @@ This checks `spec/examples/` and the board definitions against `spec/schemas/`. 
 `~/.venvs/knoend/bin/python`. Changes under
 `spec/` need review from both maintainers.
 
-CI (`.github/workflows/ci.yml`) runs the spec checks, the companion on Linux and macOS, and the
-firmware build on every push and pull request.
+CI (`.github/workflows/ci.yml`) runs the spec checks, the companion on Linux, macOS and Windows,
+and the firmware build on every push and pull request.
 
 ### Releases
 
@@ -255,7 +268,8 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds the firmware 
 
 - Linux x86_64;
 - macOS arm64;
-- macOS x86_64.
+- macOS x86_64;
+- Windows x86_64.
 
 It then publishes them as a GitHub release, which the service downloads by default. Confirm with
 the maintainers before tagging.
@@ -264,5 +278,5 @@ the maintainers before tagging.
 
 - Linux focus tracking needs X11. On Wayland, only XWayland apps are seen.
 - macOS is tested on 26.6 with Apple silicon only; Intel Macs are untested.
-- Windows has no focus or typing backend yet.
-- The board UI always shows nine tiles. Dynamic tiles with paging are planned.
+- On Windows, User Interface Privilege Isolation (UIPI) blocks an unelevated `knoend` process from
+  sending synthetic keystrokes (`SendInput`) into windows running as Administrator.

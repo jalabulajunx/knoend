@@ -80,10 +80,19 @@ and say in the error which setting. A rebuild is only for our own bugs.
   not changing, board not found) had its cause in the service log or in what macOS reports about USB
   devices, not on the board.
 - **A board can be on the USB bus with no serial port** (no driver). Look at the USB devices, not only
-  the port list (`system_profiler SPUSBHostDataType` on macOS, `lsusb`/`dmesg` on Linux).
+  the port list (`system_profiler SPUSBHostDataType` on macOS, `lsusb`/`dmesg` on Linux, SetupAPI
+  `USB\*` on Windows).
 - **Check that a setting reaches the hardware.** A definition value can be stored on the board and
   still be overwritten later in start-up (see the 2026-10-17 log entry on mirroring). Read back what
   the board holds before changing the value again.
+- **On Windows, coding-agent sandboxes run on an isolated desktop (`CreateDesktopW`), not
+  `Winsta0\Default`.** When `knoend` is started from a sandboxed shell (such as
+  `codex-windows-sandbox-service`), `GetForegroundWindow()` returns `0`, `EnumWindows` is empty, and
+  `std::process::Command::spawn` opens child windows on the hidden sandbox desktop unless threads
+  attach via `OpenInputDesktop` + `SetThreadDesktop` and child processes are spawned with
+  `STARTUPINFOW.lpDesktop = "Winsta0\\Default"`. Also, `EnumWindows` must skip helper/tool/cloaked
+  `HWND`s (`DWMWA_CLOAKED`, `WS_EX_TOOLWINDOW`, zero title length) and unlock the Windows Foreground
+  Lock before `SetForegroundWindow`.
 
 ## Working rules
 

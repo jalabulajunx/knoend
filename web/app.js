@@ -889,6 +889,10 @@ function noPortAdvice(d, os, wch) {
     if ((d.drivers || []).includes("usbfs")) return `${chip} Another program holds it (often brltty, the Braille display service). Remove brltty or stop it, then unplug and replug the board.`;
     if (!(d.drivers || []).length) return `${chip} The kernel's driver for it (${d.bridge === "ch340" ? "ch341" : d.bridge === "cp210x" ? "cp210x" : "cdc_acm"}) is not loaded: try "sudo modprobe ${d.bridge === "ch340" ? "ch341" : d.bridge === "cp210x" ? "cp210x" : "cdc_acm"}", then unplug and replug.`;
   }
+  if (os === "windows") {
+    if (d.bridge === "ch340") return `${chip} Install the WCH CH34x driver (Windows Settings > Windows Update > Advanced options > Optional updates > Driver updates, or WCH's CH341SER installer), then unplug and replug the board.`;
+    if (d.bridge === "cp210x") return `${chip} Install the Silicon Labs CP210x driver (Windows Update > Optional updates > Driver updates, or from Silicon Labs), then unplug and replug the board.`;
+  }
   return `${chip} Unplug it, plug it in again, and look again; the assistant can help find out why.`;
 }
 
@@ -1186,6 +1190,7 @@ document.querySelectorAll('input[name="mode"]').forEach((i) => i.addEventListene
 const CLI_TOOLS = {
   "claude-code": "Uses the <code>claude</code> command signed in with your own account, with its tools switched off: it only reads the request and writes the answer. Not signed in yet? Run <code>claude</code> in a terminal and type <code>/login</code>. Leave the model empty for Claude Code's own choice.",
   antigravity: "Uses the <code>agy</code> command signed in with your Google account. It may not run commands or read your files, and works in an empty folder that is removed afterwards. Antigravity keeps these requests in its own conversation history. Not signed in yet? Run <code>agy</code> in a terminal. Leave the model empty for Antigravity's own choice.",
+  codex: "Uses the <code>codex</code> command signed in with your ChatGPT account, running in an ephemeral read-only sandbox in an empty folder that is removed afterwards. Not signed in yet? Run <code>codex login</code> in a terminal. Leave the model empty for Codex's own choice.",
 };
 
 function providerFields() {

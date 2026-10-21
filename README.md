@@ -11,8 +11,8 @@ website you are using. It connects to your computer by wire, Bluetooth or home W
 becomes a pager: carry it around the house, see status from your computer on the board, and answer a
 prompt (for example, approve a coding agent's command) from another room.
 
-> **Status: early development.** The keypad, Wi-Fi pager link, app-following layouts, web setup and
-> flashing work on Linux; much of the feature list is still planned. See
+> **Status: early development.** The keypad, Wi-Fi pager link, app- and website-following layouts,
+> web setup, AI layout drafting and flashing work on Linux (X11), macOS and Windows. See
 > [What works today](#what-works-today). **To set one up, follow [docs/setup.md](docs/setup.md).**
 
 ## Why
@@ -106,25 +106,32 @@ GT911 touch can be added; see [docs/boards/research.md](docs/boards/research.md)
 
 ## What works today
 
-Tested on an ONX2432G028 with Arch Linux (X11):
+Tested on an ONX2432G028 with Arch Linux (X11), macOS 26.6 (Apple silicon), and Windows 11, and on
+a Freenove FNK0104B with Linux and macOS:
 
-- Setting up an erased board from the web app: identify, install, pair, Wi-Fi from a scanned list
+- Setting up a board from the web app: identify, install, pair, Wi-Fi from a scanned list
 - Bluetooth LE keyboard (no software needed), and keys typed through the service when Bluetooth is off
 - Authenticated Wi-Fi link found by mDNS; the board keeps working away from the computer
-- Layout follows the focused app (built-in VS Code layout); "Unsupported app" with Configure, which
-  asks an AI model (Gemini, OpenAI, Anthropic, OpenRouter or local Ollama) to draft a layout
+- Layout follows the focused app and website (Linux X11, macOS, Windows; websites via the Chrome /
+  Edge / Firefox extension); "Unsupported app" with Configure, which asks an AI model (Gemini,
+  OpenAI, Anthropic, OpenRouter, local Ollama, or Claude Code / Antigravity CLI / Codex CLI already
+  signed in on this computer) to draft a layout
+- Edit keys live in the web app, themes (Dark, White, Sepia), portrait/landscape rotation, and
+  Google Fonts on the board
+- App and site launcher on the board when nothing is focused (desktop or empty workspace), with app
+  icons and site favicons
+- Claude Code permission requests and questions answered from the board
 - An AI setup assistant in the web app that knows the failures we have hit
 
-Builds but untested: macOS (focus watcher, typing), the unverified boards, the release workflow.
-Not built yet: Windows, per-website layouts (Chrome extension), coding-agent approvals, speech.
+Builds but untested: the unverified boards (`esp32_s3_box_3`, `waveshare_s3_touch_lcd_2`).
 
 ## Getting started
 
-[docs/setup.md](docs/setup.md) covers both setting up a board and working on the code. In short: download `knoend` for Linux or macOS from the
+[docs/setup.md](docs/setup.md) covers both setting up a board and working on the code. In short: download `knoend` for Linux, macOS or Windows from the
 [latest release](https://github.com/jalabulajunx/knoend/releases/latest), plug in the board, and run
 
 ```bash
-./knoend serve     # opens the web app; firmware comes from the same release
+./knoend serve     # or knoend.exe serve on Windows; opens the web app
 ```
 
 Problems:
