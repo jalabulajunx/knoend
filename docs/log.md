@@ -1809,7 +1809,13 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - `cli/src/app_setup.rs`; API `GET /apps`, `POST /apps/draft`, `GET /apps/icon/{id}`; progress
     as `app-setup` events. Only the names of the picked apps reach the AI provider.
   - Setup assistant: check `installed_apps`, action `app_setup` (web app button "Keys for your apps").
+  - Set up a board, with a board already set up and connected: "Your board is set up" names it and
+    offers Keys for your apps (with how many used apps have no keys), Keys and look, Wi-Fi (join or
+    change, over USB), Bluetooth, and Install firmware again; the steps show after a choice
+    (Sundar's request: there was no way back to Wi-Fi, Bluetooth or apps for a configured board).
 - Tested (Arch Linux, i3; ONX over Wi-Fi; OpenAI gpt-6-sol):
+  - Each choice opens its step (look 4, Bluetooth 6, apps 7, Wi-Fi the change-Wi-Fi flow from
+    step 1, install step 1), checked in the web app.
   - 147 apps listed; the ones used and those with recipes first, statuses right (Firefox, Thunar,
     Okular, Spectacle, Code - OSS ready; Claude yours).
   - Darktable and OBS Studio drafted together in about 18 s: 9 and 7 keys; matches `darktable` and

@@ -332,6 +332,17 @@ code { font: .9em var(--mono); }
 #bar { height: 100%; width: 0; background: var(--signal); transition: width .25s var(--ease); }
 #mode-card { margin-bottom: 8px; }
 
+/* A board already set up: what it may still need, as large choices. */
+.known-grid { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.known-grid button { width: 100%; height: 100%; text-align: left; display: grid; gap: 4px; padding: 16px 18px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--raise); color: var(--text); font: inherit;
+  transition: border-color .2s, box-shadow .2s, transform .2s var(--ease); }
+.known-grid button:hover { border-color: var(--text); box-shadow: inset 3px 0 0 var(--signal); transform: translateY(-1px); }
+.known-grid li:first-child button { border-color: color-mix(in srgb, var(--signal) 55%, var(--line)); }
+.known-grid strong { font-weight: 600; }
+.known-grid .sub { color: var(--muted); font-size: 13px; }
+
 /* Keys for your apps (setup step 7): a grid of installed apps to pick from. */
 .apps-tools { display: flex; align-items: center; gap: 14px; margin: 18px 0 4px; }
 .apps-tools input { flex: 1; max-width: 360px; }

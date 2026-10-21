@@ -44,6 +44,7 @@ function show(view) {
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.view === "setup" && setup.task !== "setup") { setTask("setup"); step(1); }
+  if (b.dataset.view === "setup") { setup.picked = false; renderKnown(); }
   show(b.dataset.view);
 }));
 document.addEventListener("click", (e) => {
@@ -77,6 +78,7 @@ function renderStatus(s) {
     loadDisplay().catch(() => {});
     if ($("theme-note") && s.board) $("theme-note").hidden = !!s.board.display;
   }
+  renderKnown();
   $("now-app").textContent = s.app || "-";
   const layout = s.link === "connected" ? s.layout : null;
   $("now-layout").textContent = layout ? layout.name + (layout.pages > 1 ? ` (page ${layout.page} of ${layout.pages})` : "") : "-";
@@ -658,6 +660,38 @@ $("change-wifi").addEventListener("click", () => {
 $("dashboard-bluetooth").addEventListener("click", () => {
   openBluetoothSettings().catch(() => {});
 });
+
+/** A board that is already set up and connected: the setup page offers what it may still need
+ *  (apps, look, Wi-Fi, Bluetooth, reinstalling) instead of starting from "Find the board". */
+function renderKnown() {
+  const s = renderStatus.last;
+  const board = s && s.link === "connected" ? s.board : null;
+  const known = !!board && !setup.picked && setup.task === "setup";
+  $("known-board").hidden = !known;
+  const flow = document.querySelector(".setup-flow");
+  if (flow) flow.hidden = known;
+  if (!board) return;
+  const wifi = !board.address.startsWith("USB");
+  $("known-text").textContent = `${board.profile} with firmware ${board.firmware}, connected ${wifi ? "over Wi-Fi" : "by USB"}. Pick what you'd like to do next.`;
+  $("known-wifi-title").textContent = wifi ? "Change Wi-Fi" : "Wi-Fi";
+  $("known-wifi").textContent = wifi ? "Move the board to another network (over the USB cable)" : "Use the board wirelessly, away from the cable (set over USB)";
+  const waiting = apps.list.filter((a) => a.state === "none" && a.minutes > 0).length;
+  if (apps.list.length) $("known-apps").textContent = waiting ? `${waiting} app${waiting === 1 ? "" : "s"} you use have no keys yet: the AI can draft them` : "Every app you use has keys; add more";
+}
+document.querySelectorAll("[data-known]").forEach((b) => b.addEventListener("click", () => {
+  setup.picked = true;
+  const go = {
+    apps: () => openApps(),
+    look: () => { setTask("setup"); keySizeStep(); },
+    // Joining or changing Wi-Fi goes over the USB cable: find the port, then the network.
+    wifi: () => { setTask("wifi"); step(1); scanPorts(); },
+    bluetooth: () => { setTask("setup"); step(6); },
+    install: () => { setTask("setup"); step(1); scanPorts(); },
+  }[b.dataset.known];
+  renderKnown();
+  go();
+  document.querySelector(".setup-flow").scrollIntoView({ block: "start" });
+}));
 
 function step(n) {
   setup.step = n;
@@ -1753,6 +1787,8 @@ const APP_STATE = {
 
 function openApps() {
   if (setup.task !== "setup") setTask("setup");
+  setup.picked = true;
+  renderKnown();
   show("setup");
   step(7);
   document.querySelector('.step[data-step="7"]').scrollIntoView({ block: "start" });
@@ -1778,6 +1814,7 @@ function appsStatus(text, error) {
 async function loadApps() {
   const r = await api("/apps");
   apps.list = r.apps || [];
+  renderKnown();
   $("apps-ai-off").hidden = aiReady;
   renderApps();
   const ready = apps.list.filter((a) => a.state !== "none").length;

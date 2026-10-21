@@ -196,6 +196,18 @@
           <li><span>03</span>Optional: Wi-Fi <em>2.4 GHz</em> or Bluetooth</li>
         </ul>
       </header>
+      <!-- Shown instead of the steps when a board is already set up: jump to what it still needs. -->
+      <article class="card" id="known-board" hidden>
+        <h2>Your board is set up</h2>
+        <p id="known-text" class="muted"></p>
+        <ul class="known-grid">
+          <li><button type="button" data-known="apps"><strong>Keys for your apps</strong><span class="sub" id="known-apps">The AI drafts keys for apps you use, before you open them</span></button></li>
+          <li><button type="button" data-known="look"><strong>Keys and look</strong><span class="sub">Key size, colours, which way round, fonts</span></button></li>
+          <li><button type="button" data-known="wifi"><strong id="known-wifi-title">Wi-Fi</strong><span class="sub" id="known-wifi">Join or change the board's network (over USB)</span></button></li>
+          <li><button type="button" data-known="bluetooth"><strong>Bluetooth keyboard</strong><span class="sub">Pair the board as "KnoEnd" with this computer, a tablet or a phone</span></button></li>
+          <li><button type="button" data-known="install"><strong>Install firmware again</strong><span class="sub">Update this board, or set up another one</span></button></li>
+        </ul>
+      </article>
       <article class="card" id="mode-card">
         <h2>How would you like to set up?</h2>
         <ul class="choices">
