@@ -121,6 +121,11 @@ impl Usage {
     }
 
     /// The top `n`, best first.
+    /// Seconds `key` ("app:firefox") has been in front, all time.
+    pub fn seconds(&self, key: &str) -> f64 {
+        self.items.get(key).map_or(0.0, |e| e.seconds)
+    }
+
     pub fn top(&self, n: usize) -> Vec<&Entry> {
         let now = now();
         let mut all: Vec<&Entry> = self.items.values().collect();

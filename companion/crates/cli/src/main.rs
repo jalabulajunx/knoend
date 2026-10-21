@@ -16,6 +16,7 @@
 mod journal;
 mod agent_hooks;
 mod app_facts;
+mod app_setup;
 mod background;
 mod launcher;
 mod browser;

@@ -196,6 +196,14 @@ impl Shared {
         }
     }
 
+    /// A library drafted outside the service loop (the web app's app setup): the loop adds it and
+    /// shows it if its app is in front.
+    pub async fn configured(&self, target: Focus, result: Result<(PathBuf, Library), String>) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.send(Event::Configured(target, result)).await;
+        }
+    }
+
     pub fn editing(&self) -> bool {
         self.edit.lock().is_ok_and(|e| e.is_some())
     }
@@ -302,12 +310,24 @@ enum Event {
     Edit(crate::edit::Command, Option<tokio::sync::oneshot::Sender<Result<Value, String>>>),
 }
 
-pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
-    // KNOEND_BUILTIN is a recipes tree (apps/, sites/<host>/, agents/); the person's own
-    // folder is read flat, since its ai/ subfolder is listed on its own.
+/// The folders libraries are read from: KNOEND_BUILTIN (a recipes tree: apps/, sites/<host>/,
+/// agents/), the person's own folder (read flat) and its ai/ subfolder.
+fn library_dirs(extra: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = builtin_override().map(|d| Catalog::folders(Path::new(&d))).unwrap_or_default();
     dirs.extend([config_dir().join("libraries"), ai_libraries()]);
-    dirs.extend(extra_libraries);
+    dirs.extend(extra);
+    dirs
+}
+
+/// Every library as the service would load it now (the built-in recipes and the person's files).
+pub fn load_catalog() -> Catalog {
+    let (mut catalog, _) = Catalog::load(&library_dirs(Vec::new()));
+    load_builtin(&mut catalog);
+    catalog
+}
+
+pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
+    let dirs = library_dirs(extra_libraries);
     let (mut catalog, rejected) = Catalog::load(&dirs);
     for problem in load_builtin(&mut catalog) {
         say!("  skipped {problem}");

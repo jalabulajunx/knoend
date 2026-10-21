@@ -25,6 +25,8 @@ pub const ACTIONS: &[(&str, &str)] = &[
                      router, a changed password or another place"),
     ("open_bluetooth_settings", "open this computer's Bluetooth settings to pair the board as the \"KnoEnd\" Bluetooth \
                                  Low Energy keyboard (optional; the companion also types shortcuts over USB or Wi-Fi)"),
+    ("app_setup", "open the Your apps step: the apps installed on this computer, which already have keys, and the AI \
+                   drafting keys for the ones the person picks (up to 12 at once) before they open them"),
     ("dashboard", "go to the dashboard"),
     ("open_accessibility_settings", "macOS only: opens Privacy & Security > Accessibility, where the person switches on \
                                      the app named in system_checks.accessibility.app_to_allow"),

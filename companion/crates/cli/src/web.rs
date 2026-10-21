@@ -70,6 +70,9 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/open", post(open_help))
         .route("/typing", get(typing))
         .route("/edit", post(edit))
+        .route("/apps", get(installed_apps))
+        .route("/apps/draft", post(draft_apps))
+        .route("/apps/icon/{id}", get(app_icon))
         .layer(middleware::from_fn_with_state(app.clone(), require_token));
     let router = Router::new()
         .route("/", get(index))
@@ -213,6 +216,26 @@ async fn edit(State(app): State<App>, Json(request): Json<EditRequest>) -> ApiRe
         other => return Err(fail(StatusCode::BAD_REQUEST, format!("unknown edit command {other:?}"))),
     };
     app.shared.edit(command).await.map(Json).map_err(|e| fail(StatusCode::BAD_REQUEST, e))
+}
+
+async fn installed_apps() -> ApiResult {
+    Ok(Json(crate::app_setup::list().await))
+}
+
+#[derive(Deserialize)]
+struct DraftApps {
+    ids: Vec<String>,
+}
+
+async fn draft_apps(State(app): State<App>, Json(request): Json<DraftApps>) -> ApiResult {
+    crate::app_setup::draft(&app.shared, request.ids).await.map(Json).map_err(|e| fail(StatusCode::BAD_REQUEST, e))
+}
+
+async fn app_icon(axum::extract::Path(id): axum::extract::Path<String>) -> Response {
+    match crate::app_setup::icon(id).await {
+        Some(png) => ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "max-age=3600")], png).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn firmware(State(app): State<App>) -> ApiResult {
