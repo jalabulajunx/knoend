@@ -777,7 +777,9 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // A new theme or turn is shown at once: pictures are sent again in the theme's
                     // colours, and the layout in a grid that fits the screen as it now sits.
                     say!("  board display: {}", packet.body);
-                    board.display = Some(json!({"theme": packet.body["theme"], "turn": packet.body["turn"]}));
+                    // The start-up size too: without it, the next size change looks already shown.
+                    board.display = Some(json!({"theme": packet.body["theme"], "turn": packet.body["turn"],
+                                                "startSize": packet.body["startSize"]}));
                     if packet.body["grid"].is_object() {
                         board.grid = identity_grid(&json!({"board": {"grid": packet.body["grid"]}}));
                     }

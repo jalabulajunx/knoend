@@ -615,7 +615,10 @@ static void show_splash_locked(void)
     lv_obj_set_style_text_color(name, lv_color_hex(theme->key_text), 0);
     size_t len;
     const uint8_t *data = fonts_data(FONT_SLOT_START, &len, NULL, NULL);
-    splash_font = data != NULL ? lv_tiny_ttf_create_data(data, len, display_settings()->start_size) : NULL;
+    // tiny_ttf's default 4 KB glyph cache divides by zero above 64 px (4096 / px^2 hash buckets):
+    // room for the name's 6 glyphs at any size.
+    const int px = display_settings()->start_size;
+    splash_font = data != NULL ? lv_tiny_ttf_create_data_ex(data, len, px, (size_t)px * px * 8) : NULL;
     if (splash_font != NULL) {
         splash_font->fallback = &lv_font_montserrat_28; // the degree sign, if the font has none
     }

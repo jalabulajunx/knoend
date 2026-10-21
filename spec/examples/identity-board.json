@@ -1,9 +1,9 @@
 { "id": 0, "type": "knoend.identity", "body": {
     "deviceId": "a0b1c2d3e4f5", "deviceName": "KnoEnd", "deviceType": "board",
-    "protocolVersion": 0, "firmware": "a1ea8a8",
+    "protocolVersion": 0, "firmware": "a1ea8a8", "lastStart": "power-on",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
                "grid": { "cols": 4, "rows": 4 }, "statusBar": true,
-               "display": { "theme": "dark", "turn": 0 },
+               "display": { "theme": "dark", "turn": 0, "startSize": 64 },
                "fonts": { "capacity": 483328, "keys": null,
                           "start": { "name": "Edu AU VIC WA NT Dots", "crc": 2271390218 } } },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
