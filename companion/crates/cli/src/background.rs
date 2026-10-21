@@ -10,13 +10,19 @@ const UNIT: &str = "knoend.service";
 const OLD_UNIT: &str = "openpager.service";
 const AGENT: &str = "io.github.jalabulajunx.knoend";
 const OLD_AGENT: &str = "io.github.jalabulajunx.openpager";
+const WIN_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+const WIN_RUN_VALUE: &str = "KnoEnd";
+const OLD_WIN_RUN_VALUE: &str = "OpenPager";
 
 fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_default()
 }
 
 fn exe() -> Result<PathBuf, String> {
-    std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| e.to_string())
+    crate::browser::clean_exe_path()
 }
 
 fn run(program: &str, args: &[&str]) -> Result<String, String> {
@@ -83,6 +89,13 @@ fn remove_old() -> Option<String> {
         let _ = std::fs::remove_file(&path);
         return Some(format!("removed the older LaunchAgent {}", path.display()));
     }
+    if cfg!(target_os = "windows") {
+        if run("reg", &["query", WIN_RUN_KEY, "/v", OLD_WIN_RUN_VALUE]).is_ok() {
+            let _ = run("reg", &["delete", WIN_RUN_KEY, "/v", OLD_WIN_RUN_VALUE, "/f"]);
+            return Some(format!("removed the older startup entry {OLD_WIN_RUN_VALUE}"));
+        }
+        return None;
+    }
     let path = unit_path().with_file_name(OLD_UNIT);
     if !path.exists() {
         return None;
@@ -106,6 +119,31 @@ pub fn install() -> Result<Vec<String>, String> {
         return Ok(old.into_iter().chain([format!("LaunchAgent {} loaded; runs at login", path.display()),
                        "Allow knoend under System Settings > Privacy & Security > Accessibility so it can type keys".into()]).collect());
     }
+    if cfg!(target_os = "windows") {
+        let cmd = format!("\"{exe}\" serve --no-open");
+        run("reg", &["add", WIN_RUN_KEY, "/v", WIN_RUN_VALUE, "/t", "REG_SZ", "/d", &cmd, "/f"])?;
+        #[cfg(target_os = "windows")]
+        if std::net::TcpStream::connect_timeout(
+            &"127.0.0.1:7821".parse().unwrap(),
+            std::time::Duration::from_millis(150),
+        )
+        .is_err()
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            let _ = Command::new(exe)
+                .args(["serve", "--no-open"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+        }
+        return Ok(old
+            .into_iter()
+            .chain([format!("{WIN_RUN_KEY}\\{WIN_RUN_VALUE} registered; starts at login and running in the background")])
+            .collect());
+    }
     let path = unit_path();
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
     std::fs::write(&path, systemd_unit(exe)).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -123,6 +161,14 @@ pub fn uninstall() -> Result<Vec<String>, String> {
         let _ = std::fs::remove_file(&path);
         return Ok(vec![format!("LaunchAgent {} removed", path.display())]);
     }
+    if cfg!(target_os = "windows") {
+        let removed = run("reg", &["delete", WIN_RUN_KEY, "/v", WIN_RUN_VALUE, "/f"]).is_ok();
+        return Ok(vec![if removed {
+            format!("{WIN_RUN_KEY}\\{WIN_RUN_VALUE} removed")
+        } else {
+            "no background startup entry was installed".into()
+        }]);
+    }
     let _ = run("systemctl", &["--user", "disable", "--now", UNIT]);
     let path = unit_path();
     let removed = std::fs::remove_file(&path).is_ok();
@@ -135,6 +181,12 @@ pub fn status() -> String {
     if cfg!(target_os = "macos") {
         return match run("launchctl", &["list", AGENT]) {
             Ok(_) => format!("LaunchAgent {AGENT}: loaded"),
+            Err(_) => "not installed (knoend service install)".into(),
+        };
+    }
+    if cfg!(target_os = "windows") {
+        return match run("reg", &["query", WIN_RUN_KEY, "/v", WIN_RUN_VALUE]) {
+            Ok(_) => format!("Windows startup ({WIN_RUN_VALUE}): registered at login"),
             Err(_) => "not installed (knoend service install)".into(),
         };
     }

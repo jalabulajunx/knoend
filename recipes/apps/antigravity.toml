@@ -17,6 +17,7 @@ note = "Arch Linux, i3 (X11), Antigravity 2.23.1"
 
 [match]
 linux = ["antigravity"]
+windows = ["Antigravity.exe"]
 
 [[key]]
 label = "New Chat"

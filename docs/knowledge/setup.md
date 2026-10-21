@@ -15,7 +15,7 @@ When you learn something new on the bench, add it here (symptom, cause, fix, how
   matching layouts. Its web app is at `http://127.0.0.1:7342/`.
 - **Keys reach the computer two ways.** The board can type by itself as a Bluetooth keyboard (no
   software needed). If no Bluetooth host is connected, it sends the keystroke to the companion,
-  which types it (X11 XTest on Linux; keyboard events on macOS).
+  which types it (X11 XTest on Linux; keyboard events on macOS; Win32 `SendInput` on Windows).
 
 ## Boards we know
 
@@ -258,6 +258,53 @@ devices and whether each has a port, the WCH driver state, and whether knoend ma
   Prefixing one build with `SDKROOT=$(xcrun --sdk macosx26.5 --show-sdk-path)` only works for that
   command; the next shell fails again. `xcrun --kill-cache` alone does not help.
 
+### Windows
+
+The assistant's snapshot (`system_checks`) shows `usb_serial_devices` from Windows SetupAPI (every
+known USB-serial chip on the USB bus, whether or not a COM port driver is installed, and its bound
+Windows service in `drivers`), `keys_follow_apps: true`, and `service_can_type: true`.
+
+- **USB device seen but no COM port** (`system_checks.usb_serial_devices` shows `has_serial_port:
+  false`). Native ESP32-S3 USB (`303a:1001`, Freenove FNK0104B) uses Windows's built-in `usbser`
+  driver automatically. A CH340 (`1a86:7522` on the ONX2432G028, `1a86:7523`, `1a86:55d4`) or
+  CP210x (`10c4:ea60`) may need its driver if Windows has not installed it yet: open Windows
+  Settings > Windows Update > Advanced options > Optional updates > Driver updates (look for
+  `wch.cn` Ports or Silicon Labs), or install WCH's `CH341SER` / Silicon Labs CP210x driver, then
+  unplug and replug the board.
+- **Port listed (`COM3`, `COM4`, ...) but cannot be opened ("Access is denied").** On Windows only
+  one program can open a COM port at a time. Close any serial monitor (Arduino IDE, PuTTY, VS Code
+  Serial Monitor, `idf.py monitor`, or another `knoend`) and try again.
+- **Keys typed by the companion do nothing in one specific window ("SendInput sent 0 of ... events").**
+  Windows needs no special permission to type into ordinary apps, but User Interface Privilege
+  Isolation (UIPI) blocks a normal process from typing into an elevated ("Run as administrator")
+  window unless `knoend` is also run as Administrator (or over the board's Bluetooth keyboard).
+- **Started from a coding agent's sandboxed shell on Windows (Antigravity / Codex) and focus was
+  empty (`GetForegroundWindow` returned 0).** Seen 2026-10-20 on Windows 11:
+  `codex-windows-sandbox-service` runs child processes on an isolated non-interactive desktop where
+  `GetForegroundWindow()` is 0 and `EnumWindows` lists no windows. Fixed in `focus/src/windows.rs`
+  and `input/src/windows.rs`: the focus and input threads attach to the active interactive desktop
+  via `OpenInputDesktop` + `SetThreadDesktop` before querying windows or calling `SendInput`.
+- **Tapping an app or site on the launcher (while on the desktop) logs `launcher: opened` on
+  Windows, but the window does not come to the front.** Seen and fixed 2026-10-20 on Windows 11:
+  three causes overlapped. First, apps such as PowerPoint (`POWERPNT.EXE`) and Edge (`msedge.exe`)
+  create visible helper/tool/cloaked top-level `HWND`s ahead of the main window in `EnumWindows`;
+  `find_window` now filters with `is_main_window` (visible, not DWM-cloaked via `DWMWA_CLOAKED`,
+  not `WS_EX_TOOLWINDOW` or `WS_EX_NOACTIVATE`, unowned or `WS_EX_APPWINDOW`, and non-empty title
+  length). Second, the Windows Foreground Lock and "Show Desktop" (`WorkerW`) block a background
+  `SetForegroundWindow` call; `bring_to_front` now attaches thread input, unlocks the foreground
+  lock (`AllowSetForegroundWindow` + a synthetic `VK_NONAME` key event), restores/raises the window
+  above `WorkerW`, and calls `SetForegroundWindow` + `SwitchToThisWindow`. Third, when `knoend` is
+  started inside a sandboxed shell, `std::process::Command::spawn` inherits the hidden sandbox
+  desktop; `spawn_on_input_desktop` launches newly opened apps and URLs via `CreateProcessW` with
+  `lpDesktop = "Winsta0\\Default"`. Confirmed on Windows 11 with PowerPoint, WhatsApp, File
+  Explorer, Microsoft Edge and Antigravity.
+- **Running in the background on Windows:** `knoend service install` adds `KnoEnd` to
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` and starts `knoend serve --no-open` in the
+  background with no console window; `knoend service status` checks it.
+- **Browser extension on Windows:** `knoend browser install` writes the native messaging host
+  manifests under `%USERPROFILE%\.config\knoend\native-messaging-hosts\` and registers them in
+  `HKCU\Software\...\NativeMessagingHosts` for Chrome, Edge, Brave, Chromium and Firefox.
+
 ### Coding agents asking on the board
 
 - **Claude Code's approvals and "needs input" on the board:** `knoend claude-hooks install` adds
@@ -348,15 +395,20 @@ devices and whether each has a port, the WCH driver state, and whether knoend ma
   address wrong (pick from the list, which comes from the provider); 429 rate limit or credit; 5xx
   provider trouble; a connection error (address, internet, or Ollama not running). Follow that
   before anything else.
-- **"Claude Code is not installed" although the person uses it** (macOS, 2026-10-19). Claude Code
-  can live only inside an editor extension (VS Code, Cursor, Windsurf): no `claude` command on any
-  PATH, not even the login shell's. The extension carries its own copy in
-  `~/.vscode/extensions/anthropic.claude-code-<version>-<os>/resources/native-binary/claude`. Since
-  2026-10-19 the lookup also checks there (newest extension first, after any installed `claude`), and
-  the AI tools list (`GET /api/ai/tools`, the setup snapshot) shows the path it found. Confirmed on
-  Tom's Mac: Claude Code 2.1.304 from the VS Code extension drafted an app in 10 s through the
-  service. If it is still not found: AI settings > "Look again"; otherwise install the command
-  (claude.com/claude-code) or pick another provider.
+- **"Claude Code is not installed" although the person uses it** (macOS, 2026-10-19; Windows,
+  2026-10-20). Claude Code can live only inside an editor extension (VS Code, Cursor, Windsurf,
+  Antigravity) or inside Claude Desktop on Windows: no `claude` command on any PATH. The extension
+  carries its own copy in `~/.vscode/extensions/anthropic.claude-code-<version>-<os>/resources/native-binary/claude`,
+  and Windows Claude Desktop carries it in `%APPDATA%\Claude\claude-code\<version>\claude.exe` (or
+  `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\claude-code\<version>\claude.exe` for
+  the Microsoft Store app). Likewise, the Windows OpenAI Codex app keeps `codex.exe` in
+  `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\codex.exe` and `%USERPROFILE%\.codex\plugins\.plugin-appserver\codex.exe`.
+  The lookup checks all of those (newest version first, after any command on PATH), and the AI tools
+  list (`GET /api/ai/tools`, the setup snapshot) shows the path it found. Confirmed on Tom's Mac
+  (Claude Code 2.1.304 in VS Code) and on Windows 11 (Claude Code 2.1.271 in MSIX Claude Desktop
+  and Codex CLI 0.163.0 in the OpenAI Codex Windows app). Note: Claude Desktop's bundled `claude.exe`
+  has its own CLI login state (`claude auth status`), so if it reports `signed_in: false`, run that
+  `claude.exe` in a terminal and type `/login`, or pick Codex CLI / another provider.
 - **Very slow drafts with a local model.** Ollama on a CPU-only machine runs at a few tokens per
   second (about 2 minutes per draft on our test laptop); use a hosted provider for a responsive
   setup, or a machine with a supported GPU.

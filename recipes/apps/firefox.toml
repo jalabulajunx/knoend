@@ -75,6 +75,7 @@ kind = "shortcut"
 
 [match]
 linux = ["Navigator", "firefox"]
+windows = ["firefox.exe"]
 
 [pack]
 description = "Essential navigation, tab management, and search shortcuts for Firefox."

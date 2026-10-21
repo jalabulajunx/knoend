@@ -43,7 +43,7 @@ pub const TOOLS: &[Tool] = &[
            sign_in: "run `claude` in a terminal and type /login" },
     Tool { provider: "antigravity", name: "Antigravity CLI", command: AGY, supported: true,
            sign_in: "run `agy` in a terminal and sign in with your Google account" },
-    Tool { provider: "codex", name: "Codex CLI", command: CODEX, supported: false,
+    Tool { provider: "codex", name: "Codex CLI", command: CODEX, supported: true,
            sign_in: "run `codex login` in a terminal" },
 ];
 
@@ -88,19 +88,61 @@ fn shell_paths() -> Vec<PathBuf> {
 
 #[cfg(not(unix))]
 fn shell_paths() -> Vec<PathBuf> {
-    Vec::new()
+    let mut dirs = Vec::new();
+    for key in [r"HKCU\Environment", r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment"] {
+        let Ok(out) = std::process::Command::new("reg").args(["query", key, "/v", "Path"]).output() else { continue };
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            if let Some((_, val)) = line.trim().split_once("REG_EXPAND_SZ").or_else(|| line.trim().split_once("REG_SZ")) {
+                dirs.extend(std::env::split_paths(val.trim()));
+            }
+        }
+    }
+    dirs
+}
+
+/// Subfolders of `parent`, newest first by modification time.
+fn newest_subdirs(parent: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(parent) else { return Vec::new() };
+    let mut found: Vec<(std::time::SystemTime, PathBuf)> = entries.flatten()
+        .map(|e| e.path()).filter(|p| p.is_dir())
+        .map(|p| (p.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH), p))
+        .collect();
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.into_iter().map(|(_, p)| p).collect()
 }
 
 /// Per-user folders installers use on this OS, for when no shell names them.
 fn usual_dirs() -> Vec<PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).unwrap_or_default();
-    let mut dirs = vec![home.join(".local/bin"), home.join(".claude/local"), home.join(".npm-global/bin")];
+    let mut dirs = vec![
+        home.join(".local/bin"),
+        home.join(".claude/local"),
+        home.join(".npm-global/bin"),
+        home.join(".codex/plugins/.plugin-appserver"),
+    ];
     if cfg!(target_os = "macos") {
         dirs.extend([PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin")]);
     } else if cfg!(windows) {
         for var in ["APPDATA", "LOCALAPPDATA"] {
             if let Some(base) = std::env::var_os(var).map(PathBuf::from) {
-                dirs.extend([base.join("npm"), base.join("Programs")]);
+                dirs.extend([
+                    base.join("npm"),
+                    base.join("pnpm"),
+                    base.join("Programs"),
+                    base.join("Programs/Antigravity/bin"),
+                    base.join("Programs/antigravity/bin"),
+                    base.join("Programs/claude-code"),
+                ]);
+                dirs.extend(newest_subdirs(&base.join("Claude/claude-code")));
+                dirs.extend(newest_subdirs(&base.join("OpenAI/Codex/bin")));
+                // Windows Store (MSIX) Claude Desktop keeps claude-code inside its package LocalCache.
+                if let Ok(pkgs) = std::fs::read_dir(base.join("Packages")) {
+                    for pkg in pkgs.flatten() {
+                        if pkg.file_name().to_string_lossy().starts_with("Claude_") {
+                            dirs.extend(newest_subdirs(&pkg.path().join("LocalCache/Roaming/Claude/claude-code")));
+                        }
+                    }
+                }
             }
         }
     } else {
@@ -110,12 +152,12 @@ fn usual_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// The `claude` that Claude Code's editor extension carries (VS Code, Cursor, Windsurf), newest
-/// first, for people who use Claude Code only in their editor and never installed the command.
+/// The `claude` that Claude Code's editor extension carries (VS Code, Cursor, Windsurf, Antigravity),
+/// newest first, for people who use Claude Code only in their editor and never installed the command.
 /// Looked in last, so an installed `claude` wins.
 fn editor_extension_dirs(home: &Path) -> Vec<PathBuf> {
     let mut found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
-    for editor in [".vscode", ".vscode-insiders", ".cursor", ".windsurf"] {
+    for editor in [".vscode", ".vscode-insiders", ".cursor", ".windsurf", ".antigravity"] {
         let Ok(entries) = std::fs::read_dir(home.join(editor).join("extensions")) else { continue };
         for entry in entries.flatten() {
             let bundled = entry.path().join("resources").join("native-binary");
@@ -328,8 +370,8 @@ pub fn parse_reply(reply: &Value) -> Result<String, String> {
 
 // ---- Antigravity ----
 
-/// Linux allows one command-line argument up to 128 KiB; the prompt is one argument.
-const AGY_MAX_PROMPT: usize = 120 * 1024;
+/// Linux/macOS allow one command-line argument up to 128 KiB; Windows CreateProcessW allows 32 KiB.
+const AGY_MAX_PROMPT: usize = if cfg!(windows) { 30 * 1024 } else { 120 * 1024 };
 
 /// Told first, because agy has no system-prompt option.
 const AGY_PREAMBLE: &str = "Answer from the instructions and request below alone. Do not use any tools: \
@@ -439,6 +481,76 @@ pub async fn complete_agy(model: Option<&str>, timeout_secs: u64, system: &str, 
     }
 }
 
+// ---- Codex CLI ----
+
+/// Arguments for one locked-down Codex call (`codex exec`): ephemeral, ignores user config/rules,
+/// read-only sandbox in an empty folder, reads prompt from stdin (`-`), writes last message to `reply_file`.
+pub fn codex_args(dir: &Path, reply_file: &Path, model: Option<&str>) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check",
+        "-s", "read-only", "-C",
+    ].iter().map(|s| s.to_string()).collect();
+    args.push(dir.display().to_string());
+    args.extend(["-o".into(), reply_file.display().to_string()]);
+    if let Some(model) = model.filter(|m| !m.is_empty()) {
+        args.extend(["-m".into(), model.into()]);
+    }
+    args.push("-".into());
+    args
+}
+
+fn explain_codex(detail: &str) -> String {
+    let lower = detail.to_lowercase();
+    let todo = if lower.contains("auth") || lower.contains("login") || lower.contains("sign in") || lower.contains("401") {
+        "open a terminal, run `codex login`, and sign in; then test again here"
+    } else if lower.contains("model") {
+        "leave the model empty in AI settings (Codex's own choice), or pick one from the list"
+    } else if lower.contains("quota") || lower.contains("limit") || lower.contains("429") {
+        "your plan's usage limit is reached; wait until it resets, or choose another provider in AI settings"
+    } else {
+        "run `codex` in a terminal to check it works, or choose another provider in AI settings"
+    };
+    format!("Codex: {}. What to do: {todo}", detail.trim().trim_end_matches('.'))
+}
+
+/// One completion through OpenAI's Codex CLI (`codex exec`).
+pub async fn complete_codex(model: Option<&str>, timeout_secs: u64, system: &str, messages: &[Message]) -> Result<String, String> {
+    let path = find_async(CODEX).await.ok_or("Codex CLI (the `codex` command) is not installed on this computer. What to do: \
+                                 install Codex and sign in (`codex login`), or choose another provider in AI settings")?;
+    let dir = work_dir("codex")?;
+    let result = run_codex(&path, &dir, model, timeout_secs, system, messages).await;
+    let _ = std::fs::remove_dir_all(&dir);
+    result
+}
+
+async fn run_codex(path: &Path, dir: &Path, model: Option<&str>, timeout_secs: u64, system: &str, messages: &[Message])
+                   -> Result<String, String> {
+    let reply_file = dir.join("reply.txt");
+    let mut child = tokio::process::Command::new(path)
+        .args(codex_args(dir, &reply_file, model))
+        .current_dir(dir)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn().map_err(|e| explain_codex(&format!("could not start {}: {e}", path.display())))?;
+    let mut stdin = child.stdin.take().expect("piped");
+    stdin.write_all(agy_prompt(system, messages).as_bytes()).await.map_err(|e| e.to_string())?;
+    drop(stdin);
+    let out = tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output()).await
+        .map_err(|_| explain_codex(&format!("no reply within {timeout_secs} s; try again, or ask the setup assistant for a longer wait")))?
+        .map_err(|e| e.to_string())?;
+    if let Ok(text) = std::fs::read_to_string(&reply_file) {
+        if !text.trim().is_empty() {
+            return Ok(text);
+        }
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    let out_str = String::from_utf8_lossy(&out.stdout);
+    let detail = err.lines().rev().chain(out_str.lines().rev())
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("it stopped without a reply");
+    Err(explain_codex(detail))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,7 +601,12 @@ mod tests {
         assert_eq!(find_in("knoend-test-tool", &[PathBuf::from("/nonexistent"), dir.clone()]), Some(dir.join(&name)));
         assert_eq!(find_in("knoend-no-such-tool", &[dir.clone()]), None);
         std::fs::remove_dir_all(&dir).unwrap();
-        assert!(TOOLS.iter().any(|t| t.command == "codex" && !t.supported), "Codex is reported, not run");
+        assert!(TOOLS.iter().any(|t| t.command == "codex" && t.supported), "Codex is supported");
+        let c_args = codex_args(Path::new("/tmp/c"), Path::new("/tmp/c/reply.txt"), Some("o4-mini"));
+        for flag in ["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check", "read-only"] {
+            assert!(c_args.iter().any(|a| a == flag), "{flag} missing from {c_args:?}");
+        }
+        assert!(!c_args.iter().any(|a| a.contains("danger")), "{c_args:?}");
     }
 
     #[test]
@@ -537,6 +654,15 @@ mod live {
     async fn real_antigravity() {
         let reply = super::complete_agy(None, 120, "You answer with JSON only.",
                                         &[crate::provider::Message::user("Reply with exactly {\"ok\":true}".into())]).await;
+        println!("reply: {reply:?}");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn real_codex() {
+        println!("tools: {:#}", super::tools_on_this_computer().await);
+        let reply = super::complete_codex(None, 120, "You answer with JSON only.",
+                                          &[crate::provider::Message::user("Reply with exactly {\"ok\":true}".into())]).await;
         println!("reply: {reply:?}");
     }
 }

@@ -136,7 +136,9 @@ impl Focus {
             return web.host.strip_prefix("www.").unwrap_or(&web.host);
         }
         if !self.app.is_empty() {
-            self.app.rsplit('.').next().unwrap_or(&self.app)
+            let app = self.app.strip_suffix(".exe").or_else(|| self.app.strip_suffix(".EXE")).unwrap_or(&self.app);
+            let app = app.strip_suffix(".Root").or_else(|| app.strip_suffix(".root")).unwrap_or(app);
+            app.rsplit('.').next().unwrap_or(app)
         } else {
             &self.title
         }
@@ -184,5 +186,14 @@ mod tests {
         assert!(presenting.matches_pattern("docs.google.com"));
         let plain = WebPage { url: "https://example.com/a/b?x=1#section".into(), ..album.clone() };
         assert_eq!(plain.route(), "/a/b");
+    }
+
+    #[test]
+    fn display_names_handle_bundle_ids_and_windows_executables() {
+        use super::{Focus, Os};
+        let f = |app: &str| Focus { os: Os::Windows, app: app.into(), instance: String::new(), title: String::new(), web: None };
+        assert_eq!(f("Code.exe").display_name(), "Code");
+        assert_eq!(f("FIREFOX.EXE").display_name(), "FIREFOX");
+        assert_eq!(f("com.anthropic.Claude").display_name(), "Claude");
     }
 }

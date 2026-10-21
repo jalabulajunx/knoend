@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -42,9 +42,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.4.4
           target: esp32s3
           path: firmware
           command: idf.py -B build/universal build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install jsonschema
+      - run: sudo chown -R "$USER" firmware/build && python tools/release_firmware.py --out dist/firmware
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: dist/firmware

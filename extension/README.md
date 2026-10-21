@@ -22,9 +22,10 @@ the browser's native messaging (no network port).
 1. Register knoend with your browsers once: `knoend browser install` (writes a small file per
    browser that names the `knoend` binary; `knoend browser uninstall` removes them).
 2. Add the extension:
-   - **Chrome / Edge / Brave:** open `chrome://extensions`, switch on Developer mode, "Load
-     unpacked", pick `dist/extension/chrome`. Its id is `echibclfkpicikodohehemgjefbpakpj` (fixed
-     by the public key in `chrome.json`; the host only accepts that id).
+   - **Chrome / Edge / Brave:** open `chrome://extensions` (or `edge://extensions`), switch on
+     Developer mode, "Load unpacked", pick `dist/extension/chrome`. Its id is
+     `echibclfkpicikodohehemgjefbpakpj` (fixed by the public key in `chrome.json`; the host only
+     accepts that id).
    - **Firefox:** open `about:debugging#/runtime/this-firefox`, "Load Temporary Add-on", pick
      `dist/extension/firefox/manifest.json`. A temporary add-on is removed when Firefox restarts.
      To keep it, have Mozilla sign it for self-distribution (free, automated, not listed publicly):
@@ -43,6 +44,7 @@ Tested, against a stand-in for the service and the real `knoend` host:
   YouTube page (52 controls), media / focus / element / open actions; without the site granted,
   every page action and the inventory answer `not-granted` while `open` still works.
 - Chrome 152 (headless, DevTools `Extensions.loadUnpacked`): the same actions; 35 controls.
-
-Not yet tested: a person's own browser profile, the popup's permission prompt, a board key end to
-end (needs the extension in the browser the person uses).
+- Microsoft Edge on Windows 11 with a real user profile and an ONX2432G028 board over Wi-Fi:
+  `knoend browser install` (Windows Registry native messaging host + authenticated local TCP IPC),
+  tab switching across Google Drive and Google Slides, AI site control inventory + drafting via
+  Codex CLI, and end-to-end board keys controlling Google Slides editing and full-screen presenting.

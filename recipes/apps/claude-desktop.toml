@@ -62,6 +62,7 @@ kind = "shortcut"
 
 [match]
 linux = ["com.anthropic.claude"]
+windows = ["Claude.exe"]
 
 [pack]
 description = "Quick navigation, chat management, and controls for Claude."

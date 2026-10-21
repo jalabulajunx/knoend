@@ -34,6 +34,8 @@ pub enum Provider {
     ClaudeCode,
     /// Antigravity's `agy` command on this computer, signed in with the person's own account.
     Antigravity,
+    /// OpenAI's `codex` command on this computer, signed in with the person's own account.
+    Codex,
 }
 
 impl Provider {
@@ -48,6 +50,7 @@ impl Provider {
             Provider::OpenaiCompatible => "openai-compatible",
             Provider::ClaudeCode => "claude-code",
             Provider::Antigravity => "antigravity",
+            Provider::Codex => "codex",
         }
     }
 }
@@ -99,7 +102,7 @@ impl AgentConfig {
             Provider::Gemini => "https://generativelanguage.googleapis.com/v1beta/openai",
             Provider::Anthropic => "https://api.anthropic.com",
             Provider::OpenaiCompatible => return Err("openai-compatible needs base_url in agent.toml".into()),
-            Provider::ClaudeCode | Provider::Antigravity => "",
+            Provider::ClaudeCode | Provider::Antigravity | Provider::Codex => "",
         }.to_string())
     }
 
@@ -115,8 +118,8 @@ impl AgentConfig {
             Provider::Openrouter => "OPENROUTER_MODEL",
             Provider::Gemini => "GEMINI_MODEL",
             Provider::Anthropic => "ANTHROPIC_MODEL",
-            // No model: Claude Code uses the one the person chose there.
-            Provider::ClaudeCode | Provider::Antigravity => return Ok(String::new()),
+            // No model: CLI tools use the one the person chose there.
+            Provider::ClaudeCode | Provider::Antigravity | Provider::Codex => return Ok(String::new()),
         };
         if let Ok(model) = std::env::var(env) {
             if !model.is_empty() {
@@ -135,7 +138,7 @@ impl AgentConfig {
     pub fn api_key_name(&self) -> Option<String> {
         Some(match (&self.api_key_env, self.provider) {
             (Some(var), _) => var.clone(),
-            (None, Provider::Ollama | Provider::OpenaiCompatible | Provider::ClaudeCode | Provider::Antigravity) => return None,
+            (None, Provider::Ollama | Provider::OpenaiCompatible | Provider::ClaudeCode | Provider::Antigravity | Provider::Codex) => return None,
             (None, Provider::Openai) => "OPENAI_API_KEY".into(),
             (None, Provider::Openrouter) => "OPENROUTER_API_KEY".into(),
             (None, Provider::Gemini) => "GEMINI_API_KEY".into(),
@@ -193,7 +196,7 @@ static REJECTED: Mutex<Option<HashMap<String, Vec<String>>>> = Mutex::new(None);
 pub async fn complete(config: &AgentConfig, system: &str, messages: &[Message]) -> Result<String, String> {
     let timeout = config.timeout_secs.unwrap_or(match config.provider {
         Provider::Ollama => 900,
-        Provider::ClaudeCode | Provider::Antigravity => 300,
+        Provider::ClaudeCode | Provider::Antigravity | Provider::Codex => 300,
         _ => 180,
     });
     if config.provider == Provider::ClaudeCode {
@@ -201,6 +204,9 @@ pub async fn complete(config: &AgentConfig, system: &str, messages: &[Message]) 
     }
     if config.provider == Provider::Antigravity {
         return crate::cli_tool::complete_agy(config.model.as_deref(), timeout, system, messages).await;
+    }
+    if config.provider == Provider::Codex {
+        return crate::cli_tool::complete_codex(config.model.as_deref(), timeout, system, messages).await;
     }
     let client = reqwest::Client::builder().timeout(Duration::from_secs(timeout)).build().map_err(|e| e.to_string())?;
     let base = config.base_url()?;
@@ -354,6 +360,9 @@ pub async fn list_models(config: &AgentConfig, key: Option<&str>) -> Result<Vec<
     }
     if config.provider == Provider::Antigravity {
         return crate::cli_tool::agy_models().await;
+    }
+    if config.provider == Provider::Codex {
+        return Ok(["gpt-5.4", "gpt-5.4-mini", "o3", "o4-mini"].map(String::from).to_vec());
     }
     let client = reqwest::Client::builder().timeout(Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
     let base = config.base_url()?;

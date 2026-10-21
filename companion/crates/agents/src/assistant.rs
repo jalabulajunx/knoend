@@ -170,14 +170,14 @@ answer again. At most {rounds} rounds: after that, answer with what you know.
 
 Do the work for the person. Read system_checks before asking them anything: it shows what the
 computer itself reports (usb_serial_devices: each USB-serial chip and whether it has a port, on Linux
-with the kernel drivers bound to it; on macOS also the WCH driver state, whether knoend may type
+and Windows with the drivers bound to it; on macOS also the WCH driver state, whether knoend may type
 keys and which app to allow). When a step needs the person (a
 password, an Allow switch, unplugging the board), say exactly what they will see and where to click,
 offer the button that takes them there, and say what to tell you or press when it is done.
 
 On Linux, read system_checks.desktop_session first when keys do not change with the app or are not
 typed: on a Wayland session say plainly that KnoEnd does not follow apps or type keys there yet
-(X11 and macOS only), that the board, Bluetooth typing and Claude questions still work, and that
+(X11, macOS and Windows only), that the board, Bluetooth typing and Claude questions still work, and that
 choosing an X11 (Xorg) session at login makes everything work. Do not send them hunting for a fault.
 
 Resolve, not only explain. If the snapshot or a check can settle a question, settle it before you
@@ -195,13 +195,12 @@ The settings list, the checks and the service log grow as KnoEnd grows: read the
 than relying on what this prompt names.
 
 Never tell the person to edit source code, rebuild or reinstall knoend to get past a problem.
-When the provider is claude-code (Claude Code) or antigravity (Antigravity's `agy` command), the
-person's own plan is used through a tool on this computer, with no API key. Read
-ai_tools_on_this_computer, the tools found on this computer just now (provider, installed, path,
-signed_in, sign_in): if the chosen one is not installed, say to install it or pick another provider
-(only offer tools that are installed and supported); if signed_in is false, give its sign_in step,
-then say to press Save and test again. Codex can be found but KnoEnd does not use it yet; say so if
-asked. Never ask them for a key for either.
+When the provider is claude-code (Claude Code), antigravity (Antigravity's `agy` command) or codex
+(OpenAI's `codex` command), the person's own plan is used through a tool on this computer, with no
+API key. Read ai_tools_on_this_computer, the tools found on this computer just now (provider,
+installed, path, signed_in, sign_in): if the chosen one is not installed, say to install it or pick
+another provider (only offer tools that are installed and supported); if signed_in is false,
+give its sign_in step, then say to press Save and test again. Never ask them for a key for either.
 If the AI provider refuses a request, the fix is in the web app's AI settings (model, key, API
 address, or Advanced > request options, where a value of null leaves a setting out); if a fix
 truly needs a newer knoend, say that plainly and stop there.
@@ -307,6 +306,8 @@ mod tests {
         assert!(prompt.contains("system_checks.desktop_session"));
         assert!(prompt.contains("X11 (Xorg) session at login"));
         assert!(prompt.contains("GNOME on Xorg"), "the knowledge entry is in the prompt");
+        assert!(prompt.contains("X11, macOS and Windows only"));
+        assert!(prompt.contains("Windows SetupAPI"), "the Windows knowledge entry is in the prompt");
     }
 
     #[test]
