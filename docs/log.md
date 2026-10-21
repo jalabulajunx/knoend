@@ -1624,6 +1624,10 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - End-to-end key typing against elevated (Run as Administrator) windows on Windows (UIPI blocks
     unelevated `SendInput` into elevated windows; documented in `docs/knowledge/setup.md`).
   - Windows media controls (`SystemMediaTransportControls`) and desktop notifications (`companion/crates/media`, `desktop`).
+- Later: #46 (Windows companion support, from Sundar's Windows session with Antigravity's agent)
+  added a CI step packaging the firmware, which called `release_firmware.py` without `--version`:
+  the firmware job failed on main. Fixed (version from `git describe`). The macOS job of the push
+  run after #44 was cancelled, not failed (it passed on the PR and on the next push).
 
 ## 2026-10-20 - Sundar (Antigravity) - Setup wizard: Keys & Look over USB and separate optional Wi-Fi and Bluetooth steps (#47)
 
