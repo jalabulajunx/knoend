@@ -1866,3 +1866,29 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   now reads "1 key".
 - Tested (web app, Arch Linux, board on Wi-Fi): apps → back link and Back return to the options;
   look → back link returns; Bluetooth's own Back still goes to the Wi-Fi step.
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - Identifying boards KnoEnd does not know (#63)
+
+- Changed (branch `sundar/identify-unknown-boards`):
+  - Identify, `knoend devices` and the new `identify_board` check read, without writing, the
+    partition table and the first 128 KB of each app: project, version, ESP-IDF and component names
+    (`knoend-flash` `on_board.rs`). Ports carry the USB serial number (a native-USB board's MAC).
+  - A listed board with another flash size is never offered; suggestions are `confident` only when
+    KnoEnd firmware names the board or flash and USB bridge both match. Otherwise "a board KnoEnd
+    does not know", nothing pre-selected in the web app (`cli/src/boards.rs`).
+  - The assistant gets `last_board_identified` (evidence plus the display and touch chips KnoEnd's
+    firmware drives) and a prompt section: name the board from its components, not a demo's
+    project name; say whether KnoEnd can run on it, and not to install when it cannot. AI-guided
+    set-up asks it at once; manual set-up has a button; otherwise the watcher raises it.
+  - Bug found on the way: with the paired board off Wi-Fi, the service's USB search (#49) opened
+    every port; a board printing vendor firmware held the USB lock about 10 s and Identify failed
+    after 2 s ("the USB port is busy with another job"). Now only paired native-USB boards (by MAC)
+    are opened, setup jobs wait up to 15 s, and the search is logged.
+- Tested (Arch Linux; Waveshare ESP32-S3-Touch-AMOLED-2.06, 32 MB flash, native USB, vendor
+  firmware; flash backed up first and verified, kept off the repo): `knoend devices` in 8 s showed
+  both apps and their components and "a board KnoEnd does not know". Web app, AI-guided set-up
+  (openai/gpt-6-sol): the assistant named the Waveshare ESP32-S3-Touch-AMOLED-2.06 from the BSP
+  component, called `phone_s3_box_3` a demo name, said KnoEnd cannot drive its AMOLED and not to
+  install, and gave the backup command; Install stayed disabled (Sundar). The "busy" failure was
+  seen before the USB fix, not re-run after it.
+- Open: AMOLED support (QSPI display, AXP2101 power) is firmware work, not part of this.
