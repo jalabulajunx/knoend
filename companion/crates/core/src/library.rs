@@ -81,6 +81,9 @@ pub struct Match {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Action {
     Shortcut { keys: String },
+    /// Several shortcuts typed one after the other ("N", "Enter": answer a terminal program's
+    /// question). Typed by the companion on this computer.
+    Sequence { keys: Vec<String> },
     Open { url: String },
     Element { selector: String },
     /// Focus a field on the page, ready to type (browser extension).
@@ -289,6 +292,13 @@ impl Library {
         sorted.dedup();
         if sorted.len() != placed.len() || placed.contains(&None) {
             problems.push("key slots collide or run past the grid".to_string());
+        }
+        for key in &self.keys {
+            if let Action::Sequence { keys } = &key.action {
+                if let Some(bad) = keys.iter().find(|k| crate::keys::parse_shortcut(k, crate::focus::Os::Linux).is_err()) {
+                    problems.push(format!("key '{}': {bad:?} in its sequence is not a shortcut", key.label));
+                }
+            }
         }
         for key in &self.keys {
             let text = format!("{} {} {}", key.label, key.speak.as_deref().unwrap_or(""),

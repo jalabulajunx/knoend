@@ -23,6 +23,16 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 
 /// Layout id the board shows for an app with no library; its middle key is "Configure".
 pub const UNSUPPORTED: &str = "system.unsupported";
+/// The action of the Configure key added for a program in a terminal tab that has no keys.
+const CONFIGURE_PROGRAM: &str = "knoend.configure-program";
+
+/// The program in a terminal tab that has no keys of its own (not a shell at its prompt), which
+/// the person can have drafted.
+fn unconfigured_program(catalog: &Catalog, focus: &Focus) -> Option<String> {
+    let program = knoend_agents::terminal_program(focus)?;
+    let has_keys = catalog.find(focus).is_some_and(|l| !l.matches.terminal.is_empty());
+    (!has_keys).then(|| program.to_string())
+}
 /// Pages of apps and sites the launcher offers.
 const LAUNCHER_PAGES: usize = 3;
 
@@ -188,6 +198,14 @@ impl Shared {
         }
     }
 
+    /// A library drafted outside the service loop (the web app's app setup): the loop adds it and
+    /// shows it if its app is in front.
+    pub async fn configured(&self, target: Focus, result: Result<(PathBuf, Library), String>) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.send(Event::Configured(target, result)).await;
+        }
+    }
+
     pub fn editing(&self) -> bool {
         self.edit.lock().is_ok_and(|e| e.is_some())
     }
@@ -294,12 +312,24 @@ enum Event {
     Edit(crate::edit::Command, Option<tokio::sync::oneshot::Sender<Result<Value, String>>>),
 }
 
-pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
-    // KNOEND_BUILTIN is a recipes tree (apps/, sites/<host>/, agents/); the person's own
-    // folder is read flat, since its ai/ subfolder is listed on its own.
+/// The folders libraries are read from: KNOEND_BUILTIN (a recipes tree: apps/, sites/<host>/,
+/// agents/), the person's own folder (read flat) and its ai/ subfolder.
+fn library_dirs(extra: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = builtin_override().map(|d| Catalog::folders(Path::new(&d))).unwrap_or_default();
     dirs.extend([config_dir().join("libraries"), ai_libraries()]);
-    dirs.extend(extra_libraries);
+    dirs.extend(extra);
+    dirs
+}
+
+/// Every library as the service would load it now (the built-in recipes and the person's files).
+pub fn load_catalog() -> Catalog {
+    let (mut catalog, _) = Catalog::load(&library_dirs(Vec::new()));
+    load_builtin(&mut catalog);
+    catalog
+}
+
+pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
+    let dirs = library_dirs(extra_libraries);
     let (mut catalog, rejected) = Catalog::load(&dirs);
     for problem in load_builtin(&mut catalog) {
         say!("  skipped {problem}");
@@ -935,9 +965,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                                                     if page { " (the rest of the site keeps its keys)" } else { "" })}));
                             }
                             let same_site = |f: &Focus| f.web.as_ref().map(|w| &w.host) == target.web.as_ref().map(|w| &w.host);
-                            if effective(&focus, &tab).is_some_and(|f| f.app == target.app && f.instance == target.instance && same_site(&f)) {
+                            // Shown for what is in front now (in a terminal, the tab may have changed).
+                            if let Some(f) = effective(&focus, &tab).filter(|f| f.app == target.app && f.instance == target.instance && same_site(f)) {
                                 shown = None;
-                                show(&mut sender, &catalog, &target, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
+                                show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
                             }
                         }
                         Err(error) => {
@@ -1044,7 +1075,7 @@ fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
 fn with_terminal(focus: Option<Focus>) -> Option<Focus> {
     focus.map(|mut f| {
         if f.is_terminal() {
-            f.terminal = f.pid.and_then(knoend_focus::active_tab);
+            f.terminal = f.pid.and_then(|pid| knoend_focus::active_tab(pid, &f.title));
         }
         f
     })
@@ -1239,7 +1270,15 @@ async fn show(sender: &mut BoardSender, catalog: &Catalog, focus: &Focus, player
     }
     let player = knoend_media::for_focus(players, &focus.app, &focus.instance);
     let mut actions: HashMap<u8, KeyRef> = HashMap::new();
-    let found = catalog.layout_for(focus).map(|library| {
+    let unconfigured = unconfigured_program(catalog, focus);
+    let found = catalog.layout_for(focus).map(|mut library| {
+        // A program in the terminal tab with no keys of its own: the terminal's keys, then one to
+        // make the program's (on the next page when the terminal's fill this one).
+        if let Some(program) = &unconfigured {
+            library.keys.push(knoend_core::library::LibraryKey {
+                page: None, slot: None, label: "Configure".into(), speak: Some(format!("Make keys for {program}")),
+                icon: Some("auto_awesome".into()), confirm: false, action: Action::Command { name: CONFIGURE_PROGRAM.into() } });
+        }
         let pages = layout::packed(&library, paging.max);
         let page = paging.enter(&library.pack.id, pages.len());
         let built = layout::build(&library, focus.os, &pages, page);
@@ -1262,15 +1301,22 @@ async fn show(sender: &mut BoardSender, catalog: &Catalog, focus: &Focus, player
                         }
                     }
                 }
-                (body, json!({"text": ""}))
+                let text = match &unconfigured {
+                    Some(program) if placed.iter().any(|&(i, _)| i == library.keys.len() - 1) => format!("No keys for {} yet: tap Configure", board_text(program, 30)),
+                    Some(program) => format!("No keys for {} yet: Configure is on the last page", board_text(program, 30)),
+                    None => String::new(),
+                };
+                (body, json!({"text": text}))
             }
             Err(e) => {
                 say!("  library {} cannot be built: {e}", library.pack.id);
                 return;
             }
         },
-        None => (unsupported_layout(focus, paging), json!({"text": if focus.web.is_some() { format!("No keys for {} yet", board_text(focus.display_name(), 50)) }
-                                         else { format!("Unsupported app: {}", board_text(focus.display_name(), 50)) }, "level": "attention"})),
+        // Configure here drafts for the program in the terminal tab, when one runs.
+        None => (unsupported_layout(unconfigured.as_deref().unwrap_or(focus.display_name()), paging),
+                 json!({"text": if focus.web.is_some() || unconfigured.is_some() { format!("No keys for {} yet", board_text(unconfigured.as_deref().unwrap_or(focus.display_name()), 50)) }
+                                else { format!("Unsupported app: {}", board_text(focus.display_name(), 50)) }, "level": "attention"})),
     };
     if let (Some(player), true) = (player, status["text"] == "") {
         let what = [board_text(&player.title, 50), board_text(&player.artist, 24)].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" - ");
@@ -2184,8 +2230,8 @@ fn spawn_media_watcher(media: Arc<knoend_media::Players>, events: mpsc::Sender<E
 }
 
 /// One "Configure" key in the middle of a 3x3 grid (or of the board's grid, if smaller).
-fn unsupported_layout(focus: &Focus, paging: &mut Paging) -> LayoutBody {
-    let mut name: String = format!("Unsupported: {}", focus.display_name());
+fn unsupported_layout(what: &str, paging: &mut Paging) -> LayoutBody {
+    let mut name: String = format!("Unsupported: {what}");
     name.truncate(128);
     paging.enter(UNSUPPORTED, 1);
     // One key: a 3x3 places it in the middle, whatever the key size.
@@ -2302,6 +2348,32 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                         return None;
                     }
                 }
+                // Several keys in a row: typed here, on this computer.
+                if let (Action::Sequence { keys }, Some(f)) = (&library_key.action, focus) {
+                    let chords: Result<Vec<_>, String> = keys.iter().map(|k| knoend_core::keys::parse_shortcut(k, f.os)).collect();
+                    let (typist, label, shared, keys) = (shared.typist.clone(), library_key.label.clone(), shared.clone(), keys.join(", "));
+                    tokio::task::spawn_blocking(move || {
+                        let result = chords.and_then(|chords| {
+                            let mut slot = typist.lock().map_err(|_| "typist lock".to_string())?;
+                            if slot.is_none() {
+                                *slot = Some(knoend_input::Typist::connect()?);
+                            }
+                            for chord in chords {
+                                slot.as_ref().expect("connected").tap(chord.modifiers, chord.usage)?;
+                                std::thread::sleep(Duration::from_millis(30));
+                            }
+                            Ok(())
+                        });
+                        match result {
+                            Ok(()) => shared.emit("typed", json!({"text": format!("  {label}: typed {keys} on this computer")})),
+                            Err(e) => {
+                                raise!("typing", "Could not type {label} ({keys}) on this computer: {e}");
+                                shared.emit("type-failed", json!({"text": format!("  {label}: could not type {keys}: {e}")}));
+                            }
+                        }
+                    });
+                    return None;
+                }
                 if library_key.action.is_web() {
                     let (shared, label) = (shared.clone(), library_key.label.clone());
                     let action = serde_json::to_value(&library_key.action).unwrap_or_default();
@@ -2322,6 +2394,15 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                     });
                     return None;
                 }
+            }
+            // Configure for the program in a terminal tab (`show` adds it to the terminal's keys).
+            if acting.is_some_and(|k| matches!(&k.action, Action::Command { name } if name == CONFIGURE_PROGRAM)) {
+                let target = focus?.clone();
+                let program = knoend_agents::terminal_program(&target)?.to_string();
+                say!("  Configure requested for {program} in {}", target.display_name());
+                let text = format!("Configuring {}: drafting keys...", board_text(&program, 40));
+                let _ = sender.send("knoend.status", json!({"text": text, "level": "attention"})).await;
+                return Some(target);
             }
             // Configure is the unsupported screen's only key of its own (a media row may share it).
             if layout == UNSUPPORTED && acting.is_none() {
@@ -2476,6 +2557,17 @@ mod tests {
     }
 
     #[test]
+    fn a_program_in_a_terminal_without_keys_can_be_configured() {
+        let catalog = recipes();
+        let tab = |programs: &[&str]| Focus { os: knoend_core::focus::Os::Linux, app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(),
+                                              title: String::new(), web: None, pid: None,
+                                              terminal: Some(knoend_core::focus::TerminalTab { tty: "pts/4".into(), programs: programs.iter().map(|p| p.to_string()).collect() }) };
+        assert_eq!(unconfigured_program(&catalog, &tab(&["sudo", "pacman"])).as_deref(), Some("pacman"));
+        assert_eq!(unconfigured_program(&catalog, &tab(&["man", "less"])), None, "the pager recipe covers it");
+        assert_eq!(unconfigured_program(&catalog, &tab(&["fish"])), None, "a shell at its prompt has the terminal's keys");
+    }
+
+    #[test]
     fn agents_run_in_their_app_a_terminal_or_an_editor() {
         let focus = |app: &str, instance: &str| Focus { os: knoend_core::focus::Os::Linux, app: app.into(), instance: instance.into(), title: String::new(), web: None, pid: None, terminal: None };
         assert!(hosts_agent(&focus("Claude", "com.anthropic.claude")));
@@ -2504,8 +2596,8 @@ mod tests {
     #[test]
     fn configure_sits_in_the_middle_of_the_grid() {
         let focus = Focus { os: knoend_core::focus::Os::Linux, app: "x".into(), instance: "x".into(), title: String::new(), web: None, pid: None, terminal: None };
-        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid::LARGEST, crate::display::KeySize::Small)).keys[0].key, 5);
-        assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid { cols: 2, rows: 2 }, crate::display::KeySize::Small)).keys[0].key, 1);
+        assert_eq!(unsupported_layout(focus.display_name(), &mut Paging::new(Grid::LARGEST, crate::display::KeySize::Small)).keys[0].key, 5);
+        assert_eq!(unsupported_layout(focus.display_name(), &mut Paging::new(Grid { cols: 2, rows: 2 }, crate::display::KeySize::Small)).keys[0].key, 1);
     }
 
     #[test]

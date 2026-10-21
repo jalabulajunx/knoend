@@ -94,6 +94,14 @@
                 }
               },
               {
+                "type": "object", "additionalProperties": false, "required": ["kind", "keys"],
+                "description": "Shortcuts typed one after the other, e.g. [\"N\", \"Enter\"]; each as in kind shortcut.",
+                "properties": {
+                  "kind": { "const": "sequence" },
+                  "keys": { "type": "array", "minItems": 2, "maxItems": 8, "items": { "type": "string", "minLength": 1, "maxLength": 40 } }
+                }
+              },
+              {
                 "type": "object", "additionalProperties": false, "required": ["kind", "url"],
                 "properties": {
                   "kind": { "const": "open" },

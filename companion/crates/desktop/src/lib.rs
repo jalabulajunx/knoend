@@ -35,6 +35,7 @@ pub mod mac_apps;
 /// Built everywhere (its tests run on any system); used on Windows.
 pub mod win_apps;
 pub mod picture;
+pub mod installed;
 
 /// Calls `each` for every notification any app posts, until it returns false. Blocks; run it on
 /// its own thread.

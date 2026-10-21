@@ -431,6 +431,7 @@ Actions (the only kinds allowed; anything else fails validation):
 | `kind` | Fields | Carried out by |
 | --- | --- | --- |
 | `shortcut` | `keys`, e.g. `"Primary+Shift+P"` | Board, as `hid` (companion resolves `Primary` per OS) |
+| `sequence` | `keys`: 2 to 8 shortcuts typed in order, e.g. `["N", "Enter"]` (a program that reads a line) | Companion, typing on its own computer (the board sends `event`) |
 | `open` | `url`: a path on the matched site (must start with `/`) | Companion (via the extension) |
 | `element` | `selector`: CSS selector on the matched page | Companion (via the extension) |
 | `focus` | `selector`: a field on the matched page to type into | Companion (via the extension) |

@@ -51,7 +51,7 @@ icon = "save"               # optional: one name from the icon list given with t
 action = { kind = "shortcut", keys = "Primary+S" }
 
 Rules:
-- Every action is kind = "shortcut". keys is zero or more modifiers from Primary, Ctrl, Shift, Alt,
+- Every action is kind = "shortcut" (a program in a terminal may also use "sequence", below). keys is zero or more modifiers from Primary, Ctrl, Shift, Alt,
   Meta, each followed by "+", then exactly one key from: A-Z, 0-9, F1-F24, Enter, Escape, Tab,
   Space, Backspace, Delete, Insert, Home, End, PageUp, PageDown, Up, Down, Left, Right, Backquote,
   Minus, Equal, BracketLeft, BracketRight, Backslash, Semicolon, Quote, Comma, Period, Slash.
@@ -67,7 +67,19 @@ Rules:
   otherwise).
 - Put the most used actions first.
 - Give each key the icon that best shows its action, from the icon list only; leave icon out if
-  none fits."#;
+  none fits.
+
+When the target is a PROGRAM RUNNING IN A TERMINAL (a "Terminal program" line is given), the keys
+are typed into that terminal tab while the program runs: choose the keys the program itself reads
+(letters, digits, arrows, Enter, Escape, Space, Ctrl+letter, q to quit), not the terminal app's own
+shortcuts. Use Ctrl, never Primary: terminal programs read Ctrl on every system, macOS too. A key
+name is a physical key, lower case: a program's capital-letter command needs Shift (htop's "P"
+sorts by CPU: Shift+P; less's "G" goes to the end: Shift+G; plain "P" types p). A
+program that asks questions as it runs (a package manager's "Proceed? [Y/n]") gets keys for its
+answers. A program that reads a whole line (pacman's "[Y/n]", rm -i, apt) needs the answer and
+then Enter: there use action = { kind = "sequence", keys = ["N", "Enter"] } (2 to 8 keys, each
+written like a shortcut's keys); a single key press (less, htop, a "press any key") stays a
+shortcut. Stopping it (Ctrl+C) has confirm = true. match is set for you."#;
 
 fn user_prompt(focus: &Focus, about: &[String]) -> String {
     let os = match focus.os {
@@ -76,13 +88,32 @@ fn user_prompt(focus: &Focus, about: &[String]) -> String {
         Os::Windows => "Windows",
     };
     let about = if about.is_empty() { String::new() } else { format!("About the app (from its own files): {}\n", about.join("; ")) };
+    if let Some(program) = terminal_program(focus) {
+        return format!("Terminal program: {program} (running in {})\n{about}Operating system: {os}\nIcon list: {}\n",
+                       focus.display_name(), knoend_core::library::icon_names().join(" "));
+    }
     format!("Application: {}\nWindow class: {}\nWindow instance: {}\n{about}Operating system: {os}\nIcon list: {}\n",
             focus.display_name(), focus.app, focus.instance, knoend_core::library::icon_names().join(" "))
 }
 
-/// A slug for ids and file names: lowercase letters, digits and dashes.
+/// The program in a terminal tab that the draft is for, when the focus is a terminal app running
+/// one (not a shell at its prompt).
+pub fn terminal_program(focus: &Focus) -> Option<&str> {
+    focus.terminal.as_ref().and_then(|t| t.program())
+}
+
+/// A slug for ids and file names: lowercase letters, digits and dashes ("terminal-pacman" for a
+/// program in a terminal).
 pub fn slug(focus: &Focus) -> String {
-    let raw = if focus.instance.is_empty() { &focus.app } else { &focus.instance };
+    let owned;
+    let raw = match terminal_program(focus) {
+        Some(program) => {
+            owned = format!("terminal-{program}");
+            &owned
+        }
+        None if focus.instance.is_empty() => &focus.app,
+        None => &focus.instance,
+    };
     let mut slug: String = raw.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
     while slug.contains("--") {
         slug = slug.replace("--", "-");
@@ -153,9 +184,22 @@ fn constrain(toml_text: &str, focus: &Focus) -> Result<String, String> {
     pack.insert("source".into(), "ai".into());
     pack.insert("version".into(), "0.1.0".into());
     if !pack.contains_key("name") {
-        pack.insert("name".into(), focus.display_name().into());
+        pack.insert("name".into(), terminal_program(focus).unwrap_or(focus.display_name()).into());
+    }
+    if let Some(program) = terminal_program(focus) {
+        // A terminal program's keys apply wherever it runs, in any terminal app, on any OS.
+        let mut matches = toml::Table::new();
+        matches.insert("terminal".into(), toml::Value::Array(vec![program.into()]));
+        value.insert("match".into(), toml::Value::Table(matches));
+        fit_grid(&mut value);
+        return toml::to_string(&value).map_err(|e| e.to_string());
     }
 
+    let sequence = value.get("key").and_then(toml::Value::as_array).into_iter().flatten()
+        .any(|k| k.get("action").and_then(|a| a.get("kind")).and_then(toml::Value::as_str) == Some("sequence"));
+    if sequence {
+        return Err("kind = \"sequence\" is only for a program in a terminal: use one shortcut per key".into());
+    }
     let mut patterns = vec![toml::Value::String(focus.instance.clone())];
     if !focus.app.is_empty() && !focus.app.eq_ignore_ascii_case(&focus.instance) {
         patterns.push(focus.app.clone().into());
@@ -290,6 +334,29 @@ action = { kind = "shortcut", keys = "Ctrl+Shift+C" }
         assert_eq!(slug(&focus()), "xfce4-terminal");
         let f = Focus { os: Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new(), web: None, pid: None, terminal: None };
         assert_eq!(slug(&f), "com-anthropic-claude");
+    }
+
+    #[test]
+    fn a_program_in_a_terminal_gets_keys_of_its_own() {
+        let tab = |programs: &[&str]| Focus { terminal: Some(knoend_core::focus::TerminalTab { tty: "pts/4".into(),
+                                              programs: programs.iter().map(|p| p.to_string()).collect() }), ..focus() };
+        let pacman = tab(&["sudo", "pacman"]);
+        assert_eq!(slug(&pacman), "terminal-pacman");
+        let library = Library::parse(&constrain("[pack]\n[[key]]\nlabel = \"Yes\"\naction = { kind = \"shortcut\", keys = \"Y\" }\n\n[match]\nlinux = [\"bash\"]\n", &pacman).unwrap()).unwrap();
+        assert_eq!((library.pack.id.as_str(), library.pack.name.as_str()), ("ai.terminal-pacman", "pacman"));
+        assert_eq!(library.matches.terminal, vec!["pacman".to_string()]);
+        assert!(library.matches.linux.is_empty(), "not the terminal app");
+        assert!(user_prompt(&pacman, &[]).starts_with("Terminal program: pacman (running in Xfce4-terminal)"));
+        assert!(!user_prompt(&pacman, &[]).contains("secret title"));
+        assert!(SYSTEM_PROMPT.contains("Shift+P") && SYSTEM_PROMPT.contains("never Primary"), "capitals and Ctrl in terminals");
+        assert!(SYSTEM_PROMPT.contains(r#"kind = "sequence", keys = ["N", "Enter"]"#), "an answer then Enter for programs that read a line");
+        let answer = "[pack]\n[[key]]\nlabel = \"No\"\naction = { kind = \"sequence\", keys = [\"N\", \"Enter\"] }\n";
+        let library = Library::parse(&constrain(answer, &pacman).unwrap()).unwrap();
+        assert_eq!(library.keys[0].action, knoend_core::library::Action::Sequence { keys: vec!["N".into(), "Enter".into()] });
+        assert!(constrain(answer, &focus()).is_err(), "not for a desktop app");
+        assert!(Library::parse(&constrain(&answer.replace("\"Enter\"", "\"Return\""), &pacman).unwrap()).is_err(), "each key is checked");
+        let prompt = tab(&["fish"]);
+        assert_eq!(slug(&prompt), "xfce4-terminal", "a shell at its prompt: the terminal app");
     }
 }
 

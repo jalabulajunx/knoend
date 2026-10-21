@@ -16,6 +16,7 @@
 mod journal;
 mod agent_hooks;
 mod app_facts;
+mod app_setup;
 mod background;
 mod launcher;
 mod browser;
@@ -101,6 +102,9 @@ enum Command {
         /// WM_CLASS instance, e.g. "xfce4-terminal"
         #[arg(long)]
         instance: String,
+        /// A program running in that terminal app, e.g. "pacman": drafts the program's keys
+        #[arg(long)]
+        terminal: Option<String>,
         #[arg(long)]
         save: bool,
     },
@@ -206,8 +210,9 @@ fn main() {
             };
             lines.map(|lines| lines.into_iter().for_each(|l| println!("{l}")))
         }
-        Command::Draft { class, instance, save } => tokio::runtime::Runtime::new().expect("tokio")
-            .block_on(draft(Focus { os: Os::current(), app: class, instance, title: String::new(), web: None, pid: None, terminal: None }, save)),
+        Command::Draft { class, instance, terminal, save } => tokio::runtime::Runtime::new().expect("tokio")
+            .block_on(draft(Focus { os: Os::current(), app: class, instance, title: String::new(), web: None, pid: None,
+                                    terminal: terminal.map(|p| knoend_core::focus::TerminalTab { tty: String::new(), programs: vec![p] }) }, save)),
     };
     if let Err(message) = result {
         eprintln!("knoend: {message}");

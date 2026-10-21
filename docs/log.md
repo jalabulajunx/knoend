@@ -1760,6 +1760,72 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
 - Decided (Tom): "Remove my version" stays as it is (deletes the file after its confirm); not an
   open item.
 
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - Terminal keys on Linux (#56)
+
+- Changed (branch `sundar/terminal-linux`):
+  - Active tab: the terminal window's title first (it follows the active tab; fish and zsh put the
+    running command and folder in it, "man ls ~/Projects"), then the tab typed in last for tabs the
+    title does not tell apart. `focus/src/terminal.rs`, `active_tab(pid, title)`.
+  - `sudo` runs its command on a terminal of its own (`use_pty`): that terminal belongs to the tab
+    (`sudo` + `pacman`) and is never a tab of its own. Only programs in the tab's foreground count, so
+    an xterm started from a tab stays a window of its own.
+  - `TerminalTab::program()`: the program keys are for, skipping shells and `sudo`/`env`/`nice`...
+  - A program in a terminal tab with no keys: the terminal's keys plus a **Configure** key (last
+    page when the terminal's fill the first), status "No keys for pacman yet". The configure agent
+    drafts `ai.terminal-<program>` with `match.terminal`; the prompt gets "Terminal program: pacman"
+    and its `whatis` line (pacman has two manual pages: the package manager and a Pac-Man game).
+    Prompt rules for terminals: Ctrl not Primary; Shift for capital-letter commands (htop's P).
+  - New action kind **`sequence`** (spec/protocol.md section 5 and the library schema; **needs Tom's
+    review**): 2-8 shortcuts typed in order by the companion on its own computer (the board sends an
+    event). The agent uses it only for terminal programs that read a line (`["N", "Enter"]`); a
+    desktop app's draft with one is rejected.
+  - `knoend draft --terminal <program>`.
+- Tested (ONX2432G028, Arch Linux, i3/X11, Xfce Terminal, fish): Tom's cases each worked (`man ls`
+  pager keys, back to the terminal's keys at the prompt, Claude Code's keys); a tab switch without
+  typing now changes the keys; `sudo pacman -Syu` showed Configure, the draft arrived, and No
+  (`N`, `Enter`) cancelled at "Proceed?" (Sundar at the board). Live drafts through openai/gpt-6-sol:
+  pacman (Yes/No as sequences, Default, Stop with confirm) and htop (Shift+P/M/T after the capitals
+  rule; the first draft sent plain P). Unit tests for the title, folder, sudo and xterm cases.
+  macOS not run: titles there may be empty, which falls back to the old behaviour.
+- Decided: a terminal-program draft applies in any terminal app on any OS; sequences are typed by
+  the companion (no firmware change), so they type on the computer running knoend.
+- Open: any long command (`cargo build`) also shows Configure and "No keys for ... yet"; could wait
+  a few seconds before offering it. Bash at a prompt sets the same title in every tab of one folder:
+  typing still decides there. Edit keys shows a sequence key as "types N, then Enter" (not editable
+  yet).
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - Keys for your apps: installed apps, drafted by AI in a batch
+
+- Changed:
+  - Set-up step 7 "Your apps" (also "Set up apps" on the dashboard): the apps installed on this
+    computer, most used first, each marked Ready (a recipe), Yours, Drafted (AI) or not set up, with
+    real icons and a search. The person picks up to 12; the configure agent drafts them two at a
+    time, each tile showing waiting / drafting / done / failed ("Ask why" hands the error to the
+    assistant). Drafts are saved like ones made from the board and go to the board at once.
+  - `knoend_desktop::installed`: installed apps on every OS, named as their windows will be
+    (Linux: desktop entries, class StartupWMClass or the program, instance the program; macOS: `.app`
+    bundles, bundle id and name; Windows: `App Paths` exe names). Desktop entries now record their
+    program (`Exec=`).
+  - `cli/src/app_setup.rs`; API `GET /apps`, `POST /apps/draft`, `GET /apps/icon/{id}`; progress
+    as `app-setup` events. Only the names of the picked apps reach the AI provider.
+  - Setup assistant: check `installed_apps`, action `app_setup` (web app button "Keys for your apps").
+  - Set up a board, with a board already set up and connected: "Your board is set up" names it and
+    offers Keys for your apps (with how many used apps have no keys), Keys and look, Wi-Fi (join or
+    change, over USB), Bluetooth, and Install firmware again; the steps show after a choice
+    (Sundar's request: there was no way back to Wi-Fi, Bluetooth or apps for a configured board).
+- Tested (Arch Linux, i3; ONX over Wi-Fi; OpenAI gpt-6-sol):
+  - Each choice opens its step (look 4, Bluetooth 6, apps 7, Wi-Fi the change-Wi-Fi flow from
+    step 1, install step 1), checked in the web app.
+  - 147 apps listed; the ones used and those with recipes first, statuses right (Firefox, Thunar,
+    Okular, Spectacle, Code - OSS ready; Claude yours).
+  - Darktable and OBS Studio drafted together in about 18 s: 9 and 7 keys; matches `darktable` and
+    `obs`, the window classes those apps use. Not yet opened to see the keys on the board.
+  - Asked the assistant "Which of my apps should I make keys for next?": it ran `installed_apps` by
+    itself, suggested MuseScore (used, no keys) and offered the app_setup button. No prompt edit.
+  - macOS and Windows listing: compiles in CI only, untested.
+- Open:
+  - "Bulk Rename" shows Thunar's keys (its entry runs `thunar`); harmless, but it reads oddly.
+  - Linux lists system tools (Avahi, Bluetooth Adapters); they sit under "Everything else".
 ## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - The board listens: notes to MuseScore as MIDI
 
 - Changed:
