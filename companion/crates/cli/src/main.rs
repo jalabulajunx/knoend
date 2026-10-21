@@ -30,6 +30,7 @@ mod fonts;
 mod settings;
 mod firmware;
 mod macos_help;
+mod midi;
 mod provision;
 mod service;
 mod web;

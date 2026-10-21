@@ -208,6 +208,32 @@ C3, C6) are not supported.
   Google Fonts is blocked (some offices and schools); the name may also be misspelt: pick it from
   the list.
 
+### Listening for notes (music apps)
+
+A board with a microphone (the ONX2432G028 with the Nextion Dual MIC board on its MIC_PDM
+connector) listens while a Listen key is on and sends each note it hears; the service passes them
+to music apps as MIDI from a device called "KnoEnd". The board's own serial log, while it listens,
+prints `listen: loudest N dB in the last second` and `listen: note C4 (...)`.
+
+- **Symptom:** the board listens but hears nothing; the log shows `microphone raw: left -30935..-30935,
+  right -30935..-30935` (one fixed number) and loudness stays near -97 dB. **Cause:** the
+  microphone sends no data: its ribbon is not fully in the connector, or the ribbon or mic board is
+  faulty. **Fix:** switch the board off and unplug it, open the connector latch, push the ribbon in
+  squarely and fully (bare contacts toward the connector's pins), close the latch; else try another
+  ribbon or mic board. Not the firmware. **Confirmed** 2026-10-21 on the ONX (Sundar): a reseated mic
+  read live values and heard every note; the walkie-talkie project saw the same -30935 in July and
+  fixed it the same way.
+- **Symptom:** notes are heard (service log `note C4 ... sent as MIDI`) but nothing reaches the music
+  app. **Cause:** the app reads another MIDI input. On Linux the service also sends into "Midi
+  Through", which MuseScore reads by default; an app set to a different input needs "KnoEnd" chosen
+  as its MIDI input. In MuseScore the notes are written only in note input (N) with a bar selected.
+  **Confirmed** 2026-10-21, MuseScore 4.7 on Arch Linux (Sundar).
+- **Symptom:** soft singing or a distant instrument gives no notes; the log shows loudness a little
+  under the quiet level. **Fix:** lower the `listen_quiet` setting (for example -70). Raise it
+  (-45) when room noise makes stray notes.
+- Windows has no virtual MIDI device without a driver: the service sends to an output called
+  "KnoEnd" made with loopMIDI, and says so when there is none (untested).
+
 ### Bluetooth keyboard
 
 - **Windows says "Try connecting your device again" when pairing "KnoEnd".** The Windows Bluetooth

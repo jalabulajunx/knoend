@@ -40,6 +40,41 @@
     "speaker": {
       "type": "boolean"
     },
+    "mic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "driver",
+        "clk",
+        "data"
+      ],
+      "description": "A microphone, opened only while the person asks the board to listen (spec/protocol.md 3.6f).",
+      "properties": {
+        "driver": {
+          "enum": [
+            "pdm"
+          ],
+          "description": "A PDM microphone on the S3's I2S peripheral (decoded to PCM by ESP-IDF)."
+        },
+        "clk": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 48
+        },
+        "data": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 48
+        },
+        "slot": {
+          "enum": [
+            "left",
+            "right"
+          ],
+          "description": "Which slot the microphone answers in (default left)."
+        }
+      }
+    },
     "i2c": {
       "type": "object",
       "additionalProperties": false,

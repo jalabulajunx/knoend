@@ -144,6 +144,13 @@
                   "kind": { "const": "agent" },
                   "reply": { "enum": ["allow", "always", "deny", "stop", "option", "done", "decline", "go_to"] }
                 }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["kind"],
+                "description": "Starts or stops the board listening through its microphone (boards with features.mic); the notes it hears go to the music app as MIDI (spec/protocol.md 3.6f).",
+                "properties": {
+                  "kind": { "const": "listen" }
+                }
               }
             ]
           }

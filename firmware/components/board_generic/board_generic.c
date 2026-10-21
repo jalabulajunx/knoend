@@ -13,6 +13,8 @@
 
 #include "cJSON.h"
 #include "driver/gpio.h"
+#include "driver/i2s_pdm.h"
+#include "hal/usb_serial_jtag_ll.h"
 #include "driver/i2c_master.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
@@ -86,6 +88,9 @@ typedef struct {
     line_t touch_reset;
     int touch_max_x, touch_max_y;
     bool touch_swap_xy, touch_mirror_x, touch_mirror_y;
+    int mic_clk, mic_data;  // a PDM microphone; -1 when there is none
+    bool mic_right;         // the microphone answers in the right slot
+    bool mic_slot_fixed;    // the definition names the slot; otherwise the louder one is used
 } definition_t;
 
 static definition_t def;
@@ -146,7 +151,8 @@ static esp_err_t parse(const char *text)
     const cJSON *display = cJSON_GetObjectItemCaseSensitive(root, "display");
     const cJSON *backlight = cJSON_GetObjectItemCaseSensitive(display, "backlight");
     const cJSON *touch_json = cJSON_GetObjectItemCaseSensitive(root, "touch");
-    char serial[24];
+    const cJSON *mic_json = cJSON_GetObjectItemCaseSensitive(root, "mic");
+    char serial[24], mic_driver[8], mic_slot[8];
 
     memset(&def, 0, sizeof(def));
     get_str(root, "id", def.id, sizeof(def.id));
@@ -203,12 +209,22 @@ static esp_err_t parse(const char *text)
     def.touch_swap_xy = get_bool(touch_json, "swap_xy");
     def.touch_mirror_x = get_bool(touch_json, "mirror_x");
     def.touch_mirror_y = get_bool(touch_json, "mirror_y");
+    get_str(mic_json, "driver", mic_driver, sizeof(mic_driver));
+    get_str(mic_json, "slot", mic_slot, sizeof(mic_slot));
+    const bool pdm = strcmp(mic_driver, "pdm") == 0;
+    def.mic_clk = pdm ? get_int(mic_json, "clk", -1) : -1;
+    def.mic_data = pdm ? get_int(mic_json, "data", -1) : -1;
+    def.mic_right = strcmp(mic_slot, "right") == 0;
+    def.mic_slot_fixed = mic_slot[0] != '\0';
+    if (cJSON_IsObject(mic_json) && !pdm) {
+        ESP_LOGW(TAG, "microphone driver \"%s\" not supported; running without one", mic_driver);
+    }
     cJSON_Delete(root);
 
     // The schema is checked by the companion before writing; this repeats what could harm the
     // board or the chip if it were wrong.
     const int pins[] = { def.sda, def.scl, def.sclk, def.mosi, def.dc, def.cs, def.backlight_gpio,
-                         def.lcd_reset.gpio, def.touch_reset.gpio };
+                         def.lcd_reset.gpio, def.touch_reset.gpio, def.mic_clk, def.mic_data };
     for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         ESP_RETURN_ON_FALSE(pin_ok(pins[i]), ESP_ERR_INVALID_ARG, TAG, "GPIO %d is not usable on the ESP32-S3", pins[i]);
     }
@@ -575,6 +591,7 @@ esp_err_t board_init(void)
     info = (board_info_t){
         .id = def.id, .name = def.name,
         .has_speaker = def.speaker, .has_native_usb = def.native_usb,
+        .has_mic = def.mic_clk >= 0 && def.mic_data >= 0,
     };
     set_size(def.rotation);
     ESP_LOGI(TAG, "definition %s: %s display, %s touch", def.id, def.display_driver, def.touch_driver);
@@ -586,4 +603,110 @@ esp_err_t board_init(void)
     ESP_RETURN_ON_ERROR(display_init(&io, &panel), TAG, "display");
     ESP_RETURN_ON_ERROR(touch_attach(), TAG, "touch");
     return lvgl_init(io, panel);
+}
+
+// ---- microphone ----
+
+// A PDM microphone on the I2S peripheral (ESP-IDF's PDM RX mode, which decodes to PCM), read in
+// stereo: boards like the Nextion Dual MIC carry two microphones, and which slot answers varies.
+// The first half second picks the slot with sound in it. Opened only while someone listens.
+static i2s_chan_handle_t mic_chan;
+static int mic_slot = -1; // 0 left, 1 right, -1 not chosen yet
+static int16_t mic_pairs[2 * 512];
+static int64_t mic_energy[2];
+static int mic_pick_samples;
+
+esp_err_t board_mic_start(uint32_t sample_rate)
+{
+    ESP_RETURN_ON_FALSE(info.has_mic, ESP_ERR_NOT_SUPPORTED, TAG, "this board has no microphone");
+    if (mic_chan != NULL) {
+        return ESP_OK;
+    }
+    // GPIO 19 and 20 are the S3's own USB lines, held by its USB serial port (the image's second log
+    // console) until released. A board that talks through a USB-serial chip does not use them.
+    const bool on_usb_pins = def.mic_clk == 19 || def.mic_clk == 20 || def.mic_data == 19 || def.mic_data == 20;
+    if (on_usb_pins) {
+        ESP_RETURN_ON_FALSE(def.serial == BOARD_SERIAL_UART0, ESP_ERR_INVALID_STATE, TAG,
+                            "the microphone is on GPIO 19/20, which this board's USB serial line needs");
+        usb_serial_jtag_ll_phy_enable_pad(false);
+    }
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, NULL, &mic_chan), TAG, "microphone channel");
+    i2s_pdm_rx_config_t cfg = {
+        .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG(sample_rate),
+        .slot_cfg = I2S_PDM_RX_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .gpio_cfg = { .clk = def.mic_clk, .din = def.mic_data },
+    };
+    esp_err_t err = i2s_channel_init_pdm_rx_mode(mic_chan, &cfg);
+    if (err == ESP_OK) {
+        err = i2s_channel_enable(mic_chan);
+    }
+    if (err != ESP_OK) {
+        i2s_del_channel(mic_chan);
+        mic_chan = NULL;
+        ESP_LOGE(TAG, "microphone: %s", esp_err_to_name(err));
+        return err;
+    }
+    mic_slot = def.mic_slot_fixed ? (def.mic_right ? 1 : 0) : -1;
+    mic_energy[0] = mic_energy[1] = 0;
+    mic_pick_samples = 0;
+    ESP_LOGI(TAG, "microphone on (PDM, clock GPIO %d, data GPIO %d, %" PRIu32 " Hz)", def.mic_clk, def.mic_data, sample_rate);
+    return ESP_OK;
+}
+
+size_t board_mic_read(int16_t *samples, size_t count, uint32_t timeout_ms)
+{
+    if (mic_chan == NULL) {
+        return 0;
+    }
+    if (count > 512) {
+        count = 512;
+    }
+    size_t bytes = 0;
+    i2s_channel_read(mic_chan, mic_pairs, count * 2 * sizeof(int16_t), &bytes, timeout_ms);
+    const size_t pairs = bytes / (2 * sizeof(int16_t));
+    if (mic_slot < 0 && pairs > 0) {
+        // Energy of each slot around its own average, and what the raw values look like.
+        int16_t lo[2] = { INT16_MAX, INT16_MAX }, hi[2] = { INT16_MIN, INT16_MIN };
+        int64_t sum[2] = { 0, 0 };
+        for (size_t i = 0; i < pairs; i++) {
+            for (int c = 0; c < 2; c++) {
+                const int16_t v = mic_pairs[2 * i + c];
+                sum[c] += v;
+                lo[c] = v < lo[c] ? v : lo[c];
+                hi[c] = v > hi[c] ? v : hi[c];
+            }
+        }
+        for (int c = 0; c < 2; c++) {
+            const int32_t mean = (int32_t)(sum[c] / (int64_t)pairs);
+            for (size_t i = 0; i < pairs; i++) {
+                const int32_t d = mic_pairs[2 * i + c] - mean;
+                mic_energy[c] += (int64_t)d * d;
+            }
+        }
+        if (mic_pick_samples == 0 || mic_pick_samples % 4096 < (int)pairs) {
+            ESP_LOGI(TAG, "microphone raw: left %d..%d, right %d..%d", lo[0], hi[0], lo[1], hi[1]);
+        }
+        mic_pick_samples += pairs;
+        if (mic_pick_samples >= 8000) {
+            mic_slot = mic_energy[1] > mic_energy[0] ? 1 : 0;
+            ESP_LOGI(TAG, "microphone: using the %s slot (energy left %lld, right %lld)",
+                     mic_slot ? "right" : "left", mic_energy[0], mic_energy[1]);
+        }
+    }
+    const int c = mic_slot < 0 ? 0 : mic_slot;
+    for (size_t i = 0; i < pairs; i++) {
+        samples[i] = mic_pairs[2 * i + c];
+    }
+    return pairs;
+}
+
+void board_mic_stop(void)
+{
+    if (mic_chan != NULL) {
+        i2s_channel_disable(mic_chan);
+        i2s_del_channel(mic_chan);
+        mic_chan = NULL;
+        ESP_LOGI(TAG, "microphone off");
+    }
 }

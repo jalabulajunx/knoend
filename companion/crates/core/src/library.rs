@@ -98,6 +98,8 @@ pub enum Action {
     Command { name: String },
     /// A key on a coding agent's screen (libraries matched by `match.agent`).
     Agent { reply: AgentReply },
+    /// Starts or stops the board listening for notes; they go to the music app as MIDI.
+    Listen,
 }
 
 /// What a key on a coding agent's screen answers.

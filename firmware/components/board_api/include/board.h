@@ -21,6 +21,7 @@ typedef struct {
     uint16_t height;    // screen height in pixels, as the board sits now
     bool has_speaker;
     bool has_native_usb; // true when the USB-C port can enumerate as a USB keyboard
+    bool has_mic;        // a microphone named by the board definition ("mic")
 } board_info_t;
 
 // Which line the companion talks to over USB.
@@ -45,6 +46,12 @@ void board_set_backlight(uint8_t percent);
 // Turns the screen `turn` quarter turns clockwise from the board's usual landscape (0-3); touch
 // follows. board_info() then gives the new width and height. Call with the LVGL lock held.
 void board_set_turn(int turn);
+
+// The microphone, when the definition names one: mono 16-bit samples at `sample_rate` Hz.
+// board_mic_read() waits up to `timeout_ms` and returns how many samples it put in `samples`.
+esp_err_t board_mic_start(uint32_t sample_rate);
+size_t board_mic_read(int16_t *samples, size_t count, uint32_t timeout_ms);
+void board_mic_stop(void);
 
 #ifdef __cplusplus
 }

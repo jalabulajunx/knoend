@@ -299,6 +299,32 @@ font lacks is drawn in the built-in font.
 - The companion sends a font after the identities when the person's choice differs from
   `board.fonts`, and when the person changes it.
 
+### 3.6f `knoend.listen` / `knoend.listen.ack` / `knoend.note`
+
+A board whose definition names a microphone (`mic`, identity `features.mic` true) can listen for
+notes someone sings or plays, one at a time, and report each as it starts and stops. The sound
+itself never leaves the board: only the notes do.
+
+```json
+{ "id": 40, "type": "knoend.listen", "body": { "on": true, "seconds": 600, "quiet": -60 } }
+{ "id": 12, "re": 40, "type": "knoend.listen.ack", "body": { "on": true, "seconds": 600, "quiet": -60 } }
+{ "id": 13, "type": "knoend.note", "body": { "midi": 60, "on": true, "velocity": 55, "hz": 264.1 } }
+{ "id": 14, "type": "knoend.note", "body": { "midi": 60, "on": false } }
+{ "id": 15, "type": "knoend.listen.ack", "body": { "on": false } }
+```
+
+- `on` true starts listening (again: its time starts over), false stops it. `seconds` (1-600,
+  default 120): it stops by itself after that. `quiet` (-90 to -10 dB below full scale, default
+  -50): anything quieter is silence.
+- `knoend.note`: `midi` is the MIDI note number (60 = C4); a note counts once it has held for
+  about 100 ms, and stops after about 100 ms of silence or of another note. `velocity` (1-127)
+  comes from how loud it was; `hz` is the frequency heard. The range is C2 to about D6.
+- When listening stops (asked or timed out) the board sends `knoend.listen.ack` with `on` false,
+  unasked. A board without a microphone answers `knoend.error` `unsupported`.
+- While listening the status bar says so, then shows the last note heard.
+- Library keys with `action.kind = "listen"` start and stop it; the companion sends the notes to
+  music apps as MIDI (a "KnoEnd" MIDI device; on Linux also into Midi Through).
+
 ### 3.7 `knoend.error`
 
 `{ "re": 7, "body": { "code": "unsupported", "message": "..." } }`. Codes: `bad-packet`,

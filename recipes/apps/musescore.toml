@@ -1,0 +1,67 @@
+# MuseScore Studio 4: write music by singing or playing it. Listen starts the board's microphone;
+# each note it hears reaches MuseScore as MIDI from the "KnoEnd" MIDI device (choose it once in
+# Edit > Preferences > I/O > MIDI input). In note input (N), MuseScore writes the note at the
+# chosen length. The other keys are MuseScore's own shortcuts.
+[pack]
+id = "builtin.musescore"
+name = "MuseScore"
+version = "0.1.0"
+source = "builtin"
+description = "Sing or play notes into the score, with note input, lengths, rest, undo and play."
+grid = "3x3"
+
+[match]
+linux = ["MuseScore4", "mscore"]
+macos = ["org.musescore.MuseScore"]
+windows = ["MuseScore4.exe"]
+
+[[key]]
+label = "Listen"
+icon = "mic"
+speak = "Listen for notes"
+action = { kind = "listen" }
+
+[[key]]
+label = "Note input"
+icon = "music_note"
+speak = "Note input on or off"
+action = { kind = "shortcut", keys = "N" }
+
+[[key]]
+label = "Rest"
+icon = "pause"
+speak = "Rest"
+action = { kind = "shortcut", keys = "0" }
+
+[[key]]
+label = "Eighth"
+speak = "Eighth note"
+action = { kind = "shortcut", keys = "3" }
+
+[[key]]
+label = "Quarter"
+speak = "Quarter note"
+action = { kind = "shortcut", keys = "4" }
+
+[[key]]
+label = "Half"
+speak = "Half note"
+action = { kind = "shortcut", keys = "5" }
+
+[[key]]
+label = "Undo"
+icon = "undo"
+speak = "Undo"
+action = { kind = "shortcut", keys = "Primary+Z" }
+
+[[key]]
+label = "Play"
+icon = "play_arrow"
+speak = "Play the score"
+action = { kind = "shortcut", keys = "Space" }
+
+[[key]]
+label = "Done"
+icon = "check"
+speak = "Leave note input"
+action = { kind = "shortcut", keys = "Escape" }
