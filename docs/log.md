@@ -1679,3 +1679,43 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - `knoend.exe serve`: verified the 6-step setup wizard UI and endpoints (`http://127.0.0.1:7380`).
   - Bluetooth LE keyboard on Windows 11: verified pairing of "KnoEnd" to Windows 11 (cleared initial
     handshake stall by toggling Windows Bluetooth off and on).
+
+## 2026-10-20 - Tom (Claude Code) - Sundar's display work on the FNK, start-up font crash, #38
+
+- Changed:
+  - #52 (merged): firmware: a Google start-up font above 64 px crashed the board (tiny_ttf's
+    default 4 KB glyph cache gives 4096 / px² hash buckets, zero above 64 px: divide by zero at
+    the first letter); the start-up font now gets a cache sized for its glyphs. Service: a
+    start-up size change alone never reached the board (the display ack dropped `startSize`).
+    Spec text for 3.6d/3.6e/3.1 matched to the firmware (no contract change; Tom's call to merge
+    without Sundar's review, docs only).
+  - #38 (Edit keys): `Catalog::replaced_by` (a built-in or community recipe with a match pattern in
+    common, same OS or web); the list marks replaced drafts ("Not in use", listed last) and versions
+    of the person's own on one ("yours, on an old draft"); editing one says so, with "Edit the
+    recipe instead"; saving one asks first. When not editing, the picker follows the board.
+  - Issues filed: #50 (font picker and start-up size preview clunky), #51 (Edit keys in portrait
+    hides keys past 3 columns; preview only, low priority).
+- Tested (FNK0104B, macOS):
+  - Sundar's v0.2.0 work from main (`v0.2.0-8`): Dark/White/Sepia, all four turns (touch follows),
+    key and start-up fonts; 16 minutes with fonts on and the serial log open: no lost display
+    updates, no watchdog lines (the PSRAM fix holds on the FNK).
+  - Start-up font crash reproduced on main at 80 px (two crashes, then the font dropped as
+    `refused`); with the fix 80 and 96 px shown, no crash (Tom watched the board).
+  - #38: on main the list showed a fake old VS Code draft beside the recipe, unmarked (Tom saw
+    it). With the fix: marked and listed last, the note and "Edit the recipe instead" (Tom);
+    saving on the draft and the "on an old draft" flag checked through `/api/edit` only, the
+    confirm dialog not clicked.
+- Codex (gpt-6.1-sol, xhigh): #52 no findings. #38: 3 findings, all fixed: a draft counts as
+  replaced only when recipes have every pattern it matches by on this OS (and every site pattern),
+  not any one in common; the picker stays on "What the board shows" when not editing (a library
+  under the shown one went stale when the board changed); a version saved in another tab finds its
+  warning through the draft under it.
+- Lessons:
+  - Since #49 the service opens a paired board's USB port when Wi-Fi is not found. A second
+    program reading the same port on macOS splits the bytes and left the service blocked in
+    `read()` for good. Keep a serial log exclusive (`TIOCEXCL`) or close it while the service runs.
+  - "Connected to board" no longer appears in the service's stdout log; `GET /api/state` shows it.
+- Open:
+  - "Remove my version" deletes the file: in testing it removed Tom's real VS Code version (no
+    backup). Suggest moving it to the trash instead.
+  - #50's picker and live preview; Sundar to check the start-up font at 96 px on the ONX (#52).
