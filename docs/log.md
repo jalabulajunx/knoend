@@ -1759,3 +1759,35 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   while a second program held it open (the lesson in that entry stands).
 - Decided (Tom): "Remove my version" stays as it is (deletes the file after its confirm); not an
   open item.
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - The board listens: notes to MuseScore as MIDI
+
+- Changed:
+  - Firmware: PDM microphone in the board support (definition `mic`: driver, clk, data, optional
+    slot; read in stereo, the slot with sound is used; GPIO 19/20 are released from the S3's own
+    USB on boards that talk through a USB-serial chip). `listen.c` and `pitch.c` (YIN, 8 kHz frames
+    of 64 ms, a note counts after about 100 ms). `knoend.listen` / `.ack`, `knoend.note`, identity
+    `features.mic`. ONX definition: the Nextion Dual MIC on GPIO 19/20.
+  - Companion: `midi.rs` (virtual MIDI device "KnoEnd" on Linux and macOS, made when a board with
+    a microphone connects; on Linux also into Midi Through, which MuseScore reads by default;
+    Windows: a loopMIDI output named KnoEnd, untested). Library action `listen`; setting
+    `listen_quiet` (default -60 dB). Recipe `recipes/apps/musescore.toml`.
+  - Spec 3.6f, board and library schemas; decision record
+    [2026-10-21-listening-and-midi](decisions/2026-10-21-listening-and-midi.md). CI installs
+    libasound2-dev (midir).
+  - Bench tool `tools/listen_test.py`; pitch tests `firmware/test/run_pitch_test.sh` (30 checks).
+- Tested (ONX2432G028 with the Nextion Dual MIC; Arch Linux; MuseScore 4.7):
+  - Mic silent at first, raw value -30935 on both slots: the ribbon was not seated (same symptom
+    and cause as the walkie-talkie project in July). Reseated: live values.
+  - Sung C E G B G E C: all heard. A tune played from the laptop speakers: E4 G4 C5 A4 right, C4
+    read as G5 (its third harmonic; small speakers barely play C4).
+  - Kalimba over Wi-Fi only: C4 E4 G4 B4 D5 D4 F4 C5 E5 B5 D6 all right, sent as MIDI (checked with
+    `aseqdump`), and written into a MuseScore score in note input with no MuseScore setting.
+- Decided: pitch found on the board, only notes leave it (decision record).
+- Open:
+  - Raise the top of the range to about 1400 Hz (a 17-tine kalimba reaches E6); needs a flash.
+  - An octave check for a weak fundamental (laptop speakers).
+  - Listening carries on when MuseScore loses focus (until tapped again or 10 minutes).
+  - Pluggable connectors for other apps (Sundar's idea: an AI writes the bridge): proposal in the
+    decision record, for Tom.
+  - Tom: review spec 3.6f, the board schema `mic` and library action `listen`.
