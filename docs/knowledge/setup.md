@@ -335,6 +335,16 @@ Windows service in `drivers`), `keys_follow_apps: true`, and `service_can_type: 
   so no request is made and nothing reaches the board. Switch the session to manual approval and
   ask for a command that needs it (seen on macOS 2026-10-18; manual approval then worked: Deny,
   Allow and questions from the board).
+- **Keys for the program in a terminal tab (Claude Code, `less`/`man`):** in a terminal app
+  (Terminal, iTerm2, Ghostty, Xfce Terminal...) the board shows keys for the program running in
+  the active tab, the one typed in last, and the terminal's own keys at a shell prompt. The
+  `last_terminal` check shows what the service saw. **The board shows the wrong tab's keys:** the
+  person switched tabs without typing; typing anything in the tab fixes it. **No change at all in
+  VS Code's terminal pane:** by design, an editor keeps its own keys (the board cannot tell the
+  editor from the pane). No permission is needed (seen on macOS 26.6 with Terminal.app,
+  2026-10-20; Linux not yet tried).
+- **A Claude Code session in a terminal tab:** its hooks name the tab (`knoend_tty`), so several
+  questions show the "Answer here" panel only while that tab is in front, not in any terminal.
 - **Claude desktop's own screen is not readable yet:** with session accessibility on, the Electron app
   still exposes only its window frames; reading its content needs it launched with
   `--force-renderer-accessibility`. The hooks make that unnecessary for Claude Code sessions.

@@ -103,14 +103,23 @@ impl Catalog {
         self.libraries.is_empty()
     }
 
-    /// The library for what is focused, by precedence: a library for the browser tab's site
-    /// first, then one for the app. `None` means "unsupported".
+    /// The library for what is focused, by precedence: a library for the program in a terminal's
+    /// active tab (its foreground leader first: "man" before the "less" it runs), or for the browser
+    /// tab's site, then one for the app. `None` means "unsupported".
     pub fn find(&self, focus: &Focus) -> Option<&Library> {
         let rank = |source: &Source| match source {
             Source::User => 0,
             Source::Builtin | Source::Community => 1,
             Source::Ai => 2,
         };
+        for program in focus.terminal.iter().flat_map(|t| &t.programs) {
+            let found = self.libraries.iter().map(|(_, l)| l)
+                .filter(|l| l.matches.terminal.iter().any(|p| p.eq_ignore_ascii_case(program)))
+                .min_by_key(|l| rank(&l.pack.source));
+            if found.is_some() {
+                return found;
+            }
+        }
         if let Some(web) = &focus.web {
             // The most specific pattern wins ("youtube.com/watch" over "youtube.com"), then source.
             let site = self.libraries.iter().map(|(_, l)| l)
@@ -196,7 +205,7 @@ mod tests {
     use super::*;
 
     fn focus(app: &str, instance: &str) -> Focus {
-        Focus { os: Os::Linux, app: app.into(), instance: instance.into(), title: String::new(), web: None }
+        Focus { os: Os::Linux, app: app.into(), instance: instance.into(), title: String::new(), web: None, pid: None, terminal: None }
     }
 
     #[test]
@@ -263,6 +272,28 @@ mod tests {
         assert!(catalog.get("builtin.vscode").is_some(), "apps/");
         let pages = catalog.libraries.iter().filter(|(p, _)| p.parent().and_then(|d| d.parent()).is_some_and(|d| d.ends_with("sites"))).count();
         assert!(pages > 0, "sites/<host>/ pages");
+    }
+
+    #[test]
+    fn a_program_in_the_terminal_tab_beats_the_terminal_app() {
+        let lib = |id: &str, matches: &str| Library::parse(&format!(
+            "[pack]\nid = \"builtin.{id}\"\nname = \"X\"\nversion = \"1.0.0\"\nsource = \"builtin\"\n[match]\n{matches}\n[[key]]\nlabel = \"Q\"\naction = {{ kind = \"shortcut\", keys = \"Q\" }}\n"
+        )).unwrap();
+        let mut catalog = Catalog::default();
+        catalog.add("terminal.toml".into(), lib("terminal", "linux = [\"xfce4-terminal\"]"));
+        catalog.add("pager.toml".into(), lib("pager", "terminal = [\"less\", \"man\"]"));
+        catalog.add("claude.toml".into(), lib("claude", "terminal = [\"claude\"]"));
+        let mut f = focus("Xfce4-terminal", "xfce4-terminal");
+        let in_tab = |f: &mut Focus, programs: &[&str]| {
+            f.terminal = Some(crate::focus::TerminalTab { tty: "pts/1".into(), programs: programs.iter().map(|p| p.to_string()).collect() });
+        };
+        assert_eq!(catalog.find(&f).unwrap().pack.id, "builtin.terminal", "no tab known");
+        in_tab(&mut f, &["bash"]);
+        assert_eq!(catalog.find(&f).unwrap().pack.id, "builtin.terminal", "a shell at its prompt");
+        in_tab(&mut f, &["git", "less"]);
+        assert_eq!(catalog.find(&f).unwrap().pack.id, "builtin.pager", "git log's pager");
+        in_tab(&mut f, &["Claude"]);
+        assert_eq!(catalog.find(&f).unwrap().pack.id, "builtin.claude");
     }
 
     #[test]

@@ -319,7 +319,7 @@ fn focus_for_window(hwnd: Hwnd) -> Option<Focus> {
         return None;
     }
     let (app, instance) = app_and_stem(file_name)?;
-    Some(Focus { os: Os::Windows, app, instance, title: String::new(), web: None })
+    Some(Focus { os: Os::Windows, app, instance, title: String::new(), web: None, pid: None, terminal: None })
 }
 
 unsafe fn is_main_window(hwnd: Hwnd) -> bool {

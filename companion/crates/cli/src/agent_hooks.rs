@@ -45,14 +45,43 @@ pub enum AgentEvent {
 
 // ---- the hook, run by the agent ----
 
+/// The terminal the agent runs in ("ttys003", "pts/4"): the first of this hook's ancestors on
+/// one. None for an agent outside a terminal (the Claude app, an editor's extension).
+#[cfg(unix)]
+fn agent_tty() -> Option<String> {
+    let out = std::process::Command::new("ps").args(["-A", "-o", "pid=,ppid=,tty="]).output().ok()?;
+    let table: Vec<(u32, u32, String)> = String::from_utf8_lossy(&out.stdout).lines().filter_map(|line| {
+        let mut f = line.split_whitespace();
+        Some((f.next()?.parse().ok()?, f.next()?.parse().ok()?, f.next()?.to_string()))
+    }).collect();
+    let mut pid = std::process::id();
+    for _ in 0..8 {
+        let (_, parent, tty) = table.iter().find(|(p, _, _)| *p == pid)?;
+        if !tty.starts_with('?') {
+            return Some(tty.clone());
+        }
+        pid = *parent;
+    }
+    None
+}
+
+#[cfg(not(unix))]
+fn agent_tty() -> Option<String> {
+    None
+}
+
 /// Runs as the agent's hook: reads the event from stdin, asks the service, prints the decision.
 /// Any problem (no service, no answer) prints nothing, which leaves the agent's own prompt.
 #[cfg(any(unix, windows))]
 pub fn run_hook(kind: &str) -> Result<(), String> {
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input).map_err(|e| e.to_string())?;
-    let Ok(event) = serde_json::from_str::<Value>(&input) else { return Ok(()) };
+    let Ok(mut event) = serde_json::from_str::<Value>(&input) else { return Ok(()) };
     let Ok(mut stream) = crate::browser::connect_private(&socket_path()) else { return Ok(()) };
+    // Which terminal tab the session runs in, so the board knows when the person is there.
+    if let (Some(tty), Some(fields)) = (agent_tty(), event.as_object_mut()) {
+        fields.insert("knoend_tty".into(), json!(tty));
+    }
     let _ = stream.set_read_timeout(Some(WAIT_FOR_BOARD));
     let line = json!({"type": kind, "event": event}).to_string();
     if stream.write_all(format!("{line}\n").as_bytes()).is_err() || kind != "permission" {

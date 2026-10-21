@@ -513,14 +513,26 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             };
             match event {
                 Event::Focus(Some(f)) => {
-                    tab = shared.browser.focus_changed(&f.app, &f.instance);
+                    // The same app with another program in its terminal tab is not a new visit.
+                    let same_app = focus.as_ref().is_some_and(|old| old.app == f.app && old.instance == f.instance);
+                    if !same_app {
+                        tab = shared.browser.focus_changed(&f.app, &f.instance);
+                    }
                     focus = Some(f);
                     let f = effective(&focus, &tab).expect("focus");
                     if calling.as_ref().is_some_and(|c| c.is(&f)) {
                         calling = None;
                     }
-                    usage.focused(crate::launcher::usage_key(&f, &apps));
-                    say!("Focus: {} ({})", f.display_name(), f.instance);
+                    if !same_app {
+                        usage.focused(crate::launcher::usage_key(&f, &apps));
+                    }
+                    match &f.terminal {
+                        Some(t) => say!("Focus: {} ({}), tab {} runs {}", f.display_name(), f.instance, t.tty, t.programs.join(" + ")),
+                        None => say!("Focus: {} ({})", f.display_name(), f.instance),
+                    }
+                    if f.is_terminal() {
+                        remember_terminal(&f, catalog.find(&f).map(|l| l.pack.id.as_str()));
+                    }
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
                     // Questions waiting while the person goes to the app the agent runs in: they are
@@ -528,7 +540,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // Once they have started answering there, the board stays on that panel when they
                     // leave: it cannot tell which questions they answered, and question 1 would be stale.
                     if let Some(front) = approvals.front_mut().filter(|a| a.questions.len() > 1 && !a.here && !a.elsewhere) {
-                        let elsewhere = hosts_agent(&f);
+                        let elsewhere = agent_here(&f, &front.request);
                         if elsewhere {
                             front.elsewhere = true;
                             shown = None;
@@ -807,7 +819,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 Event::Agent(crate::agent_hooks::AgentEvent::Permission { request, answer }) => {
                     let summary = crate::agent_hooks::summary(&request);
-                    say!("Permission request: {summary}");
+                    match request["knoend_tty"].as_str() {
+                        Some(tty) => say!("Permission request from the session in tab {tty}: {summary}"),
+                        None => say!("Permission request: {summary}"),
+                    }
                     approvals.push_back(Approval { request: request.clone(), summary, detail: crate::agent_hooks::detail(&request), destructive: crate::agent_hooks::destructive(&request),
                                                    can_remember: request["permission_suggestions"].as_array().is_some_and(|s| !s.is_empty()),
                                                    questions: crate::agent_hooks::questions(&request), step: 0, answers: Vec::new(), ticked: Vec::new(), elsewhere: false, here: false,
@@ -816,7 +831,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         // Several questions while the person is in the app the agent runs in: they
                         // will most likely answer there, and the board cannot follow each answer.
                         let front = approvals.front_mut().unwrap();
-                        match effective(&focus, &tab).filter(|f| front.questions.len() > 1 && hosts_agent(f)) {
+                        match effective(&focus, &tab).filter(|f| front.questions.len() > 1 && agent_here(f, &front.request)) {
                             Some(f) => {
                                 front.elsewhere = true;
                                 show_answering(&mut sender, front, &f, &mut shown, &shared).await;
@@ -984,15 +999,36 @@ fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
                 return;
             }
         };
-        let mut last = watcher.current();
+        let mut last = with_terminal(watcher.current());
         let _ = events.blocking_send(Event::Focus(last.clone()));
         loop {
-            last = watcher.wait_for_change(last.as_ref());
+            // In a terminal app the program in its active tab changes without the focus changing
+            // (`claude` started, a pager quit): look again every second.
+            let now = if last.as_ref().is_some_and(Focus::is_terminal) {
+                std::thread::sleep(Duration::from_secs(1));
+                with_terminal(watcher.current())
+            } else {
+                with_terminal(watcher.wait_for_change(last.as_ref()))
+            };
+            if now == last {
+                continue;
+            }
+            last = now;
             if events.blocking_send(Event::Focus(last.clone())).is_err() {
                 return;
             }
         }
     });
+}
+
+/// The focus with what runs in the active tab, when it is a terminal app.
+fn with_terminal(focus: Option<Focus>) -> Option<Focus> {
+    focus.map(|mut f| {
+        if f.is_terminal() {
+            f.terminal = f.pid.and_then(knoend_focus::active_tab);
+        }
+        f
+    })
 }
 
 enum BoardSender {
@@ -1490,7 +1526,7 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             // the recipe (#38). Both name the recipe, so the web app can say so.
             let recipe = |l: &knoend_core::library::Library| catalog.replaced_by(l, knoend_core::focus::Os::current()).map(|r| json!({"id": r.pack.id, "name": r.pack.name}));
             let libraries: Vec<Value> = catalog.all().filter(|(_, l)| l.matches.agent.is_empty()).map(|(path, l)| {
-                let kind = if !l.matches.web.is_empty() { "site" } else { "app" };
+                let kind = if !l.matches.web.is_empty() { "site" } else if !l.matches.terminal.is_empty() { "terminal" } else { "app" };
                 let under = l.pack.overrides.as_deref().and_then(|id| catalog.by_id(id)).and_then(|(_, d)| recipe(d));
                 json!({"id": l.pack.id, "name": l.pack.name, "source": l.pack.source, "kind": kind, "keys": l.keys.len(),
                        "overrides": l.pack.overrides, "own": l.pack.source == Source::User && path.is_file(),
@@ -1568,6 +1604,29 @@ fn edit_command(command: crate::edit::Command, catalog: &mut Catalog, paging: &m
             }
             Ok(None)
         }
+    }
+}
+
+/// The last terminal app the person was in and what the board made of it, for the setup
+/// assistant (it is asked from the web app, so the terminal is no longer in front then).
+static LAST_TERMINAL: std::sync::Mutex<Option<(std::time::Instant, Value)>> = std::sync::Mutex::new(None);
+
+fn remember_terminal(focus: &Focus, library: Option<&str>) {
+    let seen = json!({"app": focus.display_name(), "app_id": focus.app, "app_pid_known": focus.pid.is_some(),
+                      "active_tab": focus.terminal.as_ref().map(|t| &t.tty), "tab_programs": focus.terminal.as_ref().map(|t| &t.programs),
+                      "library_shown": library});
+    if let Ok(mut last) = LAST_TERMINAL.lock() {
+        *last = Some((std::time::Instant::now(), seen));
+    }
+}
+
+pub fn last_terminal() -> Value {
+    match LAST_TERMINAL.lock().ok().and_then(|l| l.clone()) {
+        Some((at, mut seen)) => {
+            seen["seconds_ago"] = json!(at.elapsed().as_secs());
+            seen
+        }
+        None => json!({"note": "no terminal app has been in front since the service started"}),
     }
 }
 
@@ -1736,6 +1795,16 @@ const ANSWER_HERE_SLOT: u8 = 8;
 
 /// Whether the focused app is one an agent like Claude Code runs in: its desktop app, a terminal
 /// or an editor. While a question waits there, the person is likely answering it on the computer.
+/// Whether the person is where the agent that sent `request` runs: in a terminal app, exactly its
+/// own tab when the hook said which (`knoend_tty`); elsewhere (an editor's terminal pane, the
+/// agent's own app) any app agents run in.
+fn agent_here(focus: &Focus, request: &Value) -> bool {
+    match (request["knoend_tty"].as_str(), &focus.terminal) {
+        (Some(tty), Some(tab)) => tab.tty == tty,
+        _ => hosts_agent(focus),
+    }
+}
+
 fn hosts_agent(focus: &Focus) -> bool {
     const HOSTS: &[&str] = &["claude", "codex", "antigravity", "terminal", "konsole", "kitty", "alacritty", "wezterm",
                              "foot", "xterm", "urxvt", "ghostty", "tilix", "terminator", "iterm", "warp", "code", "cursor",
@@ -2279,7 +2348,7 @@ mod tests {
         let catalog = recipes();
         let n = knoend_desktop::Notification { app: "Claude".into(), desktop_entry: String::new(), summary: "Claude needs your attention".into(), body: String::new() };
         let calling = Calling::new(&n, &catalog);
-        let claude = Focus { os: knoend_core::focus::Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new(), web: None };
+        let claude = Focus { os: knoend_core::focus::Os::Linux, app: "com.anthropic.Claude".into(), instance: "com.anthropic.claude".into(), title: String::new(), web: None, pid: None, terminal: None };
         let terminal = Focus { app: "Xfce4-terminal".into(), instance: "xfce4-terminal".into(), ..claude.clone() };
         assert!(calling.is(&claude) && Calling::matches(&claude, &n));
         assert!(!calling.is(&terminal));
@@ -2343,7 +2412,7 @@ mod tests {
 
     #[test]
     fn agents_run_in_their_app_a_terminal_or_an_editor() {
-        let focus = |app: &str, instance: &str| Focus { os: knoend_core::focus::Os::Linux, app: app.into(), instance: instance.into(), title: String::new(), web: None };
+        let focus = |app: &str, instance: &str| Focus { os: knoend_core::focus::Os::Linux, app: app.into(), instance: instance.into(), title: String::new(), web: None, pid: None, terminal: None };
         assert!(hosts_agent(&focus("Claude", "com.anthropic.claude")));
         assert!(hosts_agent(&focus("Xfce4-terminal", "xfce4-terminal")));
         assert!(hosts_agent(&focus("Code", "code")));
@@ -2352,8 +2421,24 @@ mod tests {
     }
 
     #[test]
+    fn a_session_in_a_terminal_is_here_only_in_its_own_tab() {
+        let mut terminal = Focus { os: knoend_core::focus::Os::Macos, app: "com.apple.Terminal".into(), instance: "Terminal".into(),
+                                   title: String::new(), web: None, pid: None, terminal: None };
+        let in_tab = |f: &mut Focus, tty: &str| f.terminal = Some(knoend_core::focus::TerminalTab { tty: tty.into(), programs: vec!["claude".into()] });
+        let from_tab = json!({"session_id": "s", "knoend_tty": "ttys003"});
+        let unknown = json!({"session_id": "s"});
+        in_tab(&mut terminal, "ttys003");
+        assert!(agent_here(&terminal, &from_tab));
+        in_tab(&mut terminal, "ttys004");
+        assert!(!agent_here(&terminal, &from_tab), "another tab of the same terminal");
+        assert!(agent_here(&terminal, &unknown), "no tab known: any terminal may be it");
+        let code = Focus { app: "com.microsoft.VSCode".into(), instance: "Code".into(), terminal: None, ..terminal.clone() };
+        assert!(agent_here(&code, &from_tab), "an editor's terminal pane: its tab is not known");
+    }
+
+    #[test]
     fn configure_sits_in_the_middle_of_the_grid() {
-        let focus = Focus { os: knoend_core::focus::Os::Linux, app: "x".into(), instance: "x".into(), title: String::new(), web: None };
+        let focus = Focus { os: knoend_core::focus::Os::Linux, app: "x".into(), instance: "x".into(), title: String::new(), web: None, pid: None, terminal: None };
         assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid::LARGEST, crate::display::KeySize::Small)).keys[0].key, 5);
         assert_eq!(unsupported_layout(&focus, &mut Paging::new(Grid { cols: 2, rows: 2 }, crate::display::KeySize::Small)).keys[0].key, 1);
     }

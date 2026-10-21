@@ -1,0 +1,69 @@
+# Reading in a pager in a terminal tab: less, and what runs it (man, git log...). The keys are
+# less's own letters (b, Space, g, G, /, n, q), which more and most pagers share.
+[pack]
+id = "builtin.terminal-pager"
+name = "Pager (less, man)"
+version = "0.1.0"
+source = "builtin"
+description = "Scroll, search and quit in less, man and other pagers."
+
+[[pack.tested]]
+os = "macos"
+by = "Tom"
+date = "2026-10-20"
+note = "macOS 26.6, Terminal.app, FNK0104B"
+
+[match]
+terminal = ["less", "man", "more"]
+
+[[key]]
+label = "Page Up"
+speak = "Page up"
+action = { kind = "shortcut", keys = "B" }
+
+[[key]]
+label = "Up"
+icon = "arrow_upward"
+speak = "Line up"
+action = { kind = "shortcut", keys = "Up" }
+
+[[key]]
+label = "Top"
+icon = "first_page"
+speak = "Go to the top"
+action = { kind = "shortcut", keys = "G" }
+
+[[key]]
+label = "Page Down"
+speak = "Page down"
+action = { kind = "shortcut", keys = "Space" }
+
+[[key]]
+label = "Down"
+icon = "arrow_downward"
+speak = "Line down"
+action = { kind = "shortcut", keys = "Down" }
+
+[[key]]
+label = "Bottom"
+icon = "last_page"
+speak = "Go to the bottom"
+action = { kind = "shortcut", keys = "Shift+G" }
+
+[[key]]
+label = "Search"
+icon = "search"
+speak = "Search: type the words, then Enter"
+action = { kind = "shortcut", keys = "Slash" }
+
+[[key]]
+label = "Next"
+icon = "chevron_right"
+speak = "Next match"
+action = { kind = "shortcut", keys = "N" }
+
+[[key]]
+label = "Quit"
+icon = "close"
+speak = "Quit"
+action = { kind = "shortcut", keys = "Q" }

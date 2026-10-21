@@ -1,5 +1,5 @@
 //! What the person is looking at: the focused app and, in a browser with the KnoEnd
-//! extension, the site in its active tab.
+//! extension, the site in its active tab; in a terminal app, the program in its active tab.
 
 use serde::Serialize;
 
@@ -36,6 +36,22 @@ pub struct Focus {
     /// The active tab, when the focused app is a browser whose extension reports it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web: Option<WebPage>,
+    /// The app's process id, where the platform tells (macOS, Linux/X11).
+    #[serde(skip)]
+    pub pid: Option<u32>,
+    /// What runs in the active tab, when the focused app is a terminal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<TerminalTab>,
+}
+
+/// A terminal app's active tab: the one typed in last (no permission needed, any terminal app).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TerminalTab {
+    /// The tab's terminal device, as `ps` names it ("ttys003", "pts/4").
+    pub tty: String,
+    /// The programs in the tab's foreground, its leader first ("man", "less"); just the shell at a
+    /// prompt.
+    pub programs: Vec<String>,
 }
 
 /// A browser tab as the extension reports it (`spec/browser.md`).
@@ -144,6 +160,16 @@ impl Focus {
         }
     }
 
+    /// Whether the focused app is a terminal app (not an editor with a terminal pane: there the
+    /// last-typed tab says nothing about whether the person types in the editor or the terminal).
+    pub fn is_terminal(&self) -> bool {
+        const TERMINALS: &[&str] = &["com.apple.terminal", "iterm", "ghostty", "wezterm", "kitty", "alacritty", "warp",
+                                     "xfce4-terminal", "gnome-terminal", "konsole", "foot", "xterm", "urxvt", "tilix",
+                                     "terminator", "terminology", "ptyxis"];
+        let names = format!("{} {}", self.app, self.instance).to_lowercase();
+        TERMINALS.iter().any(|t| names.contains(t))
+    }
+
     /// Whether one library `match` pattern names this app. Case-insensitive, exact; on Linux it
     /// may name either the WM_CLASS class or instance. (Wildcards: open question in the spec.)
     pub fn matches_pattern(&self, pattern: &str) -> bool {
@@ -191,7 +217,7 @@ mod tests {
     #[test]
     fn display_names_handle_bundle_ids_and_windows_executables() {
         use super::{Focus, Os};
-        let f = |app: &str| Focus { os: Os::Windows, app: app.into(), instance: String::new(), title: String::new(), web: None };
+        let f = |app: &str| Focus { os: Os::Windows, app: app.into(), instance: String::new(), title: String::new(), web: None, pid: None, terminal: None };
         assert_eq!(f("Code.exe").display_name(), "Code");
         assert_eq!(f("FIREFOX.EXE").display_name(), "FIREFOX");
         assert_eq!(f("com.anthropic.Claude").display_name(), "Claude");

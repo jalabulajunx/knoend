@@ -1,0 +1,71 @@
+# Claude Code running in a terminal tab (match.terminal): the keys its own screen uses. Numbers pick
+# an option in its menus; Escape stops the reply and Ctrl+C clears or quits, so both ask for a second
+# tap. Plain keys, not Primary: in a terminal Cmd is the terminal's own.
+[pack]
+id = "builtin.terminal-claude-code"
+name = "Claude Code"
+version = "0.1.0"
+source = "builtin"
+description = "Claude Code in a terminal: pick options, move, send, change mode, stop."
+
+[[pack.tested]]
+os = "macos"
+by = "Tom"
+date = "2026-10-20"
+note = "macOS 26.6, Terminal.app, FNK0104B"
+
+[match]
+terminal = ["claude"]
+
+[[key]]
+label = "1"
+speak = "Option 1"
+action = { kind = "shortcut", keys = "1" }
+
+[[key]]
+label = "2"
+speak = "Option 2"
+action = { kind = "shortcut", keys = "2" }
+
+[[key]]
+label = "3"
+speak = "Option 3"
+action = { kind = "shortcut", keys = "3" }
+
+[[key]]
+label = "Up"
+icon = "arrow_upward"
+speak = "Up: previous option or prompt"
+action = { kind = "shortcut", keys = "Up" }
+
+[[key]]
+label = "Enter"
+icon = "keyboard"
+speak = "Enter"
+action = { kind = "shortcut", keys = "Enter" }
+
+[[key]]
+label = "Stop"
+icon = "stop_circle"
+speak = "Escape: stop Claude"
+confirm = true
+action = { kind = "shortcut", keys = "Escape" }
+
+[[key]]
+label = "Down"
+icon = "arrow_downward"
+speak = "Down: next option or prompt"
+action = { kind = "shortcut", keys = "Down" }
+
+[[key]]
+label = "Mode"
+icon = "psychology"
+speak = "Shift Tab: next mode (accept edits, plan)"
+action = { kind = "shortcut", keys = "Shift+Tab" }
+
+[[key]]
+label = "Ctrl C"
+icon = "cancel"
+speak = "Control C: clear the prompt, twice quits"
+confirm = true
+action = { kind = "shortcut", keys = "Ctrl+C" }

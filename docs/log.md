@@ -1719,3 +1719,29 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - "Remove my version" deletes the file: in testing it removed Tom's real VS Code version (no
     backup). Suggest moving it to the trash instead.
   - #50's picker and live preview; Sundar to check the start-up font at 96 px on the ONX (#52).
+
+## 2026-10-20 - Tom (Claude Code) - Terminal-aware keys
+
+- Changed:
+  - In a terminal app the board shows keys for the program in the active tab. The tab is the one
+    typed in last (its terminal device's access time), found among the app's child processes; its
+    programs are that terminal's foreground process group, leader first (`man` then `less`). No
+    permission, any terminal app; editors' terminal panes (VS Code) are left out on purpose, since
+    the last-typed tab says nothing about typing in the editor. `focus/src/terminal.rs` (`ps`,
+    macOS and Linux), `Focus.pid` / `Focus.terminal`, checked every second while a terminal is in
+    front.
+  - Spec (needs Sundar's review): `match.terminal` in libraries, beating the terminal app's own
+    library (§5, library schema). Recipes `recipes/terminal/claude-code.toml` (1/2/3, Up, Enter,
+    Stop = Esc with confirm, Down, Mode = Shift+Tab, Ctrl C with confirm) and `pager.toml` (less,
+    man, more). No vim keys (Tom).
+  - Claude per tab: the hook adds `knoend_tty` (the first of its ancestors on a terminal) to every
+    event; `agent_here` replaces the app-name guess (#41) when a terminal app's tab is known.
+  - Setup assistant: `last_terminal` check (the last terminal app, its tab, programs and the
+    library shown); knowledge entry under "Coding agents asking on the board".
+  - Edit keys lists terminal-program libraries under "Programs in a terminal".
+- Tested (FNK0104B, macOS 26.6, Terminal.app): `man ls` showed the pager keys, Page Down and Quit
+  worked; back at the prompt the terminal's keys; Claude Code (the VS Code extension's binary run
+  in Terminal) showed its keys, Mode and Enter typed; a question from that session logged
+  "from the session in tab ttys000". Linux: not run (same `ps` code; X11 now reads _NET_WM_PID).
+- Open: Linux check by Sundar; "a program waiting for input" (2026-10-18 notes) not done; tabs
+  switched without typing keep the last-typed tab's keys.

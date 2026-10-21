@@ -44,7 +44,8 @@ impl Watcher {
             if (bundle.is_empty() && name.is_empty()) || (bundle == FINDER && !has_window) {
                 return None;
             }
-            Some(Focus { os: Os::Macos, app: bundle, instance: name, title: String::new(), web: None })
+            let pid = u32::try_from(app.processIdentifier()).ok();
+            Some(Focus { os: Os::Macos, app: bundle, instance: name, title: String::new(), web: None, pid, terminal: None })
         })
     }
 

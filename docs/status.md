@@ -43,6 +43,7 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | Launcher when nothing is focused: most used / recent apps and sites with their own colour icons; tap opens (Linux, macOS, Windows) | `cli/src/launcher.rs`, `desktop/src/apps.rs`, `mac_apps.rs`, `win_apps.rs`, `focus/src/macos.rs`, `focus/src/windows.rs`, `knoend.image` | empty workspace; click the desktop |
 | Edit keys in the web app: the board shows the layout being edited, live; a board tap selects a key; label (forced line break), icon, spoken text, confirm, recorded shortcut; drag to move, grid per page, add/remove keys; Save as your own version on top of the recipe or draft (FNK and ONX tested) | `cli/src/edit.rs`, `cli/src/service.rs` (`show_edit`), `web/app.js` | web app > Edit keys |
 | Key labels never split a word: one font size smaller (12 px at least), then cut with "..." (FNK and ONX tested) | `firmware/main/ui.c` (`fitting_font`, `cut_long_words`) | a long one-word label in Edit keys |
+| Terminal-aware keys: in a terminal app, keys for the program in the active tab (the one typed in last; `match.terminal`): Claude Code, `less`/`man`; a Claude session's questions follow its own tab (macOS tested; Linux same code, untested) | `focus/src/terminal.rs`, `core/src/catalog.rs`, `recipes/terminal/`, `cli/src/agent_hooks.rs` (`knoend_tty`) | `man ls` or `claude` in Terminal |
 | Background service (systemd user unit / LaunchAgent / Windows `HKCU\...\Run`) | `cli/src/background.rs` | `knoend service install` |
 | Recipes: apps, sites and Claude Code's screens as data, each with who tested it on which OS | `recipes/`, `spec/protocol.md` section 5 | `python3 tools/validate_spec.py` |
 
@@ -81,7 +82,6 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | --- | --- |
 | Freenove FNK0104B native USB keyboard | `firmware/boards/definitions/` |
 | Board UI: unsupported-app card | `firmware/main/ui.c` |
-| Terminal-aware keys (which CLI runs in the focused terminal) - Tom | `companion/crates/focus`, `cli/src/service.rs` |
 | Codex / other agent CLIs' hooks (Claude Code done) | `cli/src/agent_hooks.rs` |
 | Now playing on macOS / Windows (no MPRIS) | `companion/crates/media` |
 | RGB-panel boards (4.3-7"), Hynitron CST3xx touch, quad-PSRAM image | see `boards/research.md` |
