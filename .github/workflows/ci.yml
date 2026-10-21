@@ -54,7 +54,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install jsonschema
-      - run: sudo chown -R "$USER" firmware/build && python tools/release_firmware.py --out dist/firmware
+      # The release tool needs a version: the nearest tag and commit (full history is fetched).
+      - run: sudo chown -R "$USER" firmware/build && python tools/release_firmware.py --version "$(git describe --tags --always | sed 's/^v//')" --out dist/firmware
       - uses: actions/upload-artifact@v4
         with:
           name: firmware
