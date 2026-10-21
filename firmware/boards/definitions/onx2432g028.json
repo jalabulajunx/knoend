@@ -5,6 +5,7 @@
   "serial": "uart0",
   "native_usb": false,
   "speaker": true,
+  "mic": { "driver": "pdm", "clk": 19, "data": 20 },
   "i2c": { "sda": 8, "scl": 7, "pullup": true },
   "expander": { "driver": "pcf8574", "address": 56, "initial": 254 },
   "display": {

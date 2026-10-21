@@ -19,6 +19,8 @@
 #include "freertos/semphr.h"
 #include "link_serial.h"
 #include "link_wifi.h"
+#include "listen.h"
+#include "pitch.h"
 #include "nvs.h"
 #include "ui.h"
 
@@ -31,11 +33,12 @@ static const char *TAG = "protocol";
 // Only what this firmware actually handles is advertised.
 static const char *const incoming_types[] = {
     "identity", "layout", "status", "pair", "wifi",
-    "wifi.scan", "ping", "image", "display", "font",
+    "wifi.scan", "ping", "image", "display", "font", "listen",
 };
 static const char *const outgoing_types[] = {
     "identity", "key", "page", "layout.ack", "pair.ack",
     "wifi.ack", "wifi.networks", "ping", "error", "image.ack", "display.ack", "font.ack",
+    "listen.ack", "note",
 };
 static const char *const transports[] = { "ble-hid", "serial", "wifi" };
 
@@ -190,6 +193,7 @@ static void send_identity(int64_t re, transport_t to)
     cJSON_AddBoolToObject(features, "speaker", board->has_speaker);
     cJSON_AddBoolToObject(features, "battery", false);
     cJSON_AddBoolToObject(features, "nativeUsb", board->has_native_usb);
+    cJSON_AddBoolToObject(features, "mic", board->has_mic);
     cJSON_AddItemToObject(features, "transports",
                           string_array(transports, sizeof(transports) / sizeof(transports[0])));
 
@@ -687,6 +691,77 @@ static void handle_display(const cJSON *body, int64_t re, transport_t transport)
     send_packet("display.ack", ack, re, transport);
 }
 
+// ---- listening for notes (spec/protocol.md 3.6f) ----
+
+static void on_listen_event(const listen_event_t *event)
+{
+    if (event->off >= 0) {
+        cJSON *body = cJSON_CreateObject();
+        cJSON_AddNumberToObject(body, "midi", event->off);
+        cJSON_AddBoolToObject(body, "on", false);
+        send_packet("note", body, -1, TRANSPORT_ALL);
+    }
+    if (event->on >= 0) {
+        cJSON *body = cJSON_CreateObject();
+        cJSON_AddNumberToObject(body, "midi", event->on);
+        cJSON_AddBoolToObject(body, "on", true);
+        cJSON_AddNumberToObject(body, "velocity", event->velocity);
+        cJSON_AddNumberToObject(body, "hz", (int)(event->hz * 10 + 0.5f) / 10.0);
+        send_packet("note", body, -1, TRANSPORT_ALL);
+        char name[8], text[40];
+        pitch_name(event->on, name, sizeof(name));
+        snprintf(text, sizeof(text), "Heard %s", name);
+        ui_show_status(text, UI_STATUS_INFO, 0);
+    }
+    if (event->ended) {
+        cJSON *body = cJSON_CreateObject();
+        cJSON_AddBoolToObject(body, "on", false);
+        send_packet("listen.ack", body, -1, TRANSPORT_ALL);
+        ui_show_status("", UI_STATUS_INFO, 0);
+    }
+}
+
+// {"on": true, "seconds": 120, "quiet": -50}: listen for notes; {"on": false}: stop.
+static void handle_listen(const cJSON *body, int64_t re, transport_t transport)
+{
+    const cJSON *on = cJSON_GetObjectItemCaseSensitive(body, "on");
+    if (!cJSON_IsBool(on)) {
+        send_error(re, "bad-packet", "on (true or false) is required", transport);
+        return;
+    }
+    if (!cJSON_IsTrue(on)) {
+        listen_stop();
+        cJSON *ack = cJSON_CreateObject();
+        cJSON_AddBoolToObject(ack, "on", false);
+        send_packet("listen.ack", ack, re, transport);
+        return;
+    }
+    int seconds = 120, quiet = -50;
+    if (cJSON_GetObjectItemCaseSensitive(body, "seconds") != NULL && !get_int(body, "seconds", 1, 600, &seconds)) {
+        send_error(re, "bad-packet", "seconds must be 1-600", transport);
+        return;
+    }
+    if (cJSON_GetObjectItemCaseSensitive(body, "quiet") != NULL && !get_int(body, "quiet", -90, -10, &quiet)) {
+        send_error(re, "bad-packet", "quiet must be -90 to -10 (dB)", transport);
+        return;
+    }
+    const esp_err_t err = listen_start((uint32_t)seconds, (float)quiet, on_listen_event);
+    if (err == ESP_ERR_NOT_SUPPORTED) {
+        send_error(re, "unsupported", "this board has no microphone in its definition", transport);
+        return;
+    }
+    if (err != ESP_OK) {
+        send_error(re, "busy", "could not start listening", transport);
+        return;
+    }
+    ui_show_status("Listening: sing or play a note", UI_STATUS_ATTENTION, 0);
+    cJSON *ack = cJSON_CreateObject();
+    cJSON_AddBoolToObject(ack, "on", true);
+    cJSON_AddNumberToObject(ack, "seconds", seconds);
+    cJSON_AddNumberToObject(ack, "quiet", quiet);
+    send_packet("listen.ack", ack, re, transport);
+}
+
 static void font_ack(const char *slot, const char *name, const char *error, int64_t re, transport_t transport)
 {
     cJSON *ack = cJSON_CreateObject();
@@ -801,6 +876,8 @@ static void handle_line(const char *line, transport_t transport)
         handle_display(body, re, transport);
     } else if (strcmp(name_of(type->valuestring), "font") == 0) {
         handle_font(body, re, transport);
+    } else if (strcmp(name_of(type->valuestring), "listen") == 0) {
+        handle_listen(body, re, transport);
     }
     // Anything else is ignored, as the spec requires for unknown types.
     cJSON_Delete(packet);
