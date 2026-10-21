@@ -76,6 +76,9 @@ pub struct Candidate {
     pub score: u32,
     pub reasons: Vec<String>,
     pub status: String,
+    /// More than the chip says so: KnoEnd firmware on it names the board, or flash size and USB
+    /// bridge both match. A suggestion without it is a guess (any board with that chip).
+    pub confident: bool,
 }
 
 impl Definition {
@@ -106,13 +109,16 @@ impl Part {
 impl Manifest {
     /// Ranks the boards this hardware could be. An exact identity from running KnoEnd firmware
     /// beats everything; otherwise chip, flash size and USB bridge decide, and the person confirms.
+    /// A board with another chip or another flash size is never offered: it cannot be this one.
     pub fn candidates(&self, port: &Port, chip: Option<&Chip>, running_profile: Option<&str>) -> Vec<Candidate> {
         let mut out: Vec<Candidate> = Vec::new();
         for (id, board) in &self.boards {
             let image = self.images.get(&board.image);
             let mut score = 0;
             let mut reasons = Vec::new();
+            let (mut running, mut flash, mut bridge) = (false, false, false);
             if running_profile == Some(id.as_str()) {
+                running = true;
                 score += 100;
                 reasons.push("KnoEnd firmware on it says so".to_string());
             }
@@ -123,17 +129,25 @@ impl Manifest {
                 } else {
                     continue; // wrong chip: never offer it
                 }
-                if board.flash_size.as_deref().is_some_and(|f| f.eq_ignore_ascii_case(&chip.flash_size)) {
-                    score += 5;
-                    reasons.push(format!("{} flash", chip.flash_size));
+                match board.flash_size.as_deref() {
+                    Some(f) if f.eq_ignore_ascii_case(&chip.flash_size) => {
+                        flash = true;
+                        score += 5;
+                        reasons.push(format!("{} flash", chip.flash_size));
+                    }
+                    // Another flash size: another board (a chip's flash is soldered on).
+                    Some(_) if !running && !chip.flash_size.is_empty() => continue,
+                    _ => {}
                 }
             }
             if board.bridges.iter().any(|b| b == &port.bridge) {
+                bridge = true;
                 score += 5;
                 reasons.push(format!("USB through {}", port.bridge));
             }
             if score > 0 {
-                out.push(Candidate { board: id.clone(), name: board.name.clone(), score, reasons, status: board.status.clone() });
+                out.push(Candidate { board: id.clone(), name: board.name.clone(), score, reasons, status: board.status.clone(),
+                                     confident: running || (flash && bridge) });
             }
         }
         // Best match first; on equal evidence, a board someone has run beats an unverified one.
@@ -158,11 +172,11 @@ mod tests {
     }
 
     fn port(bridge: &str) -> Port {
-        Port { name: "/dev/ttyUSB0".into(), vid: 0, pid: 0, manufacturer: None, product: None, bridge: bridge.into() }
+        Port { name: "/dev/ttyUSB0".into(), vid: 0, pid: 0, manufacturer: None, product: None, serial: None, bridge: bridge.into() }
     }
 
     fn s3() -> Chip {
-        Chip { chip: "esp32s3".into(), revision: None, flash_size: "16MB".into(), features: vec![], mac: None }
+        Chip { chip: "esp32s3".into(), revision: None, flash_size: "16MB".into(), features: vec![], mac: None, firmware: None }
     }
 
     #[test]
@@ -176,6 +190,18 @@ mod tests {
     fn native_usb_ranks_the_fnk_first_and_running_identity_wins() {
         assert_eq!(manifest().candidates(&port("espressif-native"), Some(&s3()), None)[0].board, "fnk0104b");
         assert_eq!(manifest().candidates(&port("espressif-native"), Some(&s3()), Some("onx2432g028"))[0].board, "onx2432g028");
+    }
+
+    #[test]
+    fn another_flash_size_is_another_board_and_chip_alone_is_a_guess() {
+        let mut chip = s3();
+        chip.flash_size = "32MB".into();
+        assert!(manifest().candidates(&port("espressif-native"), Some(&chip), None).is_empty(), "no 16 MB board is a 32 MB one");
+        assert_eq!(manifest().candidates(&port("espressif-native"), Some(&chip), Some("fnk0104b"))[0].board, "fnk0104b",
+                   "KnoEnd firmware naming the board still wins");
+        let found = manifest().candidates(&port("ch340"), Some(&s3()), None);
+        assert!(found[0].confident, "ONX: chip, flash and bridge");
+        assert!(!found.iter().find(|c| c.board == "fnk0104b").unwrap().confident, "FNK on a CH340: chip and flash only");
     }
 
     #[test]

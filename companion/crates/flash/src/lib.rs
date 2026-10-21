@@ -4,6 +4,7 @@
 //! and SHA-256, and nothing is written unless every part verifies first.
 
 pub mod manifest;
+pub mod on_board;
 mod usb;
 
 pub use usb::{usb_serial_devices, UsbDevice};
@@ -25,8 +26,21 @@ pub struct Port {
     pub pid: u16,
     pub manufacturer: Option<String>,
     pub product: Option<String>,
+    /// The USB serial number: on a native-USB ESP32 board its MAC address ("28:84:85:90:BE:B8").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
     /// What the USB IDs suggest: "espressif-native" (USB-Serial-JTAG), "ch340", "cp210x", ...
     pub bridge: String,
+}
+
+impl Port {
+    /// The board's MAC as KnoEnd writes board ids ("2884..."), when the USB serial number is one
+    /// (native-USB ESP32 boards); None for a USB-serial bridge (CH340, CP210x).
+    pub fn mac_id(&self) -> Option<String> {
+        let serial = self.serial.as_deref()?;
+        let hex: String = serial.chars().filter(|c| *c != ':').collect::<String>().to_lowercase();
+        (self.bridge == "espressif-native" && hex.len() == 12 && hex.chars().all(|c| c.is_ascii_hexdigit())).then_some(hex)
+    }
 }
 
 /// What the chip itself reports from its boot ROM.
@@ -37,6 +51,9 @@ pub struct Chip {
     pub flash_size: String,
     pub features: Vec<String>,
     pub mac: Option<String>,
+    /// The firmware on it now (partition table, apps, their components), when it could be read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub firmware: Option<on_board::OnBoard>,
 }
 
 /// Progress of one flashing job, for the web app.
@@ -72,6 +89,7 @@ pub fn list_ports() -> Vec<Port> {
                 pid: usb.pid,
                 manufacturer: usb.manufacturer,
                 product: usb.product,
+                serial: usb.serial_number,
             }),
             _ => None,
         })
@@ -117,9 +135,36 @@ pub fn identify(port: &str) -> Result<Chip, String> {
         flash_size: info.flash_size.to_string(),
         features: info.features.clone(),
         mac: info.mac_address.clone(),
+        firmware: read_firmware(&mut flasher),
     };
     flasher.connection().reset_after(false, info.chip).map_err(|e| e.to_string())?;
     Ok(chip)
+}
+
+/// Reads `size` bytes at `offset` (nothing is written).
+fn read(flasher: &mut Flasher, offset: u32, size: u32) -> Option<Vec<u8>> {
+    let path = std::env::temp_dir().join(format!("knoend-read-{}-{offset:x}.bin", std::process::id()));
+    let result = flasher.read_flash(offset, size, 0x1000, 64, path.clone()).ok().and_then(|_| std::fs::read(&path).ok());
+    let _ = std::fs::remove_file(&path);
+    result
+}
+
+/// The firmware the board carries now: its partition table, and each app's descriptor and
+/// component names from the first part of the app (on_board.rs). None when it cannot be read.
+fn read_firmware(flasher: &mut Flasher) -> Option<on_board::OnBoard> {
+    let table = read(flasher, on_board::TABLE_OFFSET, on_board::TABLE_SIZE)?;
+    let partitions = on_board::parse_table(&table);
+    let mut apps = Vec::new();
+    for p in partitions.iter().filter(|p| p.kind == "app") {
+        // An empty slot reads 0xFF: one block tells, before reading more.
+        let first = read(flasher, p.offset, 0x1000)?;
+        if !on_board::is_app_image(&first) {
+            continue;
+        }
+        let head = read(flasher, p.offset, on_board::APP_HEAD.min(p.size))?;
+        apps.extend(on_board::parse_app(&p.name, &head));
+    }
+    Some(on_board::OnBoard { partitions, apps })
 }
 
 struct Reporter<'a> {

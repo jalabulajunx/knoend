@@ -156,7 +156,9 @@ impl Shared {
             return Ok(guard);
         }
         self.serial_preempt.store(true, std::sync::atomic::Ordering::SeqCst);
-        let result = tokio::time::timeout(Duration::from_secs(2), self.serial.clone().lock_owned()).await;
+        // A live USB session steps aside at once; a search for the paired board on USB finishes the
+        // port it is asking (up to about 10 s on a board that prints but never answers) first.
+        let result = tokio::time::timeout(Duration::from_secs(15), self.serial.clone().lock_owned()).await;
         self.serial_preempt.store(false, std::sync::atomic::Ordering::SeqCst);
         result.map_err(|_| "the USB port is busy with another job".to_string())
     }
@@ -1160,7 +1162,12 @@ async fn connect(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender
 /// pairings were already checked and had no paired board.
 async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender<Event>) -> Option<(BoardStatus, BoardSender)> {
     let guard = shared.serial.clone().try_lock_owned().ok()?;
-    let ports = knoend_flash::list_ports();
+    // A native-USB board gives its MAC (its board id) over USB: only a paired one is worth opening.
+    // Another board there (one KnoEnd does not run on, or not paired here) is left alone; boards
+    // behind a CH340 or CP210x cannot be told apart without asking them.
+    let ports: Vec<_> = knoend_flash::list_ports().into_iter()
+        .filter(|p| p.mac_id().is_none_or(|mac| pairings.boards.contains_key(&mac)))
+        .collect();
     if ports.is_empty() {
         return None;
     }
@@ -1171,6 +1178,9 @@ async fn connect_serial(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc:
     if UNPAIRED_USB_SCAN.lock().ok().and_then(|s| s.clone()).as_deref() == Some(scan_key.as_str()) {
         return None;
     }
+    // Says which job holds the USB port meanwhile (Identify and Install wait for it).
+    say!("Looking for the paired board on USB ({}): it is not on Wi-Fi",
+         ports.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", "));
     let pairings_clone = Pairings::load();
     let shared_check = shared.clone();
     let found = tokio::task::spawn_blocking(move || {

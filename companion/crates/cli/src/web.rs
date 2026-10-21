@@ -262,6 +262,10 @@ async fn ports() -> ApiResult {
 #[derive(Deserialize)]
 struct PortRequest {
     port: String,
+    /// Identify: the web app asks the setup assistant itself about an unknown board (AI-guided
+    /// set-up), so the service does not raise it too.
+    #[serde(default)]
+    assisting: bool,
 }
 
 /// Who is on this port: KnoEnd's own identity if it answers (gentle), else the chip's boot
@@ -285,10 +289,13 @@ async fn identify(State(app): State<App>, Json(request): Json<PortRequest>) -> A
         Err(e) => (None, Some(e)),
     };
     let candidates = match crate::firmware::manifest(&app.shared.firmware_source).await {
-        Ok(m) => serde_json::to_value(m.candidates(&port, chip.as_ref(), profile.as_deref())).unwrap_or_default(),
-        Err(_) => json!([]),
+        Ok(m) => m.candidates(&port, chip.as_ref(), profile.as_deref()),
+        Err(_) => Vec::new(),
     };
-    Ok(Json(json!({"port": port, "chip": chip, "chipError": chip_error, "running": running, "candidates": candidates})))
+    // Whether KnoEnd knows this board; an unknown one goes to the setup assistant (boards.rs).
+    let verdict = crate::boards::record(&port, chip.as_ref(), &candidates, !request.assisting);
+    Ok(Json(json!({"port": port, "chip": chip, "chipError": chip_error, "running": running, "candidates": candidates,
+                   "known": verdict["known"], "summary": verdict["summary"]})))
 }
 
 #[derive(Deserialize)]
