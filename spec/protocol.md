@@ -78,7 +78,7 @@ Direction: **B→C** board to companion, **C→B** companion to board.
 | `knoend.wifi.ack` | B→C | Credentials stored; the board joins the network |
 | `knoend.wifi.scan` | C→B | Serial only: list the Wi-Fi networks the board can hear (empty body) |
 | `knoend.wifi.networks` | B→C | Up to 20 networks, strongest first: `ssid`, `rssi` (dBm), `channel`, `secured`. The ESP32-S3 hears 2.4 GHz only |
-| `knoend.display` | C→B | How the board looks: its theme and which way it sits (section 3.6d) |
+| `knoend.display` | C→B | How the board looks: its theme, which way it sits and the start-up name's size (section 3.6d) |
 | `knoend.display.ack` | B→C | Stored and shown; the screen's size and largest grid as it now sits |
 | `knoend.font` | C→B | A font for the key labels or the start-up name, in slices (section 3.6e) |
 | `knoend.font.ack` | B→C | Font kept and in use, or why not |
@@ -93,10 +93,10 @@ arrives.
 ```json
 { "id": 0, "type": "knoend.identity", "body": {
     "deviceId": "a0b1c2d3e4f5", "deviceName": "KnoEnd", "deviceType": "board",
-    "protocolVersion": 0, "firmware": "a1ea8a8",
+    "protocolVersion": 0, "firmware": "a1ea8a8", "lastStart": "power-on",
     "board": { "profile": "onx2432g028", "width": 320, "height": 240,
                "grid": { "cols": 4, "rows": 4 }, "statusBar": true,
-               "display": { "theme": "dark", "turn": 0 },
+               "display": { "theme": "dark", "turn": 0, "startSize": 64 },
                "fonts": { "capacity": 483328, "keys": null,
                           "start": { "name": "Edu AU VIC WA NT Dots", "crc": 2271390218 } } },
     "features": { "speaker": true, "battery": false, "nativeUsb": false,
@@ -114,8 +114,9 @@ arrives.
   `brownout` as problems.
 - `board.fonts`: the fonts the person chose that the board holds (section 3.6e): `capacity`, the
   largest font a slot takes in bytes, and per slot (`keys`, `start`) the font's `name` and CRC-32,
-  or null for the built-in font. Absent on firmware without fonts.
-- `board.display`: the theme and turn the board uses now (section 3.6d). Absent on firmware older
+  or null for the built-in font; `refused`, when present, names the fonts the board dropped after a
+  start it did not get through with them, comma-separated. Absent on firmware without fonts.
+- `board.display`: the theme, turn and start-up size the board uses now (section 3.6d). Absent on firmware older
   than this message, which is always `dark`, turn 0.
 - `deviceId`: stable per device (boards: base MAC, lowercase hex, no separators).
 - `deviceType`: `board`, `companion` or `sim` (the simulator identifies as `sim` but otherwise
@@ -243,9 +244,9 @@ keeps both values with its pairing and Wi-Fi settings, so it starts that way bef
 connects.
 
 ```json
-{ "id": 12, "type": "knoend.display", "body": { "theme": "sepia", "turn": 1 } }
+{ "id": 12, "type": "knoend.display", "body": { "theme": "sepia", "turn": 1, "startSize": 64 } }
 { "id": 4, "re": 12, "type": "knoend.display.ack", "body": { "theme": "sepia", "turn": 1,
-    "width": 240, "height": 320, "grid": { "cols": 3, "rows": 4 } } }
+    "startSize": 64, "width": 240, "height": 320, "grid": { "cols": 3, "rows": 4 } } }
 ```
 
 - `theme`: `dark` (the usual: light text on dark keys, colour for pressed, confirm and the status
@@ -260,10 +261,12 @@ connects.
 - `startSize`: pixels (24-96, 64 by default) of the name the board shows for a moment at start-up
   (section 3.6e). A change shows the name at the new size at once for 2 s, as a preview; so does a
   new `start` font.
-- Any field may be left out to keep its current value.
+- Any field may be left out to keep its current value, but not all three. A value out of range, or
+  no field at all, is answered with `knoend.error` `bad-packet`; a board that cannot store the values
+  answers `busy` and keeps its current look.
 - The board stores the values and shows them at once, without restarting, so the person sees each
-  choice as they make it. Its answer gives the screen's `width`, `height` and largest `grid` as it
-  now sits (they change with a turn); the companion uses them as it would the identity's, and sends
+  choice as they make it. Its answer gives the values now in use (`theme`, `turn`, `startSize`) and
+  the screen's `width`, `height` and largest `grid` as it now sits (they change with a turn); the companion uses them as it would the identity's, and sends
   the layout again in a grid that fits.
 - The companion sends `knoend.display` after the identities when the person's choice differs from
   the identity's `board.display`, and when the person changes it.
