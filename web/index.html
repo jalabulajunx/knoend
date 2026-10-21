@@ -295,6 +295,7 @@
       </figure>
       </aside>
       <div class="flow-main">
+      <button type="button" id="known-back" class="back-link" hidden>&larr; Your board</button>
 
       <article class="card step" data-step="1">
         <h2>Find the board</h2>
@@ -425,11 +426,11 @@
         </details>
         <div class="apps-bar">
           <span id="apps-chosen" class="muted">Pick up to 12 apps</span>
-          <button type="button" class="secondary" data-back="6">Back</button>
+          <button type="button" class="secondary" id="apps-back" data-back="6">Back</button>
           <button type="button" id="apps-draft" class="primary" disabled>Draft keys</button>
         </div>
         <p id="apps-status" class="note" hidden></p>
-        <p id="apps-done" class="success" hidden>Done. Open one of those apps and its keys are on the board. Change any of them in <a href="#" data-goto="edit">Edit keys</a>, or <a href="#" data-goto="dashboard">open the dashboard</a>.</p>
+        <p id="apps-done" class="success" hidden>Done. Open one of those apps and its keys are on the board. Change any of them in <a href="#" data-goto="edit">Edit keys</a>, <a href="#" data-known-back>go back to your board</a>, or <a href="#" data-goto="dashboard">open the dashboard</a>.</p>
       </article>
       </div>
       </div>

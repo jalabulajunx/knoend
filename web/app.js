@@ -670,6 +670,10 @@ function renderKnown() {
   $("known-board").hidden = !known;
   const flow = document.querySelector(".setup-flow");
   if (flow) flow.hidden = known;
+  // Came here from "Your board is set up": a way back to it, and Back on the apps step goes there too.
+  const fromKnown = !!board && setup.picked;
+  $("known-back").hidden = !fromKnown;
+  if (fromKnown) delete $("apps-back").dataset.back; else $("apps-back").dataset.back = "6";
   if (!board) return;
   const wifi = !board.address.startsWith("USB");
   $("known-text").textContent = `${board.profile} with firmware ${board.firmware}, connected ${wifi ? "over Wi-Fi" : "by USB"}. Pick what you'd like to do next.`;
@@ -678,6 +682,23 @@ function renderKnown() {
   const waiting = apps.list.filter((a) => a.state === "none" && a.minutes > 0).length;
   if (apps.list.length) $("known-apps").textContent = waiting ? `${waiting} app${waiting === 1 ? "" : "s"} you use have no keys yet: the AI can draft them` : "Every app you use has keys; add more";
 }
+function backToBoard() {
+  setup.picked = false;
+  setTask("setup");
+  step(1);
+  renderKnown();
+  $("known-board").scrollIntoView({ block: "start" });
+}
+$("known-back").addEventListener("click", backToBoard);
+$("apps-back").addEventListener("click", (e) => {
+  if ($("apps-back").dataset.back) return; // the usual step back
+  e.stopPropagation(); // not also the page's data-back handler, once backToBoard has restored it
+  backToBoard();
+});
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-known-back]")) { e.preventDefault(); backToBoard(); }
+});
+
 document.querySelectorAll("[data-known]").forEach((b) => b.addEventListener("click", () => {
   setup.picked = true;
   const go = {
@@ -1878,11 +1899,11 @@ function appTile(app) {
 
 function tileLine(app, progress) {
   if (progress) {
-    return { waiting: "Waiting for its turn", drafting: "Drafting keys...", done: `${progress.keys} keys drafted`,
+    return { waiting: "Waiting for its turn", drafting: "Drafting keys...", done: `${progress.keys} key${progress.keys === 1 ? "" : "s"} drafted`,
              failed: "Could not draft keys" }[progress.state] || "";
   }
   const used = app.minutes >= 60 ? `used ${Math.round(app.minutes / 60)} h` : app.minutes > 0 ? `used ${app.minutes} min` : "";
-  const what = app.keys ? `${app.keys} keys` : APP_STATE[app.state][1];
+  const what = app.keys ? `${app.keys} key${app.keys === 1 ? "" : "s"}` : APP_STATE[app.state][1];
   return [what, used].filter(Boolean).join(" · ");
 }
 

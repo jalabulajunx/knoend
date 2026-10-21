@@ -343,6 +343,9 @@ code { font: .9em var(--mono); }
 .known-grid strong { font-weight: 600; }
 .known-grid .sub { color: var(--muted); font-size: 13px; }
 
+.back-link { border: 0; background: none; padding: 0 0 14px; color: var(--muted); font: 500 13px/1 var(--sans); cursor: pointer; }
+.back-link:hover { color: var(--text); }
+
 /* Keys for your apps (setup step 7): a grid of installed apps to pick from. */
 .apps-tools { display: flex; align-items: center; gap: 14px; margin: 18px 0 4px; }
 .apps-tools input { flex: 1; max-width: 360px; }
