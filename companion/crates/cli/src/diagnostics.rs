@@ -148,6 +148,9 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
         "system_checks": system_checks(&ports),
         "recent_log": shared.recent().iter().map(|l| redact(l)).collect::<Vec<_>>(),
         "firmware_source": shared.firmware_source,
+        // The last board identified by USB: known or not, and the evidence (chip, flash, the
+        // firmware it carries and its components, what KnoEnd's firmware can drive).
+        "last_board_identified": crate::boards::last(),
         "browser_extension_connected": shared.browser.connected(),
         "ai_provider": agent.map(|a| a.describe()),
         "ai_tools_on_this_computer": knoend_agents::cli_tool::tools_on_this_computer().await,

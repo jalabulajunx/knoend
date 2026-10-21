@@ -18,6 +18,7 @@ mod agent_hooks;
 mod app_facts;
 mod app_setup;
 mod background;
+mod boards;
 mod launcher;
 mod browser;
 mod diagnostics;
@@ -258,8 +259,18 @@ async fn devices(source: &str) -> Result<(), String> {
                               c.flash_size, c.mac.as_deref().unwrap_or("?"), c.features.join(", ")),
             Err(e) => println!("  chip: {e}"),
         }
-        for c in manifest.candidates(&port, chip.as_ref().ok(), None) {
-            println!("  maybe {} (score {}, {}): {}", c.name, c.score, c.status, c.reasons.join("; "));
+        if let Ok(firmware) = chip.as_ref().map(|c| &c.firmware) {
+            for app in firmware.iter().flat_map(|f| &f.apps) {
+                println!("  firmware on it, {}: {} {} (ESP-IDF {}){}", app.partition, app.project, app.version, app.idf,
+                         if app.components.is_empty() { String::new() } else { format!("; components {}", app.components.join(", ")) });
+            }
+        }
+        let candidates = manifest.candidates(&port, chip.as_ref().ok(), None);
+        if !boards::known(&candidates) && chip.is_ok() {
+            println!("  a board KnoEnd does not know (no board we list has this chip, flash and USB)");
+        }
+        for c in &candidates {
+            println!("  {} {} (score {}, {}): {}", if c.confident { "likely" } else { "maybe" }, c.name, c.score, c.status, c.reasons.join("; "));
         }
     }
     Ok(())

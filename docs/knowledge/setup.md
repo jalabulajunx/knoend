@@ -71,6 +71,21 @@ C3, C6) are not supported.
 
 ### Identifying and flashing
 
+- **A board KnoEnd does not know (#63).** Identify (and `knoend devices`, and the `identify_board`
+  check) reads the chip, its flash size, and, without writing anything, the firmware on it: the
+  partition table and each app's project, version and components. A vendor's firmware names the
+  board's support package and its display and touch drivers, which identify the board when the chip
+  cannot. A board KnoEnd lists with another flash size is never offered; when no listed board
+  matches the chip, flash size and USB connection, the answer is "a board KnoEnd does not know" and
+  nothing is chosen for the person. Seen 2026-10-21: an ESP32-S3 with 32 MB flash on native USB
+  carried `phone_s3_box_3` (a demo's name, not the board) and `xiaozhi` 1.8.5 with components
+  `waveshare__esp32_s3_touch_amoled_2_06` and `waveshare__esp_lcd_sh8601`: a Waveshare
+  ESP32-S3-Touch-AMOLED-2.06. Its QSPI AMOLED is not a display KnoEnd's firmware drives (SPI LCDs
+  with ST7789 or ILI9341; touch GT911, CST816, CST826, FT6336), so KnoEnd cannot run on it yet and
+  must not be installed: the screen would stay blank. Before trying anything on such a board, back
+  its flash up (`esptool.py read_flash 0 <flash size> backup.bin`); `write_flash 0 backup.bin`
+  restores it.
+
 - **"Could not reach the chip's bootloader".** Another program holds the port; or the cable or USB
   port is flaky; or the board's auto-reset does not work. Manual bootloader mode: hold BOOT (GPIO0),
   tap RESET, release BOOT, then try again.

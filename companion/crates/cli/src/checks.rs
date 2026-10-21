@@ -1,6 +1,7 @@
 //! Checks the setup assistant may ask the service to run before it answers, when the snapshot is
-//! not enough. Each is read-only: it never resets, writes to or erases a board, and never opens
-//! its serial port (opening it restarts some boards). The list is in the assistant's snapshot; a
+//! not enough. Each is read-only: it never writes to or erases a board. The two that open the
+//! board's USB port (`board_serial_log`, `identify_board`), which restarts some boards, say so and
+//! run only while no board is connected over Wi-Fi. The list is in the assistant's snapshot; a
 //! check added here is one the assistant can use, with no change to its prompt.
 
 use std::time::Duration;
@@ -30,8 +31,14 @@ pub const ALL: &[(&str, &str)] = &[
       (\"Guru Meditation\", \"panic\", a backtrace) with its cause. Only runs while the board is not connected over \
       Wi-Fi (crashing, restarting or offline) and is plugged in by USB, because opening the port restarts some boards. \
       The way to find out why a board keeps restarting."),
+    ("identify_board",
+     "Identifies the board plugged in by USB (about 10 s; reads, never writes): its chip and flash size, the firmware \
+      on it now (partition table, each app's project, version and components: a vendor's board support package and \
+      display and touch drivers name the board), the boards KnoEnd lists that could match, and whether KnoEnd knows it. \
+      Restarts the board, so it only runs while no board is connected over Wi-Fi. The way to tell which board a new one is."),
     ("last_terminal",
-     "The last terminal app the person was in and what the board made of it: its active tab (the one typed in last), \
+     "The last terminal app the person was in and what the board made of it: its active tab (from the window title, \
+      else the one typed in last), \
       the programs in that tab's foreground, the library that matched (a program's own, such as Claude Code or the \
       pager, else the terminal's) and what the board showed (an agent's waiting request or edit mode win over it). Terminal apps only: in an editor's terminal pane (VS Code) the board keeps the editor's keys. \
       When the board does not follow a terminal: no app pid or no tab means the terminal's processes were not found; \
@@ -62,6 +69,7 @@ pub async fn run(id: &str, shared: &Shared) -> Value {
         "usb_now" => json!({"ports": tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default()}),
         "settings" => json!({"settings": crate::settings::all(shared).await}),
         "board_serial_log" => board_serial_log(shared).await,
+        "identify_board" => identify_board(shared).await,
         "installed_apps" => {
             let mut list = crate::app_setup::list().await;
             // The used ones and those with keys, then a count of the rest: enough to suggest from.
@@ -74,6 +82,37 @@ pub async fn run(id: &str, shared: &Shared) -> Value {
         "last_terminal" => crate::service::last_terminal(),
         _ => json!({"error": format!("no check called {id}")}),
     }
+}
+
+/// Identifies the board on USB (see ALL), as the web app's Identify step does.
+async fn identify_board(shared: &Shared) -> Value {
+    let Ok(_port_free) = shared.serial.try_lock() else {
+        return json!({"skipped": "the USB port is busy (installing or pairing)"});
+    };
+    let ports = tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default();
+    let Some(port) = ports.iter().find(|p| p.bridge != "unknown").or(ports.first()).cloned() else {
+        return json!({"skipped": "no board plugged in by USB"});
+    };
+    // Identifying restarts the board on USB: not the one connected over Wi-Fi. A native-USB board
+    // gives its MAC (the board id) over USB; behind a CH340 or CP210x it cannot be told.
+    let status = shared.status.read().await.clone();
+    if status.link == "connected" {
+        let connected = status.board.as_ref().map(|b| b.id.to_lowercase());
+        if port.mac_id().is_none() || port.mac_id() == connected {
+            return json!({"skipped": "the board connected over Wi-Fi may be the one on USB, and identifying would restart it. \
+                                      Use the web app's Identify step, or the last identification in the snapshot"});
+        }
+    }
+    let name = port.name.clone();
+    let chip = match tokio::task::spawn_blocking(move || knoend_flash::identify(&name)).await {
+        Ok(Ok(chip)) => chip,
+        Ok(Err(e)) => return json!({"port": port.name, "error": e}),
+        Err(e) => return json!({"error": e.to_string()}),
+    };
+    let candidates = crate::firmware::manifest(&shared.firmware_source).await
+        .map(|m| m.candidates(&port, Some(&chip), None)).unwrap_or_default();
+    say!("Assistant identified the board on {}", port.name);
+    crate::boards::record(&port, Some(&chip), &candidates, false)
 }
 
 /// The board's own serial output for a few seconds (see ALL).

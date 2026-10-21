@@ -1005,7 +1005,7 @@ $("identify").addEventListener("click", async () => {
   status.textContent = "Asking the board who it is (this restarts it for a moment)...";
   $("identify").disabled = true;
   try {
-    const result = await api("/identify", { port: setup.port });
+    const result = await api("/identify", { port: setup.port, assisting: setup.mode === "ai" && aiReady });
     const [firmware] = await Promise.all([api("/firmware").catch(() => null)]);
     setup.firmware = firmware;
     setup.justInstalled = false;
@@ -1016,18 +1016,21 @@ $("identify").addEventListener("click", async () => {
       chipError: result.chipError,
       running: result.running ? { firmware: result.running.firmware, profile: result.running.board?.profile, hasDisplay: !!result.running.board?.display } : null,
       candidates: result.candidates,
+      known: result.known !== false,
+      summary: result.summary,
     };
     const chip = result.chip;
     const running = result.running;
     $("chip-summary").textContent = [
       chip ? `${chip.chip} ${chip.revision || ""}, ${chip.flash_size} flash, MAC ${chip.mac || "?"}` : `Chip not identified: ${result.chipError}`,
-      running ? `Running KnoEnd ${running.firmware} (${running.board.profile}).` : "Not running KnoEnd yet.",
+      running ? `Running KnoEnd ${running.firmware} (${running.board.profile}).` : carries(chip),
     ].join(" ");
     $("erase").checked = !running;
     $("skip-install").hidden = !running;
-    renderCandidates(result.candidates);
+    renderCandidates(result.candidates, result.known !== false);
     status.hidden = true;
     step(2);
+    if (result.known === false && chip) autoAssist(`Which board is this? ${result.summary}`);
   } catch (e) {
     status.className = "note error";
     status.textContent = `Could not identify the board: ${e.message}`;
@@ -1061,16 +1064,35 @@ $("skip-install").addEventListener("click", async () => {
   }
 });
 
-function renderCandidates(candidates) {
+/** What firmware a board not running KnoEnd carries now ("Carries xiaozhi 1.8.5 and phone_s3_box_3."). */
+function carries(chip) {
+  const apps = chip?.firmware?.apps || [];
+  if (!chip?.firmware) return "Not running KnoEnd yet.";
+  if (!apps.length) return "Its flash holds no app (erased, or not ESP-IDF).";
+  return `Not running KnoEnd: it carries ${apps.map((a) => `${a.project} ${a.version}`.trim()).join(" and ")}.`;
+}
+
+function renderCandidates(candidates, known = true) {
   const list = $("candidates");
   list.replaceChildren();
   setup.board = null;
   $("install").disabled = true;
-  if (!candidates.length) {
+  if (!known) {
+    // Chip alone matches every board with that chip: no guess is offered as the answer.
     const li = document.createElement("li");
-    li.className = "muted";
-    li.textContent = "No known board matches this hardware yet.";
+    li.className = "note";
+    li.textContent = "KnoEnd does not know this board: no board it lists has this chip, flash size and USB connection. "
+      + "Do not install KnoEnd on it yet; its own firmware is untouched. "
+      + (aiReady ? "The assistant can tell you which board it most likely is and whether KnoEnd can run on it." : "Set up the AI and ask the assistant which board it is.");
     list.append(li);
+    if (aiReady && setup.mode !== "ai") {
+      const ask_ = document.createElement("button");
+      ask_.type = "button";
+      ask_.className = "ghost";
+      ask_.textContent = "° Ask the assistant which board this is";
+      ask_.addEventListener("click", () => { assistantPanel(true); ask(`Which board is this? ${setup.identified?.summary || ""}`); });
+      li.append(document.createElement("br"), ask_);
+    }
   }
   // Boards that look the same over USB (native-USB S3 boards all do): let the person choose.
   const installable = candidates.filter((c) => c.status === "supported" || c.status === "unverified");
@@ -1090,7 +1112,8 @@ function renderCandidates(candidates) {
     const { li, input } = choice("board", c.board, c.name, prefix + c.reasons.join("; "), !installable);
     input.addEventListener("change", () => { setup.board = c.board; $("install").disabled = false; });
     list.append(li);
-    if (!picked && installable) { picked = true; input.checked = true; setup.board = c.board; $("install").disabled = false; }
+    // A guess (chip only) is listed for someone who knows better, never chosen for them.
+    if (!picked && installable && known) { picked = true; input.checked = true; setup.board = c.board; $("install").disabled = false; }
   });
 }
 
