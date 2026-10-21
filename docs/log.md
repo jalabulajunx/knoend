@@ -1866,3 +1866,16 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   now reads "1 key".
 - Tested (web app, Arch Linux, board on Wi-Fi): apps → back link and Back return to the options;
   look → back link returns; Bluetooth's own Back still goes to the Wi-Fi step.
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - The board's home screen: pinned apps first
+
+- Changed: the launcher (what the board shows when no app is in front) shows the person's pinned
+  apps and sites first, in their order, then (setting `home_fill`, on by default) the most used.
+  Settings `home_apps` (a list: "app:<id>", "site:<site>") and `home_fill` in the registry, so the
+  setup assistant can see and change them; a list kind in `settings.rs`. The Your apps step has a
+  "board's home screen" strip (order, move, remove, the fill switch) and a pin on every app tile.
+  `Usage::home` replaces `Usage::top`.
+- Tested: unit tests (pinned first, pinned only, the rest by use; list setting checks); in the web
+  app, pinning MuseScore, Darktable and Firefox and moving Firefox up saved
+  `["app:org.musescore.MuseScore", "app:firefox", "app:org.darktable.darktable"]`. On the board:
+  not yet (the board was not reachable at the time).

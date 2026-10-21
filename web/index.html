@@ -414,6 +414,12 @@
         <h2>Keys for your apps</h2>
         <p id="apps-intro">KnoEnd looked at the apps on this computer. The ones with a recipe already have keys. Pick others you use, and the AI drafts keys for each, a few at a time, while you watch. Only the names of the apps you pick go to the AI.</p>
         <p id="apps-ai-off" class="note" hidden>Drafting needs the AI. <a href="#" id="apps-ai-setup">Set up the AI</a> (an API key, or a coding agent already on this computer), then come back here.</p>
+        <section class="home-screen" aria-labelledby="home-title">
+          <div class="row-head"><h3 id="home-title">The board's home screen</h3>
+            <label class="check"><input type="checkbox" id="home-fill"> Then the apps and sites you use most</label></div>
+          <p class="muted small">What the board shows when no app is in front: tap one to open it. Pin apps below with <span class="pin-glyph" aria-hidden="true"></span>; they come first, in this order.</p>
+          <ol id="home-pins" class="home-pins" aria-label="Pinned apps"></ol>
+        </section>
         <div class="apps-tools">
           <input id="apps-search" type="search" placeholder="Find an app" autocomplete="off" aria-label="Find an app">
           <span id="apps-count" class="muted small"></span>

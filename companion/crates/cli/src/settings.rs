@@ -63,6 +63,16 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
                         loud each second was while it listens.",
                        d.listen_quiet.into(), -80, -20,
                        if can_listen { "the next time the board starts listening" } else { "on a board with a microphone (this one has none, or its firmware cannot listen)" }),
+        list_setting("home_apps", "Home screen apps",
+                     "Apps and sites the board shows first on its home screen (when no app is in front), in this order: \
+                      \"app:<id>\" with the id from the installed_apps check (\"app:org.musescore.MuseScore\"), or \
+                      \"site:<site>\" (\"site:github.com\"). Tapping one opens it. Empty: only the most used.",
+                     &d.home_apps),
+        describe("home_fill", "Home screen: fill with most used",
+                 "After the pinned apps, fill the board's home screen with the apps and sites used most. Off: only the \
+                  pinned ones.",
+                 json!([{"value": true, "label": "On"}, {"value": false, "label": "Off: pinned only"}]),
+                 json!(d.home_fill), "at once, on the board's home screen"),
         describe("assistant_watches", "Assistant watches in the background",
                  "When on, problems the service notices by itself (the board dropping again and again, a step or a font \
                   that fails, the board refusing something) are put to the setup assistant without the person asking, \
@@ -80,6 +90,19 @@ fn font_setting(id: &str, title: &str, meaning: &str, current: &str, can: bool) 
     setting["kind"] = json!("google_font");
     setting["examples"] = json!(["Atkinson Hyperlegible", "Lexend", "Edu AU VIC WA NT Dots", ""]);
     setting
+}
+
+/// A setting that holds a list of launcher keys ("app:firefox", "site:github.com").
+fn list_setting(id: &str, title: &str, meaning: &str, current: &[String]) -> Value {
+    let mut setting = describe(id, title, meaning, Value::Null, json!(current), "at once, on the board's home screen");
+    setting["kind"] = json!("list");
+    setting["examples"] = json!([["app:firefox", "site:github.com"], []]);
+    setting
+}
+
+/// A launcher key: "app:<id>" or "site:<site>".
+fn home_key(key: &str) -> bool {
+    key.len() <= 200 && key.split_once(':').is_some_and(|(kind, id)| (kind == "app" || kind == "site") && !id.trim().is_empty())
 }
 
 /// A setting that takes a whole number between `min` and `max`.
@@ -110,6 +133,9 @@ pub fn change_label(setting: &Value, value: &Value) -> Option<String> {
         .and_then(|c| c["label"].as_str()).map(str::to_string)
         .unwrap_or_else(|| match value {
             Value::Number(n) => n.to_string(),
+            Value::Array(keys) if keys.is_empty() => "none".to_string(),
+            Value::Array(keys) => keys.iter().filter_map(|k| k.as_str()).map(|k| k.split_once(':').map_or(k, |(_, id)| id))
+                .collect::<Vec<_>>().join(", "),
             _ => value.as_str().filter(|f| !f.is_empty()).unwrap_or("built-in (Montserrat)").to_string(),
         });
     Some(label)
@@ -119,6 +145,9 @@ pub fn change_label(setting: &Value, value: &Value) -> Option<String> {
 fn allowed(setting: &Value, value: &Value) -> bool {
     if setting["kind"] == "google_font" {
         return value.as_str().is_some_and(|f| f.is_empty() || crate::fonts::valid_family(f));
+    }
+    if setting["kind"] == "list" {
+        return value.as_array().is_some_and(|keys| keys.len() <= 36 && keys.iter().all(|k| k.as_str().is_some_and(home_key)));
     }
     if setting["kind"] == "number" {
         return value.as_i64().is_some_and(|n| Some(n) >= setting["min"].as_i64() && Some(n) <= setting["max"].as_i64());
@@ -139,6 +168,7 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
     }
     let mut d = display::load();
     let look = (d.theme, d.turn, d.key_font.clone(), d.start_font.clone(), d.start_size);
+    let home = (d.home_apps.clone(), d.home_fill);
     let mut key_size = None;
     for (id, value) in changes {
         match id.as_str() {
@@ -148,6 +178,8 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
             "key_font" => d.key_font = value.as_str().unwrap_or_default().trim().to_string(),
             "start_font" => d.start_font = value.as_str().unwrap_or_default().trim().to_string(),
             "assistant_watches" => d.assistant_watches = value.as_bool().unwrap_or(true),
+            "home_apps" => d.home_apps = value.as_array().into_iter().flatten().filter_map(|k| k.as_str().map(str::to_string)).collect(),
+            "home_fill" => d.home_fill = value.as_bool().unwrap_or(true),
             "listen_quiet" => d.listen_quiet = value.as_i64().and_then(|n| i8::try_from(n).ok()).ok_or("listening's quiet level must be -80 to -20")?,
             "start_size" => d.start_size = value.as_u64().and_then(|n| u8::try_from(n).ok()).ok_or("start size must be 24-96")?,
             _ => {}
@@ -159,6 +191,9 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
     display::save(&d)?;
     if let Some(k) = key_size {
         shared.key_size_changed(k);
+    } else if home != (d.home_apps.clone(), d.home_fill) {
+        // The board's screen is drawn again (the home screen with it), as for a new key size.
+        shared.key_size_changed(d.key_size);
     }
     if look != (d.theme, d.turn, d.key_font.clone(), d.start_font.clone(), d.start_size) {
         shared.look_changed(d.clone());
@@ -183,6 +218,10 @@ mod tests {
         let size = number_setting("start_size", "Start-up size", "", 64, 24, 96, "");
         assert!(allowed(&size, &json!(62)) && !allowed(&size, &json!(100)) && !allowed(&size, &json!("62")));
         assert_eq!(change_label(&size, &json!(62)).as_deref(), Some("62"));
+        let home = list_setting("home_apps", "Home screen apps", "", &[]);
+        assert!(allowed(&home, &json!(["app:org.musescore.MuseScore", "site:github.com"])) && allowed(&home, &json!([])));
+        assert!(!allowed(&home, &json!(["firefox"])) && !allowed(&home, &json!(["app:"])) && !allowed(&home, &json!("app:x")));
+        assert_eq!(change_label(&home, &json!(["app:firefox", "site:github.com"])).as_deref(), Some("firefox, github.com"));
         let quiet = signed_setting("listen_quiet", "Listening: quiet below", "", -60, -80, -20, "");
         assert!(allowed(&quiet, &json!(-70)) && !allowed(&quiet, &json!(-90)) && !allowed(&quiet, &json!(-10)));
     }

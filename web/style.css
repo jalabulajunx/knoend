@@ -372,6 +372,30 @@ code { font: .9em var(--mono); }
 .app-chip.c-yours { color: var(--text); }
 .app-chip.c-drafted { color: var(--signal); background: var(--signal-soft); }
 .app-chip.c-failed { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+/* Pin: a small map-pin glyph drawn in CSS, signal-coloured when pinned. */
+.pin { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border: 0; border-radius: 6px; background: none;
+  cursor: pointer; opacity: 0; transition: opacity .2s, background .2s; display: grid; place-items: center; }
+.pin::before, .pin-glyph::before { content: ""; width: 9px; height: 9px; border: 1.6px solid var(--muted);
+  border-radius: 50% 50% 50% 0; transform: rotate(-45deg) translate(1px, -1px); }
+.pin-glyph { display: inline-grid; place-items: center; width: 14px; height: 14px; vertical-align: -2px; }
+.app-tile:hover .pin, .pin:focus-visible, .pin[aria-pressed="true"] { opacity: 1; }
+.pin:hover { background: var(--line); }
+.pin[aria-pressed="true"]::before { background: var(--signal); border-color: var(--signal); }
+.app-tile:has(.pin[aria-pressed="true"]) .app-chip { margin-right: 22px; }
+@media (hover: none) { .pin { opacity: .7; } }
+.home-screen { margin: 18px 0 8px; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 14px; }
+.home-screen h3 { margin: 0; }
+.home-screen .row-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.home-screen .check { margin: 0; font-size: 13px; }
+.home-pins { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.home-pin { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 8px; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--raise); font-size: 13px; }
+.home-pin .pos { font: 500 10px/1 var(--mono); color: var(--signal); }
+.home-pin .app-icon { width: 20px; height: 20px; border-radius: 5px; font-size: 11px; }
+.home-pin .app-icon img { width: 20px; height: 20px; }
+.home-pin button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 5px; border-radius: 6px; font: inherit; }
+.home-pin button:hover:not(:disabled) { color: var(--text); background: var(--line); }
+.home-pin button:disabled { opacity: .3; cursor: default; }
 .app-tile .small-button { position: absolute; right: 10px; bottom: -10px; }
 /* While drafting: waiting tiles breathe, the drafting one has a moving signal edge. */
 .app-tile.s-waiting label { opacity: .6; animation: breathe 1.6s var(--ease) infinite; }
