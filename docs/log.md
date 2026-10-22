@@ -1939,3 +1939,16 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   mirror; all three channels must work.
 - Open: the AMOLED reaches users only after the next release tag; roles per board (#15's pager
   role) not done; spec review by Tom for the board schema additions.
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - AMOLED on Wi-Fi: lost updates held the display
+
+- Symptom (Sundar): on Wi-Fi the AMOLED showed its digits for a long time, then followed apps late
+  or not at all; the service logged "no reply from the board for 25 s" and a reset.
+- Cause (board's serial log, 70 s): "spi transmit (queue) color failed" 30 times and "could not
+  take the LVGL lock to apply a layout" 15 times. Each update copied 24 KB from PSRAM into internal
+  memory; with Wi-Fi running that copy failed now and then, each failure held the display (and the
+  lock layouts need) for the 2 s guard, and pings went unanswered.
+- Fix (`sundar/amoled-dma-buffers`): QSPI panels draw from ten-row buffers in internal DMA memory
+  (about 8 KB each, nothing copied); SPI LCD boards unchanged.
+- Tested (AMOLED on Wi-Fi beside the ONX): 75 s after the flash, no failed updates, no lock errors,
+  both boards connected and following apps. Sundar's report on responsiveness pending.

@@ -388,8 +388,16 @@ static esp_err_t touch_attach(void)
 // transfer, so a buffer must fit what is free there: an eighth of the screen, at most 12000 pixels
 // (24 KB). A 410x502 AMOLED's eighth (51 KB) failed every update ("spi transmit color failed").
 #define DRAW_BUFFER_MAX_PIXELS 12000
+// A QSPI panel draws from buffers in internal DMA memory instead, ten rows each: nothing is
+// copied per update. With Wi-Fi running, the 24 KB copy from PSRAM failed now and then on the
+// AMOLED ("spi transmit color failed"), each failure held the display for 2 s, layouts waited for
+// it, and the service lost the link (2026-10-21).
+#define QSPI_BUFFER_ROWS 10
 static int draw_buffer_pixels(void)
 {
+    if (def.qspi) {
+        return def.width * QSPI_BUFFER_ROWS;
+    }
     const int eighth = def.width * def.height / 8;
     return eighth < DRAW_BUFFER_MAX_PIXELS ? eighth : DRAW_BUFFER_MAX_PIXELS;
 }
@@ -685,7 +693,7 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t 
         // overwriting what display_init() set: give it the definition's values.
         .rotation = { .swap_xy = def.swap_xy, .mirror_x = def.mirror_x, .mirror_y = def.mirror_y },
         // Always: the person may turn the screen later (board_set_turn).
-        .flags = { .buff_spiram = true, .sw_rotate = true },
+        .flags = { .buff_spiram = !def.qspi, .buff_dma = def.qspi, .sw_rotate = true },
     };
     display = lvgl_port_add_disp(&display_config);
     ESP_RETURN_ON_FALSE(display != NULL, ESP_FAIL, TAG, "lvgl display");
