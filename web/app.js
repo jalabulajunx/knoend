@@ -92,8 +92,7 @@ function renderStatus(s) {
   badge.textContent = "AI draft, unreviewed";
 
   renderStatus.layout = layout;
-  drawScreen($("keys-preview"), layout, displayState);
-  drawScreen($("setup-preview"), layout, displayState);
+  redrawScreens();
   const conf = $("configuring");
   conf.hidden = !s.configuring;
   conf.textContent = s.configuring ? `The AI agent is drafting keys for ${s.configuring}...` : "";
@@ -135,9 +134,37 @@ function drawScreen(el, layout, look) {
   el.replaceChildren(keys, bar);
 }
 
+/** A board's look for its preview: what it shows (its identity or last answer), or the choices
+ * being made in the Look card when that board is the one chosen there. */
+function lookFor(board) {
+  if (!board) return displayState;
+  if (board.id === lookBoard) return displayState;
+  return { theme: board.display?.theme || "dark", turn: board.display?.turn || 0, native_portrait: !!board.native_portrait };
+}
+
 function redrawScreens() {
-  drawScreen($("keys-preview"), renderStatus.layout, displayState);
+  const boards = renderStatus.last?.boards || [];
+  drawScreen($("keys-preview"), renderStatus.layout, lookFor(boards[0]));
   drawScreen($("setup-preview"), renderStatus.layout, displayState);
+  $("fig-board").textContent = boards.length > 1 ? `${boards[0].profile}, now` : "On the board now";
+  // Every other connected board, mirrored: the same keys in its own look and shape.
+  const more = $("more-boards");
+  more.hidden = boards.length < 2;
+  more.replaceChildren(...boards.slice(1).map((b, i) => {
+    const figure = document.createElement("figure");
+    figure.className = "device-figure small";
+    const device = document.createElement("div");
+    device.className = `device${b.native_portrait ? " watch" : ""}`;
+    const screen = document.createElement("div");
+    screen.className = "screen";
+    device.append(screen);
+    const caption = document.createElement("figcaption");
+    caption.innerHTML = `<span class="fig">Fig. 0${i + 2}</span> `;
+    caption.append(document.createTextNode(b.profile));
+    figure.append(device, caption);
+    drawScreen(screen, renderStatus.layout, lookFor(b));
+    return figure;
+  }));
 }
 
 async function loadDrafts() {
