@@ -1904,3 +1904,38 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   install, and gave the backup command; Install stayed disabled (Sundar). The "busy" failure was
   seen before the USB fix, not re-run after it.
 - Open: AMOLED support (QSPI display, AXP2101 power) is firmware work, not part of this.
+
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - AMOLED board, several boards, per-board looks, Bluetooth data
+
+- Changed (branch `sundar/amoled-2-06`, which also carries #65):
+  - **Waveshare ESP32-S3-Touch-AMOLED-2.06** (#63 found it): QSPI AMOLED via Espressif's
+    `esp_lcd_sh8601` (Apache-2.0), start-up commands and pins from Waveshare's BSP component
+    (Apache-2.0), x gap 22, even-aligned updates, panel brightness (0x51), draw buffers capped at
+    12000 px (a 51 KB eighth failed every SPI update), `corner_radius` -> UI inset, touch FT5x06
+    (non-fatal when absent). OLED guards: dim after 1 min, dark after 10, wake on new keys or an
+    alert, 2 px shift every 3 min. Buttons in definitions: GPIO (BOOT = next page) and the AXP2101
+    power key (short press = screen off/on; INTSTS2 0x49 bit 3, register map from XPowersLib, MIT).
+    Schema: display bus/data/x_gap/y_gap/even_areas/brightness/corner_radius/oled, buttons,
+    touch ft5x06 (**needs Tom's review**). Catalog: unverified, 32 MB, native USB.
+  - **Several boards (#15)**: every paired board connects; `BoardSender` sends to all or one;
+    events carry the board id; per-board heartbeat; a scout adds boards switched on later; while
+    boards are connected only paired native-USB boards are opened on USB (a CH340 restarts its board).
+  - **Per-board looks**: `display.json` `boards` (the old top-level look moved to the boards paired
+    then); settings registry has a "board" choice and per_board marks; pictures toned per board;
+    way round named for how each board sits (an AMOLED is portrait at turn 0); dashboard Board
+    picker and a Board section listing every paired board; set-up "Add another board".
+  - **Bluetooth data channel** (spec section 2, no protocol change): firmware `link_ble.c` beside
+    the HID keyboard (one GATT dispatcher; packets handled on their own task); service
+    `transport/ble.rs` with btleplug, used for boards on neither Wi-Fi nor USB. CI: libdbus-1-dev.
+  - Identify: a board running KnoEnd that names its board is known even when the release does not
+    list it (says "skip install").
+- Tested (Arch Linux, ONX2432G028 on Wi-Fi, Waveshare AMOLED; Sundar at the bench): vendor flash
+  backed up twice and compared first (kept off the repo); display, touch, corners, dimming, power
+  key, screen-off tap without a key press; two boards mirrored, each in its own look; AMOLED reached
+  over Bluetooth only (found in 3.2 s, ping 90 ms) and following apps. Not run: BOOT paging on a
+  multi-page layout, fonts over Bluetooth, macOS/Windows Bluetooth, the FNK with this build.
+- Decided (Sundar): looks are per board; a new board starts from the defaults; several boards
+  mirror; all three channels must work.
+- Open: the AMOLED reaches users only after the next release tag; roles per board (#15's pager
+  role) not done; spec review by Tom for the board schema additions.

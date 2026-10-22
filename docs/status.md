@@ -64,10 +64,21 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | Several Claude questions (#41): a panel listing them while answered in the app, Answer here, cleared at once when answered | `cli/src/service.rs` (`show_answering`, `hosts_agent`), `agent_hooks.rs` (`settles`) | a multi-question prompt in Claude |
 | Web app redesign: drawn board with its real screen (FIG. 01), tips, an "ask about this" ° on every section, an assistant panel with a conversation and suggestions, a setup rail with a board acting out each step | `web/` | `knoend serve` |
 
+## Several boards, Bluetooth, the AMOLED (added 2026-10-21; Linux + ONX + Waveshare AMOLED tested)
+
+| What | Where | Try it |
+| --- | --- | --- |
+| Every paired board connects at once and they mirror each other; each keeps its own look (`display.json` `boards`); the Board section lists each | `cli/src/service.rs` (BoardSender, Scout), `display.rs`, `settings.rs` | switch on a second paired board |
+| Bluetooth LE data channel beside the keyboard (spec section 2): a board on neither Wi-Fi nor USB is reached over Bluetooth | `firmware/main/link_ble.c`, `companion/crates/transport/src/ble.rs` | unplug a Bluetooth-paired board |
+| Identify reads the firmware a board carries; "a board KnoEnd does not know"; check `identify_board` | `crates/flash/src/on_board.rs`, `cli/src/boards.rs` | Identify on a board with vendor firmware |
+| QSPI AMOLED (SH8601/CO5300), panel brightness, rounded corners, OLED dimming and pixel shift, buttons (GPIO, AXP2101 power key) | `components/board_generic/board_generic.c`, `main/ui.c` | Waveshare ESP32-S3-Touch-AMOLED-2.06 |
+
 ## Built, not yet tested
 
 - GT911 touch, display start-up commands, active-high reset; the ESP32-S3-BOX-3 and Waveshare
   ESP32-S3-Touch-LCD-2 definitions (status "unverified").
+- Bluetooth data on macOS and Windows (built with btleplug; macOS needs the Bluetooth permission).
+- Fonts over Bluetooth (up to about 480 KB; expect 10-20 s).
 - The 2026-10-20 additions on the FNK0104B and on macOS (display settings, fonts, the watcher's
   checks; `board_serial_log` assumes a USB-serial port).
 - The display-freeze fix (LVGL memory from PSRAM, `firmware/main/lv_mem_psram.c`) on the

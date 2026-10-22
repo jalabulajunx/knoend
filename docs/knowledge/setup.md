@@ -261,6 +261,16 @@ prints `listen: loudest N dB in the last second` and `listen: note C4 (...)`.
 
 ### Bluetooth keyboard
 
+- **Bluetooth carries the keys and, with current firmware, the service's link too.** A board paired
+  with the computer as a Bluetooth keyboard types its keys. The service also reaches it over the
+  KnoEnd data service beside the keyboard (identity `transports` has `ble-data`) when the board is
+  on neither Wi-Fi nor USB: the Board section then shows its address as "Bluetooth". **The board
+  types but does not follow apps, and the Board section says "paired, not connected":** its
+  firmware has no data service (update it), or it is not paired as a keyboard with this computer,
+  or Bluetooth is off. Linux (BlueZ) tested 2026-10-21 (found in about 3 s, ping 90 ms); macOS
+  needs the Bluetooth permission for the app the service runs from; Windows untested. Fonts over
+  Bluetooth are slow (10-20 s).
+
 - **Windows says "Try connecting your device again" when pairing "KnoEnd".** The Windows Bluetooth
   radio adapter or stack frequently hangs or holds a half-formed handshake attempt. Fix: toggle
   Bluetooth off and back on in Windows Settings (or press Win+A > Bluetooth), or remove "KnoEnd"

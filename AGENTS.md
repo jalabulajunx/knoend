@@ -94,6 +94,19 @@ and say in the error which setting. A rebuild is only for our own bugs.
   `HWND`s (`DWMWA_CLOAKED`, `WS_EX_TOOLWINDOW`, zero title length) and unlock the Windows Foreground
   Lock before `SetForegroundWindow`.
 
+- **A board has up to three channels, and Bluetooth is two things.** Paired as a keyboard it types;
+  the service talks to it over Wi-Fi, USB or the Bluetooth data service beside the keyboard. A
+  board "paired over Bluetooth" with no Wi-Fi and no USB is reached over that data service only if
+  its firmware has it (identity `transports` lists `ble-data`).
+- **Looks are per board, the computer's settings are not.** Read and write a board's look through
+  `display::for_board(id)` / `set_board`; never the top-level fields of `display.json` (they are
+  from before #15). Several connected boards mirror: pages use the smallest key-size grid.
+- **Back up a new board before trying anything**: `esptool.py read_flash 0 <size> backup.bin`
+  twice and compare. Vendor firmware is gone otherwise. Identify reads (never writes) the
+  partition table and app components: those name the board better than a demo's project name.
+- **The release is what the service installs.** A board running a build newer than the release
+  (an AMOLED before its tag) must be told to skip install, never offered the release.
+
 ## Working rules
 
 - **Verify before claiming.** Check the content of outputs, not just exit codes. Say plainly what is
