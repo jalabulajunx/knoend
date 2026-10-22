@@ -1143,11 +1143,12 @@ fn with_terminal(focus: Option<Focus>) -> Option<Focus> {
 pub enum Link {
     Wifi(wifi::WifiSender),
     Serial(mpsc::Sender<(String, Value)>),
+    Bluetooth(knoend_transport::ble::BleSender),
 }
 
 impl std::fmt::Debug for Link {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self { Link::Wifi(_) => "Wi-Fi", Link::Serial(_) => "USB" })
+        f.write_str(match self { Link::Wifi(_) => "Wi-Fi", Link::Serial(_) => "USB", Link::Bluetooth(_) => "Bluetooth" })
     }
 }
 
@@ -1159,6 +1160,7 @@ impl Link {
                 tx.send((kind.to_string(), body)).await.map_err(|_| "USB serial link closed".to_string())?;
                 Ok(0)
             }
+            Link::Bluetooth(b) => b.send(kind, body).await,
         }
     }
 }
@@ -1218,7 +1220,7 @@ impl BoardSender {
 /// fonts (sent to it alone). Returns whether a look was asked of it.
 async fn join_board(board: BoardStatus, link: Link, sender: &mut BoardSender, boards: &mut Vec<BoardStatus>,
                     heard: &mut HashMap<String, tokio::time::Instant>, events: &mpsc::Sender<Event>, shared: &Arc<Shared>) -> bool {
-    let transport = if board.address.starts_with("USB") { board.address.as_str() } else { "Wi-Fi" };
+    let transport = if board.address.starts_with("USB") || board.address == "Bluetooth" { board.address.as_str() } else { "Wi-Fi" };
     shared.emit("log", json!({"text": format!("Connected to board {} over {transport}{}", board.id,
                                               if boards.is_empty() { String::new() } else { format!(" (with {} other: they mirror each other)", boards.len()) })}));
     // A board that can listen: the KnoEnd MIDI device is made now, so music apps list it before
@@ -1366,8 +1368,37 @@ async fn connect(pairings: &Pairings, shared: &Arc<Shared>, events: mpsc::Sender
     let mut skip_usb: Vec<String> = skip.to_vec();
     skip_usb.extend(connected.iter().map(|(s, _)| s.id.clone()));
     let native_only = scouting || !connected.is_empty();
-    if let Some(serial_link) = connect_serial(pairings, shared, events, &skip_usb, native_only).await {
+    if let Some(serial_link) = connect_serial(pairings, shared, events.clone(), &skip_usb, native_only).await {
         connected.push(serial_link);
+    }
+
+    // Boards on neither: Bluetooth, the data service beside the keyboard the computer is paired with.
+    let missing: Vec<String> = wanted.iter().filter(|id| !connected.iter().any(|(s, _)| &s.id == *id)).cloned().collect();
+    if !missing.is_empty() {
+        match knoend_transport::ble::connect(&missing, Duration::from_secs(3)).await {
+            Ok(found) => for board in found {
+                let status = board_status(&board.device_id, &board.identity, "Bluetooth".into());
+                let (events, id, mut receiver) = (events.clone(), board.device_id.clone(), board.receiver);
+                tokio::spawn(async move {
+                    loop {
+                        match receiver.recv().await {
+                            Ok(packet) => {
+                                if events.send(Event::Board(packet, id.clone())).await.is_err() {
+                                    return;
+                                }
+                            }
+                            Err(e) => {
+                                let _ = events.send(Event::LinkDown(Some(id), e)).await;
+                                return;
+                            }
+                        }
+                    }
+                });
+                connected.push((status, Link::Bluetooth(board.sender)));
+            },
+            Err(e) if !scouting => say!("Bluetooth: {e}"),
+            Err(_) => {}
+        }
     }
     connected
 }

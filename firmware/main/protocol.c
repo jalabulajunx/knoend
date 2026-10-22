@@ -17,6 +17,7 @@
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "link_ble.h"
 #include "link_serial.h"
 #include "link_wifi.h"
 #include "listen.h"
@@ -40,17 +41,19 @@ static const char *const outgoing_types[] = {
     "wifi.ack", "wifi.networks", "ping", "error", "image.ack", "display.ack", "font.ack",
     "listen.ack", "note",
 };
-static const char *const transports[] = { "ble-hid", "serial", "wifi" };
+static const char *const transports[] = { "ble-hid", "ble-data", "serial", "wifi" };
 
 typedef enum {
     TRANSPORT_SERIAL = 1,
     TRANSPORT_WIFI = 2,
-    TRANSPORT_ALL = TRANSPORT_SERIAL | TRANSPORT_WIFI,
+    TRANSPORT_BLE = 4, // the Bluetooth LE data service (link_ble.c)
+    TRANSPORT_ALL = TRANSPORT_SERIAL | TRANSPORT_WIFI | TRANSPORT_BLE,
 } transport_t;
 
 static SemaphoreHandle_t send_lock;
 static uint32_t next_id_serial;
 static uint32_t next_id_wifi; // restarts at 0 for each Wi-Fi session
+static uint32_t next_id_ble;  // restarts at 0 for each Bluetooth data session
 static char device_id[13];
 
 // ---- sending ----
@@ -62,6 +65,7 @@ static char device_id[13];
 // used, so old and new companions both work with this board (spec/protocol.md section 2).
 static const char *prefix_serial = "knoend";
 static const char *prefix_wifi = "knoend";
+static const char *prefix_ble = "knoend";
 
 void protocol_wifi_session_started(void)
 {
@@ -100,6 +104,16 @@ static void send_packet(const char *name, cJSON *body, int64_t re, transport_t t
             cJSON_free(text);
         }
     }
+    if ((to & TRANSPORT_BLE) && link_ble_session_active()) {
+        cJSON_SetNumberValue(id, next_id_ble++);
+        snprintf(full, sizeof(full), "%s.%s", prefix_ble, name);
+        cJSON_SetValuestring(type, full);
+        char *text = cJSON_PrintUnformatted(packet);
+        if (text != NULL) {
+            link_ble_send(text);
+            cJSON_free(text);
+        }
+    }
     cJSON_Delete(packet);
     xSemaphoreGive(send_lock);
 }
@@ -124,7 +138,7 @@ static cJSON *string_array(const char *const *items, size_t count)
 // Message names with the prefix of the link they are sent on.
 static cJSON *type_array(const char *const *names, size_t count, transport_t to)
 {
-    const char *prefix = (to & TRANSPORT_WIFI) && !(to & TRANSPORT_SERIAL) ? prefix_wifi : prefix_serial;
+    const char *prefix = to == TRANSPORT_WIFI ? prefix_wifi : to == TRANSPORT_BLE ? prefix_ble : prefix_serial;
     cJSON *array = cJSON_CreateArray();
     char full[48];
     for (size_t i = 0; i < count; i++) {
@@ -625,6 +639,8 @@ static bool message_name(const char *type, transport_t transport)
     const char *prefix = strncmp(type, "knoend.", 7) == 0 ? "knoend" : "openpager";
     if (transport == TRANSPORT_SERIAL) {
         prefix_serial = prefix;
+    } else if (transport == TRANSPORT_BLE) {
+        prefix_ble = prefix;
     } else {
         prefix_wifi = prefix;
     }
@@ -897,6 +913,25 @@ static void on_wifi_packet(const char *packet)
     handle_line(packet, TRANSPORT_WIFI);
 }
 
+static void on_ble_line(const char *line, bool too_long)
+{
+    if (too_long) {
+        send_error(-1, "too-large", "packet over 4096 bytes", TRANSPORT_BLE);
+        return;
+    }
+    handle_line(line, TRANSPORT_BLE);
+}
+
+// A bonded computer subscribed to the data service: number from 0 and introduce the board.
+static void on_ble_session(void)
+{
+    xSemaphoreTake(send_lock, portMAX_DELAY);
+    next_id_ble = 0;
+    prefix_ble = "knoend";
+    xSemaphoreGive(send_lock);
+    send_identity(-1, TRANSPORT_BLE);
+}
+
 // A companion just proved it holds the key: start its numbering at 0 and introduce the board.
 static void on_wifi_session(void)
 {
@@ -917,6 +952,7 @@ esp_err_t protocol_start(void)
     if (send_lock == NULL) {
         return ESP_ERR_NO_MEM;
     }
+    link_ble_start(on_ble_line, on_ble_session);
     esp_err_t err = link_serial_start(on_serial_line);
     if (err == ESP_OK) {
         send_identity(-1, TRANSPORT_SERIAL);

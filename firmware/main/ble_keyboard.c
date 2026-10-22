@@ -2,6 +2,7 @@
 // and pairing (components/esp_hid_gap, Unlicense OR CC0-1.0).
 
 #include "ble_keyboard.h"
+#include "link_ble.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -115,6 +116,14 @@ static void hid_event(void *args, esp_event_base_t base, int32_t id, void *data)
     }
 }
 
+// One GATT callback for the stack: the KnoEnd data service's events, else the keyboard's.
+static void gatts_event(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
+{
+    if (!link_ble_gatts_event(event, gatts_if, param)) {
+        esp_hidd_gatts_event_handler(event, gatts_if, param);
+    }
+}
+
 esp_err_t ble_keyboard_start(const char *name)
 {
     static esp_hid_device_config_t config = {
@@ -142,6 +151,8 @@ esp_err_t ble_keyboard_start(const char *name)
                         TAG, "auth req");
     ESP_RETURN_ON_ERROR(esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &io_cap, 1),
                         TAG, "io cap");
-    ESP_RETURN_ON_ERROR(esp_ble_gatts_register_callback(esp_hidd_gatts_event_handler), TAG, "gatts");
-    return esp_hidd_dev_init(&config, ESP_HID_TRANSPORT_BLE, hid_event, &hid_dev);
+    ESP_RETURN_ON_ERROR(esp_ble_gatts_register_callback(gatts_event), TAG, "gatts");
+    ESP_RETURN_ON_ERROR(esp_hidd_dev_init(&config, ESP_HID_TRANSPORT_BLE, hid_event, &hid_dev), TAG, "hid");
+    // The KnoEnd data service beside the keyboard (link_ble.c).
+    return link_ble_register();
 }
