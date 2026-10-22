@@ -293,9 +293,9 @@ async fn identify(State(app): State<App>, Json(request): Json<PortRequest>) -> A
         Err(_) => Vec::new(),
     };
     // Whether KnoEnd knows this board; an unknown one goes to the setup assistant (boards.rs).
-    let verdict = crate::boards::record(&port, chip.as_ref(), &candidates, !request.assisting);
+    let verdict = crate::boards::record(&port, chip.as_ref(), &candidates, !request.assisting, running.as_ref());
     Ok(Json(json!({"port": port, "chip": chip, "chipError": chip_error, "running": running, "candidates": candidates,
-                   "known": verdict["known"], "summary": verdict["summary"]})))
+                   "known": verdict["known"], "summary": verdict["summary"], "running_unlisted": verdict["running_unlisted"]})))
 }
 
 #[derive(Deserialize)]

@@ -112,7 +112,7 @@ async fn identify_board(shared: &Shared) -> Value {
     let candidates = crate::firmware::manifest(&shared.firmware_source).await
         .map(|m| m.candidates(&port, Some(&chip), None)).unwrap_or_default();
     say!("Assistant identified the board on {}", port.name);
-    crate::boards::record(&port, Some(&chip), &candidates, false)
+    crate::boards::record(&port, Some(&chip), &candidates, false, None)
 }
 
 /// The board's own serial output for a few seconds (see ALL).

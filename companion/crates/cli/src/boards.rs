@@ -43,8 +43,12 @@ fn firmware_line(chip: &knoend_flash::Chip) -> String {
 /// `{"known", "summary", "evidence"}`. With `raise`, an unknown board is raised for the setup
 /// assistant (watch.rs); without, the caller asks it (the web app's AI-guided set-up) or is it.
 pub fn record(port: &knoend_flash::Port, chip: Option<&knoend_flash::Chip>, candidates: &[knoend_flash::manifest::Candidate],
-              raise: bool) -> Value {
-    let known = known(candidates);
+              raise: bool, running: Option<&Value>) -> Value {
+    // KnoEnd firmware on it names its board: known, even when this firmware release does not list
+    // that board yet (a build newer than the release). Nothing needs installing.
+    let profile = running.and_then(|r| r["board"]["profile"].as_str()).filter(|p| !p.is_empty() && *p != "unknown");
+    let listed = profile.is_some_and(|p| candidates.iter().any(|c| c.board == p));
+    let known = known(candidates) || profile.is_some();
     let evidence = json!({
         "port": port.name, "usb": format!("{:04x}:{:04x}", port.vid, port.pid), "bridge": port.bridge, "product": port.product,
         "chip": chip.map(|c| &c.chip), "flash": chip.map(|c| &c.flash_size), "features": chip.map(|c| &c.features),
@@ -53,11 +57,16 @@ pub fn record(port: &knoend_flash::Port, chip: Option<&knoend_flash::Chip>, cand
         "knoend_firmware_drives": {"displays": DISPLAYS, "touch": TOUCH},
     });
     let summary = match chip {
+        _ if profile.is_some() && !listed => format!(
+            "{} on {}, already running KnoEnd {}: nothing to install (skip install). The firmware release this computer installs \
+             from does not list this board, so installing from it would replace the firmware with one that cannot drive it",
+            profile.unwrap_or_default(), port.name, running.and_then(|r| r["firmware"].as_str()).unwrap_or("?")),
+        _ if known && candidates.is_empty() => format!("{} on {}", profile.unwrap_or("?"), port.name),
         _ if known => format!("{} on {}", candidates[0].name, port.name),
         None => format!("A board on {} whose chip did not answer", port.name),
         Some(c) => format!("A board KnoEnd does not know on {}: {} with {} flash; {}", port.name, c.chip, c.flash_size, firmware_line(c)),
     };
-    let verdict = json!({"known": known, "summary": summary, "evidence": evidence});
+    let verdict = json!({"known": known, "summary": summary, "evidence": evidence, "running_unlisted": profile.is_some() && !listed});
     if let Ok(mut last) = LAST.lock() {
         *last = Some(verdict.clone());
     }
@@ -80,12 +89,17 @@ mod tests {
         let firmware = OnBoard { partitions: vec![], apps: vec![App { partition: "factory".into(), project: "phone_s3_box_3".into(), version: "v0.4.2".into(),
             idf: "v5.5.1".into(), built: String::new(), components: vec!["waveshare__esp32_s3_touch_amoled_2_06".into(), "waveshare__esp_lcd_sh8601".into()] }] };
         let chip = knoend_flash::Chip { chip: "esp32s3".into(), revision: None, flash_size: "32MB".into(), features: vec![], mac: None, firmware: Some(firmware) };
-        let verdict = record(&port, Some(&chip), &[], false);
+        let verdict = record(&port, Some(&chip), &[], false, None);
         assert_eq!(verdict["known"], false);
         let summary = verdict["summary"].as_str().unwrap();
         assert!(summary.starts_with("A board KnoEnd does not know on /dev/ttyACM0: esp32s3 with 32MB flash"), "{summary}");
         assert!(summary.contains("factory: phone_s3_box_3 v0.4.2 (ESP-IDF v5.5.1), components waveshare__esp32_s3_touch_amoled_2_06"));
         assert_eq!(verdict["evidence"]["knoend_firmware_drives"]["touch"][0], "gt911");
         assert_eq!(last().unwrap()["summary"], verdict["summary"]);
+        // The same board once it runs KnoEnd from a build newer than the release.
+        let running = json!({"firmware": "v0.2.0-38", "board": {"profile": "waveshare_s3_touch_amoled_2_06"}});
+        let verdict = record(&port, Some(&chip), &[], false, Some(&running));
+        assert_eq!((verdict["known"].as_bool(), verdict["running_unlisted"].as_bool()), (Some(true), Some(true)));
+        assert!(verdict["summary"].as_str().unwrap().contains("already running KnoEnd v0.2.0-38: nothing to install (skip install)"));
     }
 }

@@ -1087,7 +1087,7 @@ $("identify").addEventListener("click", async () => {
     ].join(" ");
     $("erase").checked = !running;
     $("skip-install").hidden = !running;
-    renderCandidates(result.candidates, result.known !== false);
+    renderCandidates(result.candidates, result.known !== false, result.running_unlisted ? running : null);
     status.hidden = true;
     step(2);
     // Asked as a question, not an error; the evidence goes in the context (identify_result).
@@ -1134,11 +1134,21 @@ function carries(chip) {
   return `Not running KnoEnd: it carries ${apps.map((a) => `${a.project} ${a.version}`.trim()).join(" and ")}.`;
 }
 
-function renderCandidates(candidates, known = true) {
+function renderCandidates(candidates, known = true, runningUnlisted = null) {
   const list = $("candidates");
   list.replaceChildren();
   setup.board = null;
   $("install").disabled = true;
+  if (runningUnlisted) {
+    // KnoEnd from a build newer than the release: installing from the release would take it away.
+    const li = document.createElement("li");
+    li.className = "note";
+    li.textContent = `This board already runs KnoEnd ${runningUnlisted.firmware} as ${runningUnlisted.board?.profile}. `
+      + "Choose Skip install: the firmware release this computer installs from does not include this board yet, "
+      + "so installing from it would leave the screen blank.";
+    list.append(li);
+    return;
+  }
   if (!known) {
     // Chip alone matches every board with that chip: no guess is offered as the answer.
     const li = document.createElement("li");
