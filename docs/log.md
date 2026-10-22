@@ -1959,3 +1959,41 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   firmware (with the Waveshare ESP32-S3-Touch-AMOLED-2.06, unverified), the service for Linux,
   macOS and Windows (installer and zip), and the Chrome and Firefox extension zips (unsigned).
 - Decided (Sundar): v0.2.1, no protocol change.
+
+## 2026-10-22 - Tom (Claude Code, Opus 5.5) - v0.2.1 work on macOS and the FNK0104B
+
+- Changed: nothing in code. The FNK0104B runs main (`v0.2.1-4-ga249134`, flashed with `idf.py
+  flash`, definition kept); the service is main's release build on macOS.
+- Tested (macOS, FNK0104B on Wi-Fi, Tom at the board):
+  - Basics: connects over Wi-Fi in 2 s, keys follow the app, taps typed. The old top-level look in
+    `display.json` moved to `boards` unchanged. No board crash or reset in about an hour.
+  - Keys for your apps: icons shown; VLC drafted (14 keys), followed and typed on the board.
+  - Home screen: VLC pinned came first on a desktop click; tapping it opened VLC.
+  - Terminal keys (Terminal.app, zsh): `man ls` pager keys, back to the terminal's keys after `q`;
+    `top` showed "No keys for top yet" and Configure, drafted, its keys worked and quit top.
+  - Not run: MIDI (see below), Bluetooth only (left for the next session: pair as a keyboard, Wi-Fi
+    off, USB out).
+- Found:
+  1. **Bluetooth search with a paired board missing.** This Mac still had Sundar's ONX paired from a
+     visit. `connect` reached the FNK over Wi-Fi, then looked for the ONX over Bluetooth: `ble::connect`
+     cannot tell boards apart before opening them, so it opened the FNK (already on Wi-Fi), which
+     refused the unbonded Mac (`GATT_INSUF_AUTHENTICATION`), and `subscribe` (no timeout) waited
+     until the board's pairing timed out (`smp_rsp_timeout`, about 30 s). The first connection took
+     2.5 minutes; the scout repeated it every 20 s, and macOS briefly focused `BluetoothUIServer`
+     (the board showed Unsupported). Fix to come: skip boards already connected, a timeout on every
+     Bluetooth step. Sundar's pairing was taken out of this Mac's `companion.json` for the test
+     (backup kept locally) and goes back to reproduce the bug before the fix.
+  2. **Keys for your apps on macOS lists 16 apps:** only `/Applications`, `/Applications/Utilities`
+     and `~/Applications`; Apple's own (`/System/Applications`: Notes, Mail, Calendar, Terminal in
+     Utilities; Finder in CoreServices) are missing.
+  3. **Home screen fill on macOS** includes background programs: loginwindow, Spotlight, Dock,
+     UserNotificationCenter, BluetoothUIServer.
+  4. **Configure in a terminal is on page 2** when the terminal's keys fill page 1; Tom did not find
+     it until he paged. Question for Sundar: Configure on page 1, in place of the last key?
+  5. **The FNK0104B has a microphone**, behind its ES8311 codec (I2C 0x18, I2S), not a PDM mic:
+     `mic` only knows `pdm`. New firmware work (Espressif's ES8311 driver, Apache-2.0) and a schema
+     value; design first.
+- Next (in order): fix 1-3 on one branch (reproduce 1 with the ONX pairing back first); Sundar on 4;
+  the FNK microphone; the Bluetooth-only test; Tom's spec review of #57, #60, #66 (read: sound;
+  small nits: `quiet` default -50 in spec/firmware vs -60 sent; `mic` pins skip `$defs/pin`;
+  `sequence` keys have no pattern); then issues #50, #39.
