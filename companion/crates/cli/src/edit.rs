@@ -132,6 +132,10 @@ pub fn check(json: Value, max: Grid) -> Result<Library, String> {
             let firmware = if max == Grid::DEFAULT {
                 ". If the board's firmware is older than v0.2.0, it draws 3x3 only: install the latest firmware \
                  (Set up a board > Install, without erasing) to edit bigger pages"
+            } else if max.rows > max.cols && grid.cols > max.cols {
+                // Portrait (Way round), or several boards mirrored where one is in portrait.
+                ". A board in portrait draws at most 3 keys across: turn it to landscape (Look > Way round) \
+                 to edit this page, or edit a layout made for 3 across"
             } else {
                 ""
             };
