@@ -656,3 +656,5 @@ code { font: .9em var(--mono); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* Each further board in the Board section, below the first. */
+.facts.other-board { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--line); }

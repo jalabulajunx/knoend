@@ -70,11 +70,7 @@ function renderStatus(s) {
     $("f-firmware").textContent = s.board.firmware;
     $("f-address").textContent = s.board.address;
     $("f-id").textContent = s.board.id;
-    // Several boards connected: they show the same keys (mirror).
-    const others = (s.boards || []).slice(1);
-    $("f-mirror-label").hidden = $("f-mirror").hidden = !others.length;
-    $("f-mirror").textContent = others.map((b) => `${b.profile} (${b.address.startsWith("USB") ? b.address : "Wi-Fi"})`).join(", ")
-      + (others.length ? ": the same keys, mirrored" : "");
+    renderOtherBoards(s);
   }
   // A new board connection (a restart for a new look, other firmware): the choices follow it.
   const look = s.board ? JSON.stringify([s.board.firmware, s.board.display]) : "";
@@ -97,6 +93,35 @@ function renderStatus(s) {
   const conf = $("configuring");
   conf.hidden = !s.configuring;
   conf.textContent = s.configuring ? `The AI agent is drafting keys for ${s.configuring}...` : "";
+}
+
+/** Paired boards as /display last listed them (connected or not), for the Board section. */
+let pairedBoards = [];
+
+/** The Board section's other boards: each connected one with its facts (it shows the same keys,
+ * mirrored), and each paired one the service cannot reach now. */
+function renderOtherBoards(s) {
+  const connected = s?.boards || [];
+  const blocks = connected.slice(1).map((b) => facts(b.profile, [
+    ["Firmware", b.firmware], ["Address", b.address], ["ID", b.id], ["Keys", "the same keys, mirrored; its own look"]]));
+  for (const p of pairedBoards.filter((p) => !connected.some((b) => b.id === p.id))) {
+    blocks.push(facts(p.profile || "Paired board", [["ID", p.id],
+      ["State", "paired, not connected: give it Wi-Fi or plug it in by USB (Bluetooth alone types keys only)"]]));
+  }
+  $("other-boards").replaceChildren(...blocks);
+}
+
+function facts(title, rows) {
+  const dl = document.createElement("dl");
+  dl.className = "facts other-board";
+  for (const [k, v] of [["Board", title], ...rows]) {
+    const dt = document.createElement("dt");
+    dt.textContent = k;
+    const dd = document.createElement("dd");
+    dd.textContent = v;
+    dl.append(dt, dd);
+  }
+  return dl;
 }
 
 /** The person's display choices as last saved (or being tried in setup). */
@@ -887,6 +912,8 @@ async function saveDisplay(change) {
 async function loadDisplay() {
   const d = await api(lookBoard ? `/display?board=${encodeURIComponent(lookBoard)}` : "/display");
   lookBoard = d.board || null;
+  pairedBoards = d.boards || [];
+  renderOtherBoards(renderStatus.last);
   showLookBoards(d);
   displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font, native_portrait: d.native_portrait };
   showFonts(d);
