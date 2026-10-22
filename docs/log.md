@@ -1952,3 +1952,10 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   (about 8 KB each, nothing copied); SPI LCD boards unchanged.
 - Tested (AMOLED on Wi-Fi beside the ONX): 75 s after the flash, no failed updates, no lock errors,
   both boards connected and following apps. Sundar's report on responsiveness pending.
+
+## 2026-10-21 - Sundar (Claude Code, Opus 5.5) - Release v0.2.1
+
+- Changed: workspace and crate versions 0.2.1, extension manifest 0.2.1; tag v0.2.1 publishes the
+  firmware (with the Waveshare ESP32-S3-Touch-AMOLED-2.06, unverified), the service for Linux,
+  macOS and Windows (installer and zip), and the Chrome and Firefox extension zips (unsigned).
+- Decided (Sundar): v0.2.1, no protocol change.
