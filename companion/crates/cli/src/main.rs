@@ -173,6 +173,15 @@ fn main() {
     let result = match cli.command {
         Command::Pair { port } => pair(&port),
         Command::Serve { port, firmware, no_open, libraries } => tokio::runtime::Runtime::new().expect("tokio").block_on(async move {
+            // Already running (the background service): open its web app instead (the Start menu
+            // and app launchers run `knoend serve` either way).
+            if web::already_serving(port).await {
+                println!("KnoEnd is already running; its web app is at http://127.0.0.1:{port}/");
+                if !no_open {
+                    web::open_in_browser(&format!("http://127.0.0.1:{port}/"));
+                }
+                return Ok(());
+            }
             let shared = service::Shared::new(firmware);
             tokio::spawn(service::run(shared.clone(), libraries));
             watch::start(shared.clone());

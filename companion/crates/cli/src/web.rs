@@ -86,10 +86,30 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
     let url = format!("http://127.0.0.1:{port}/");
     say!("KnoEnd is at {url}");
     if open {
-        let opener = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
-        let _ = std::process::Command::new(opener).arg(&url).spawn();
+        open_in_browser(&url);
     }
     axum::serve(listener, router).await.map_err(|e| e.to_string())
+}
+
+/// Opens `url` in the person's default browser.
+pub fn open_in_browser(url: &str) {
+    let opener = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
+    let _ = std::process::Command::new(opener).arg(url).spawn();
+}
+
+/// Whether KnoEnd's web app already answers on `port` (the background service, or another
+/// `knoend serve`).
+pub async fn already_serving(port: u16) -> bool {
+    let Ok(client) = reqwest::Client::builder().timeout(std::time::Duration::from_secs(2)).build() else { return false };
+    // A KnoEnd that has just started (the installer starts it) may hold the port before it answers.
+    for _ in 0..6 {
+        match client.get(format!("http://127.0.0.1:{port}/")).send().await {
+            Ok(answer) => return answer.text().await.is_ok_and(|page| page.contains("Kn°End") || page.contains("KnoEnd")),
+            Err(e) if e.is_connect() && tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_err() => return false,
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
+        }
+    }
+    false
 }
 
 async fn require_local(State(app): State<App>, request: Request, next: Next) -> Response {

@@ -37,6 +37,19 @@ jobs:
           workspaces: companion
       - run: cargo build --locked
       - run: cargo test --locked
+      # The Windows installer builds (installer/windows/knoend.iss), to try before a release.
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: .
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=0.0.0" "/DExe=$PWD\companion\target\debug\knoend.exe" "/DOutDir=$PWD\out" installer\windows\knoend.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: out
 
   firmware:
     runs-on: ubuntu-latest
