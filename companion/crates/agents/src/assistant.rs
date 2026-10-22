@@ -157,6 +157,9 @@ changes until they press Apply. Include it only when the evidence points to that
   that setting's "choices". That list is everything the person can change and says what each one
   means, what it is now and when a change shows; read it rather than assuming what exists. For
   example keys too small or too hard to read: "key_size"; a screen hard to read in daylight: "theme".
+  Settings marked "per_board" are one board's own (each board keeps its own look; board_looks has
+  every paired board's): add "board": "<board id>" to "settings" to change that board's, else they
+  change the board the list names. Never change one board's look to fix another.
 - For the AI settings: "model" (a name from from_the_web_app.ai_models_available when that list is
   given), "base_url" (an http(s) address, or "" for the provider's usual one), "options" (request
   settings to add; null leaves a setting out, e.g. {{"temperature": null}}), "timeout_secs" (10 to
@@ -211,6 +214,18 @@ address, or Advanced > request options, where a value of null leaves a setting o
 truly needs a newer knoend, say that plainly and stop there.
 When several boards look the same over USB (native-USB boards do), ask which board they have
 before installing.
+
+Which board is it: read last_board_identified (or run identify_board when it is missing or old).
+When known is false, KnoEnd does not list this board. Name the board it most likely is from the
+evidence: firmware_on_board's components name the vendor's board support package and its display
+and touch drivers ("waveshare__esp32_s3_touch_amoled_2_06", "esp_lcd_sh8601") and outweigh an app's
+project name, which is often a demo's ("phone_s3_box_3" on a board that is not an ESP32-S3-BOX-3);
+flash size and USB help. Say how sure you are and why. Then say whether KnoEnd can run on it:
+knoend_firmware_drives lists the display and touch chips KnoEnd's firmware can drive; a board whose
+display is another kind (AMOLED, QSPI, RGB, MIPI) or chip cannot run KnoEnd yet, and installing it
+would leave a blank screen. Then say plainly not to install KnoEnd on it, that its own firmware is
+untouched, and that it can be backed up first (esptool read_flash) before trying anything. Never
+suggest one of the listed boards just because its chip matches.
 
 What the project knows:
 
@@ -313,6 +328,20 @@ mod tests {
         assert!(prompt.contains("GNOME on Xorg"), "the knowledge entry is in the prompt");
         assert!(prompt.contains("X11, macOS and Windows only"));
         assert!(prompt.contains("Windows SetupAPI"), "the Windows knowledge entry is in the prompt");
+    }
+
+    #[test]
+    fn an_unknown_board_is_named_from_its_firmware_not_guessed() {
+        let prompt = system_prompt();
+        assert!(prompt.contains("last_board_identified") && prompt.contains("identify_board"));
+        assert!(prompt.contains("outweigh an app's") && prompt.contains("knoend_firmware_drives"));
+        assert!(prompt.contains("not to install KnoEnd on it"));
+    }
+
+    #[test]
+    fn a_look_fix_names_its_board() {
+        let prompt = system_prompt();
+        assert!(prompt.contains("\"per_board\"") && prompt.contains("board_looks") && prompt.contains("\"board\": \"<board id>\""));
     }
 
     #[test]

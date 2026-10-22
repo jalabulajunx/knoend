@@ -66,6 +66,7 @@ static const theme_t *theme_for(display_theme_t which)
 }
 
 static const theme_t *theme = &DARK;
+static int shift_step; // OLED screens: where the picture is in its slow shift (screen_guard)
 
 static const char *TAG = "ui";
 
@@ -488,8 +489,8 @@ static void draw_keys_locked(void)
 void ui_max_grid(int *cols, int *rows)
 {
     const board_info_t *board = board_info();
-    *cols = board->width / MIN_KEY_W;
-    *rows = (board->height - STATUS_HEIGHT) / MIN_KEY_H;
+    *cols = (board->width - 2 * board->inset) / MIN_KEY_W;
+    *rows = (board->height - STATUS_HEIGHT - 2 * board->inset) / MIN_KEY_H;
     if (board->width == 0) {
         *cols = *rows = 3; // no display (no board definition): what the default layout uses
     }
@@ -516,11 +517,16 @@ static void apply_theme_locked(void)
 static void size_screen_locked(void)
 {
     const board_info_t *board = board_info();
-    grid_w = board->width;
-    grid_h = board->height - STATUS_HEIGHT;
-    lv_obj_set_size(status_bar, board->width, STATUS_HEIGHT);
+    // On a screen with rounded corners everything sits inside the inset (children are placed in
+    // the screen's content area, inside its padding).
+    const int inset = board->inset;
+    lv_obj_set_style_pad_all(lv_scr_act(), inset, 0);
+    shift_step = 0; // a turn starts the picture shift again from the middle
+    grid_w = board->width - 2 * inset;
+    grid_h = board->height - STATUS_HEIGHT - 2 * inset;
+    lv_obj_set_size(status_bar, grid_w, STATUS_HEIGHT);
     lv_obj_align(status_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_width(status_label, board->width - 2 * GRID_GAP);
+    lv_obj_set_width(status_label, grid_w - 2 * GRID_GAP);
 }
 
 // Back to the built-in key font; the chosen one is freed. Called with the LVGL lock held.
@@ -674,6 +680,118 @@ void ui_set_theme(display_theme_t which)
     lvgl_port_unlock();
 }
 
+// ---- OLED screens: still pictures burn in ----
+// A keypad shows the same keys for hours. On an OLED screen (board_info()->oled) the screen dims
+// after a minute without a touch and goes dark after ten; the first tap on a dark screen only
+// wakes it (a key nobody can see is never pressed). New keys or an alert from the computer wake
+// it too. Every few minutes the whole picture moves a pixel or two, inside the corner margin.
+#define DIM_AFTER_MS   (60 * 1000)
+#define DARK_AFTER_MS  (10 * 60 * 1000)
+#define DIM_PERCENT    30
+#define SHIFT_EVERY_MS (3 * 60 * 1000)
+
+static lv_obj_t *wake_cover;
+static int brightness_now = 100;
+static bool dark_by_button; // the screen button turned it off: stays off until a tap, the button or news
+static uint32_t shifted_at;
+
+static void screen_on_locked(void)
+{
+    dark_by_button = false;
+    lv_obj_add_flag(wake_cover, LV_OBJ_FLAG_HIDDEN);
+    if (brightness_now != 100) {
+        board_set_backlight(100);
+        brightness_now = 100;
+    }
+}
+
+static void wake_cover_event(lv_event_t *e)
+{
+    screen_on_locked(); // the tap itself counts as activity, so the screen does not dim again at once
+}
+
+static void screen_off_locked(void)
+{
+    dark_by_button = true;
+    board_set_backlight(0);
+    brightness_now = 0;
+    lv_obj_clear_flag(wake_cover, LV_OBJ_FLAG_HIDDEN);
+}
+
+// The screen's padding: the inset, moved by (dx, dy).
+static void pad_screen_locked(int dx, int dy)
+{
+    const int inset = board_info()->inset;
+    lv_obj_t *screen = lv_scr_act();
+    lv_obj_set_style_pad_left(screen, inset + dx, 0);
+    lv_obj_set_style_pad_right(screen, inset - dx, 0);
+    lv_obj_set_style_pad_top(screen, inset + dy, 0);
+    lv_obj_set_style_pad_bottom(screen, inset - dy, 0);
+}
+
+static void screen_guard(lv_timer_t *timer)
+{
+    if (dark_by_button || !board_info()->oled) {
+        return;
+    }
+    const uint32_t idle = lv_disp_get_inactive_time(NULL);
+    const int wanted = idle >= DARK_AFTER_MS ? 0 : idle >= DIM_AFTER_MS ? DIM_PERCENT : 100;
+    if (wanted != brightness_now) {
+        board_set_backlight((uint8_t)wanted);
+        brightness_now = wanted;
+        if (wanted == 0) {
+            lv_obj_clear_flag(wake_cover, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(wake_cover, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    static const int8_t steps[][2] = { { 0, 0 }, { 2, 0 }, { 2, 2 }, { 0, 2 }, { -2, 2 }, { -2, 0 }, { -2, -2 }, { 0, -2 }, { 2, -2 } };
+    if (board_info()->inset >= 2 && lv_tick_elaps(shifted_at) >= SHIFT_EVERY_MS) {
+        shifted_at = lv_tick_get();
+        shift_step = (shift_step + 1) % (int)(sizeof(steps) / sizeof(steps[0]));
+        pad_screen_locked(steps[shift_step][0], steps[shift_step][1]);
+    }
+}
+
+// Something new from the computer: an OLED screen wakes for it (called with the LVGL lock held).
+static void wake_locked(void)
+{
+    if (wake_cover != NULL) {
+        lv_disp_trig_activity(NULL);
+        screen_on_locked();
+    }
+}
+
+// The board's buttons (board_button_presses): next page, and the screen off or back on.
+static void button_timer(lv_timer_t *timer)
+{
+    const uint32_t presses = board_button_presses();
+    if (presses & BOARD_BUTTON_SCREEN) {
+        if (brightness_now == 0) {
+            lv_disp_trig_activity(NULL);
+            screen_on_locked();
+        } else {
+            screen_off_locked();
+        }
+    }
+    if ((presses & BOARD_BUTTON_PAGE) && brightness_now > 0 && layout.pages > 1) {
+        lv_disp_trig_activity(NULL);
+        turn_page(true);
+    }
+}
+
+static void start_screen_guard_locked(void)
+{
+    wake_cover = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(wake_cover);
+    lv_obj_set_size(wake_cover, LV_PCT(100), LV_PCT(100));
+    lv_obj_add_flag(wake_cover, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(wake_cover, wake_cover_event, LV_EVENT_PRESSED, NULL);
+    shifted_at = lv_tick_get();
+    lv_timer_create(screen_guard, 1000, NULL);
+    lv_timer_create(button_timer, 50, NULL);
+}
+
 void ui_start(void)
 {
     default_layout(&layout);
@@ -754,6 +872,7 @@ void ui_start(void)
     show_splash_locked();
     update_status_locked();
     lv_timer_create(status_timer, 250, NULL);
+    start_screen_guard_locked();
     lvgl_port_unlock();
 }
 
@@ -772,6 +891,7 @@ void ui_apply_layout(const ui_layout_t *new_layout)
     }
     draw_keys_locked();
     update_status_locked();
+    wake_locked();
     lvgl_port_unlock();
 }
 
@@ -824,5 +944,8 @@ void ui_show_status(const char *text, ui_status_level_t level, uint32_t ttl_seco
     status_level = level;
     status_expires_us = ttl_seconds ? esp_timer_get_time() + (int64_t)ttl_seconds * 1000000 : 0;
     update_status_locked();
+    if (level != UI_STATUS_INFO) {
+        wake_locked(); // an agent waiting, a failure: worth lighting the screen for
+    }
     lvgl_port_unlock();
 }

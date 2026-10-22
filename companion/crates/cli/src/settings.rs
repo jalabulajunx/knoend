@@ -7,7 +7,7 @@
 
 use serde_json::{json, Value};
 
-use crate::display::{self, KeySize, Theme};
+use crate::display::{self, Display, KeySize, Theme};
 use crate::service::Shared;
 
 /// One setting as the assistant and the web app see it.
@@ -15,15 +15,50 @@ fn describe(id: &str, title: &str, meaning: &str, choices: Value, current: Value
     json!({"id": id, "title": title, "meaning": meaning, "choices": choices, "current": current, "shows": shows})
 }
 
-/// Every setting, with its current value.
+/// The look settings: each board keeps its own (display.rs `BoardLook`).
+const PER_BOARD: &[&str] = &["key_size", "theme", "turn", "key_font", "start_font", "start_size"];
+
+/// The board settings apply to: `wanted` when it is paired, else the first connected board, else
+/// the first paired one; None when no board is paired.
+async fn target_board(shared: &Shared, wanted: Option<&str>) -> Option<String> {
+    let paired: Vec<String> = knoend_transport::pairing::Pairings::load().boards.keys().cloned().collect();
+    if let Some(id) = wanted.filter(|id| paired.iter().any(|p| p == id)) {
+        return Some(id.to_string());
+    }
+    let connected = shared.status.read().await.boards.first().map(|b| b.id.clone());
+    connected.or_else(|| paired.first().cloned())
+}
+
+/// Every setting, with its current value; the look settings for the first connected board.
 pub async fn all(shared: &Shared) -> Vec<Value> {
-    let d = display::load();
-    let board = shared.status.read().await.board.clone();
+    all_for(shared, None).await
+}
+
+/// Every setting, with its current value; the look settings (`per_board`) for board `wanted`.
+pub async fn all_for(shared: &Shared, wanted: Option<&str>) -> Vec<Value> {
+    let target = target_board(shared, wanted).await;
+    let saved = display::load();
+    let d = target.as_deref().map(|id| saved.for_board(id)).unwrap_or_else(|| saved.clone());
+    let connected = shared.status.read().await.boards.clone();
+    let board = target.as_deref().and_then(|id| connected.iter().find(|b| b.id == id)).cloned();
     let shown = board.as_ref().and_then(|b| b.display.clone());
     let can_look = shown.is_some();
     let can_font = board.as_ref().is_some_and(|b| b.fonts.is_some());
-    let can_listen = board.as_ref().is_some_and(|b| b.mic);
-    vec![
+    let can_listen = connected.iter().any(|b| b.mic);
+    let paired: Vec<String> = knoend_transport::pairing::Pairings::load().boards.keys().cloned().collect();
+    let board_choices: Vec<Value> = paired.iter().map(|id| {
+        let label = match connected.iter().find(|b| &b.id == id) {
+            Some(b) => format!("{} ({id}, connected)", b.profile),
+            None => format!("{id} (not connected)"),
+        };
+        json!({"value": id, "label": label})
+    }).collect();
+    let mut settings = vec![
+        describe("board", "Board",
+                 "Which board the look settings (those with per_board) apply to: each board keeps its own key size, look, \
+                  way round, fonts and start-up size, and a newly paired board starts from the defaults. To change another \
+                  board's look, give its id as \"board\" with the changes.",
+                 json!(board_choices), json!(target), "chooses which board the look settings below show and change"),
         describe("key_size", "Key size",
                  "The grid every page of keys on the board uses. A layout's keys fill it in order; the rest go on further \
                   pages the person swipes through. Bigger keys are easier to read and tap.",
@@ -40,8 +75,7 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
         describe("turn", "Way round",
                  "Which way the board sits. Portrait is tall, with at most 3 keys across; upside down suits a cable that \
                   must come out of the other side. Touch follows the turn.",
-                 json!([{"value": 0, "label": "Landscape"}, {"value": 1, "label": "Portrait"},
-                        {"value": 2, "label": "Landscape, upside down"}, {"value": 3, "label": "Portrait, upside down"}]),
+                 turn_choices(board.as_ref().is_some_and(|b| b.native_portrait)),
                  json!(d.turn),
                  if can_look { "at once, on the board (firmware that cannot turn refuses it and says so)" } else { "after the board's firmware is updated" }),
         font_setting("key_font", "Key font",
@@ -80,7 +114,20 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
                   every 5 minutes.",
                  json!([{"value": true, "label": "On"}, {"value": false, "label": "Off"}]),
                  json!(d.assistant_watches), "at once"),
-    ]
+    ];
+    for setting in settings.iter_mut().filter(|s| s["id"].as_str().is_some_and(|id| PER_BOARD.contains(&id))) {
+        setting["per_board"] = json!(true);
+        setting["board"] = json!(target);
+    }
+    settings
+}
+
+/// The four turns, named for how the board usually sits: on a board that is portrait at turn 0
+/// (an AMOLED watch), turn 0 is Portrait.
+pub fn turn_choices(native_portrait: bool) -> Value {
+    let (usual, across) = if native_portrait { ("Portrait", "Landscape") } else { ("Landscape", "Portrait") };
+    json!([{"value": 0, "label": usual}, {"value": 1, "label": across},
+           {"value": 2, "label": format!("{usual}, upside down")}, {"value": 3, "label": format!("{across}, upside down")}])
 }
 
 /// A font setting: no fixed choices, a Google Fonts family name or empty.
@@ -158,15 +205,22 @@ fn allowed(setting: &Value, value: &Value) -> bool {
 /// Applies changes `{id: value}`, each checked against its choices; unknown ids and values are
 /// refused, and nothing is changed then. Returns what each change was, in words.
 pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) -> Result<Vec<String>, String> {
-    let settings = all(shared).await;
+    // The look settings go to the board named by "board", else the first connected one.
+    let wanted = changes.get("board").and_then(Value::as_str);
+    if wanted.is_some() && target_board(shared, wanted).await.as_deref() != wanted {
+        return Err(format!("no board {} is paired with this computer", wanted.unwrap_or_default()));
+    }
+    let target = target_board(shared, wanted).await;
+    let settings = all_for(shared, target.as_deref()).await;
     let mut done = Vec::new();
-    for (id, value) in changes {
+    for (id, value) in changes.iter().filter(|(id, _)| id.as_str() != "board") {
         let setting = settings.iter().find(|s| s["id"] == id.as_str()).ok_or_else(|| format!("there is no setting called {id}"))?;
         let label = change_label(setting, value)
             .ok_or_else(|| format!("{} cannot be {value}", setting["title"].as_str().unwrap_or(id)))?;
         done.push(format!("{}: {label}", setting["title"].as_str().unwrap_or(id)));
     }
-    let mut d = display::load();
+    let mut saved = display::load();
+    let mut d = target.as_deref().map(|id| saved.for_board(id)).unwrap_or_else(|| saved.clone());
     let look = (d.theme, d.turn, d.key_font.clone(), d.start_font.clone(), d.start_size);
     let home = (d.home_apps.clone(), d.home_fill);
     let mut key_size = None;
@@ -188,15 +242,27 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
     if let Some(k) = key_size {
         d.key_size = k;
     }
-    display::save(&d)?;
+    // The computer's settings at the top level, the look as the board's own.
+    saved.assistant_watches = d.assistant_watches;
+    saved.home_apps = d.home_apps.clone();
+    saved.home_fill = d.home_fill;
+    saved.listen_quiet = d.listen_quiet;
+    match target.as_deref() {
+        Some(id) => saved.set_board(id, &d),
+        None => saved = Display { boards: saved.boards.clone(), ..d.clone() },
+    }
+    display::save(&saved)?;
     if let Some(k) = key_size {
         shared.key_size_changed(k);
     } else if home != (d.home_apps.clone(), d.home_fill) {
         // The board's screen is drawn again (the home screen with it), as for a new key size.
         shared.key_size_changed(d.key_size);
     }
-    if look != (d.theme, d.turn, d.key_font.clone(), d.start_font.clone(), d.start_size) {
-        shared.look_changed(d.clone());
+    if let Some(id) = target.filter(|_| look != (d.theme, d.turn, d.key_font.clone(), d.start_font.clone(), d.start_size)) {
+        shared.look_changed(id);
+    }
+    if let Some(board) = changes.get("board").and_then(Value::as_str) {
+        done.insert(0, format!("Board: {board}"));
     }
     Ok(done)
 }
@@ -204,6 +270,13 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn turns_are_named_for_how_the_board_usually_sits() {
+        assert_eq!(turn_choices(false)[0]["label"], "Landscape");
+        assert_eq!(turn_choices(true)[0]["label"], "Portrait");
+        assert_eq!(turn_choices(true)[3]["label"], "Landscape, upside down");
+    }
 
     #[test]
     fn a_value_must_be_one_of_the_choices() {

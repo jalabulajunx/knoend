@@ -71,6 +71,21 @@ C3, C6) are not supported.
 
 ### Identifying and flashing
 
+- **A board KnoEnd does not know (#63).** Identify (and `knoend devices`, and the `identify_board`
+  check) reads the chip, its flash size, and, without writing anything, the firmware on it: the
+  partition table and each app's project, version and components. A vendor's firmware names the
+  board's support package and its display and touch drivers, which identify the board when the chip
+  cannot. A board KnoEnd lists with another flash size is never offered; when no listed board
+  matches the chip, flash size and USB connection, the answer is "a board KnoEnd does not know" and
+  nothing is chosen for the person. Seen 2026-10-21: an ESP32-S3 with 32 MB flash on native USB
+  carried `phone_s3_box_3` (a demo's name, not the board) and `xiaozhi` 1.8.5 with components
+  `waveshare__esp32_s3_touch_amoled_2_06` and `waveshare__esp_lcd_sh8601`: a Waveshare
+  ESP32-S3-Touch-AMOLED-2.06. Its QSPI AMOLED is not a display KnoEnd's firmware drives (SPI LCDs
+  with ST7789 or ILI9341; touch GT911, CST816, CST826, FT6336), so KnoEnd cannot run on it yet and
+  must not be installed: the screen would stay blank. Before trying anything on such a board, back
+  its flash up (`esptool.py read_flash 0 <flash size> backup.bin`); `write_flash 0 backup.bin`
+  restores it.
+
 - **"Could not reach the chip's bootloader".** Another program holds the port; or the cable or USB
   port is flaky; or the board's auto-reset does not work. Manual bootloader mode: hold BOOT (GPIO0),
   tap RESET, release BOOT, then try again.
@@ -155,6 +170,16 @@ C3, C6) are not supported.
 
 ### How the board looks
 
+- **Several boards (#15):** every paired board the computer reaches is connected at once, and they
+  mirror each other: the same keys, a tap on any of them runs it. **Each board keeps its own look**
+  (key size, theme, way round, fonts, start-up size; `board_looks` in the snapshot); a board paired
+  later starts from the defaults (Dark, its usual way round, medium keys, built-in font), and the
+  settings list's "board" says which board the look settings show. While several are connected,
+  pages use the smallest of their key-size grids, so they show the same pages; each board draws
+  them at its own size. **Way round is named for how each board usually sits**: an AMOLED watch is
+  portrait at turn 0, so its "Portrait" is turn 0 and "Landscape" turn 1. **A board shows the wrong
+  look after pairing:** check that the change named that board (`board` in the settings fix).
+
 - **Key size, Look and Way round** are settings (dashboard, setup's "Keys and look" step, and the
   assistant's settings list). Key size is the grid every page uses (Big 2x2, Medium 3x3 by default,
   Small 4x4); an app's keys fill it in order and the rest go on further pages. The look (Dark,
@@ -235,6 +260,16 @@ prints `listen: loudest N dB in the last second` and `listen: note C4 (...)`.
   "KnoEnd" made with loopMIDI, and says so when there is none (untested).
 
 ### Bluetooth keyboard
+
+- **Bluetooth carries the keys and, with current firmware, the service's link too.** A board paired
+  with the computer as a Bluetooth keyboard types its keys. The service also reaches it over the
+  KnoEnd data service beside the keyboard (identity `transports` has `ble-data`) when the board is
+  on neither Wi-Fi nor USB: the Board section then shows its address as "Bluetooth". **The board
+  types but does not follow apps, and the Board section says "paired, not connected":** its
+  firmware has no data service (update it), or it is not paired as a keyboard with this computer,
+  or Bluetooth is off. Linux (BlueZ) tested 2026-10-21 (found in about 3 s, ping 90 ms); macOS
+  needs the Bluetooth permission for the app the service runs from; Windows untested. Fonts over
+  Bluetooth are slow (10-20 s).
 
 - **Windows says "Try connecting your device again" when pairing "KnoEnd".** The Windows Bluetooth
   radio adapter or stack frequently hangs or holds a half-formed handshake attempt. Fix: toggle

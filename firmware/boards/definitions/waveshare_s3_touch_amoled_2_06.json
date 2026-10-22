@@ -1,0 +1,131 @@
+{
+  "id": "waveshare_s3_touch_amoled_2_06",
+  "name": "Waveshare ESP32-S3-Touch-AMOLED-2.06",
+  "chip": "esp32s3",
+  "serial": "usb-serial-jtag",
+  "native_usb": true,
+  "speaker": false,
+  "i2c": {
+    "sda": 15,
+    "scl": 14,
+    "pullup": true
+  },
+  "display": {
+    "driver": "sh8601",
+    "bus": "qspi",
+    "sclk": 11,
+    "data": [
+      4,
+      5,
+      6,
+      7
+    ],
+    "cs": 12,
+    "reset": 8,
+    "width": 410,
+    "height": 502,
+    "x_gap": 22,
+    "even_areas": true,
+    "corner_radius": 80,
+    "oled": true,
+    "pclk_hz": 40000000,
+    "brightness": "panel",
+    "rotation": 0,
+    "init_cmds": [
+      {
+        "cmd": 17,
+        "delay_ms": 120
+      },
+      {
+        "cmd": 196,
+        "data": [
+          128
+        ]
+      },
+      {
+        "cmd": 68,
+        "data": [
+          1,
+          209
+        ]
+      },
+      {
+        "cmd": 53,
+        "data": [
+          0
+        ]
+      },
+      {
+        "cmd": 83,
+        "data": [
+          32
+        ],
+        "delay_ms": 10
+      },
+      {
+        "cmd": 99,
+        "data": [
+          255
+        ],
+        "delay_ms": 10
+      },
+      {
+        "cmd": 81,
+        "data": [
+          0
+        ],
+        "delay_ms": 10
+      },
+      {
+        "cmd": 42,
+        "data": [
+          0,
+          22,
+          1,
+          175
+        ]
+      },
+      {
+        "cmd": 43,
+        "data": [
+          0,
+          0,
+          1,
+          245
+        ]
+      },
+      {
+        "cmd": 41,
+        "delay_ms": 10
+      },
+      {
+        "cmd": 81,
+        "data": [
+          255
+        ]
+      }
+    ]
+  },
+  "touch": {
+    "driver": "ft5x06",
+    "address": 56,
+    "reset": 9,
+    "max_x": 410,
+    "max_y": 502
+  },
+  "buttons": [
+    {
+      "gpio": 0,
+      "action": "page"
+    },
+    {
+      "power_key": "axp2101",
+      "address": 52,
+      "action": "screen"
+    }
+  ],
+  "sources": [
+    "https://www.waveshare.com/esp32-s3-touch-amoled-2.06.htm (ESP32-S3R8, 32 MB flash, 2.06\" AMOLED 410x502 on QSPI, FT3168 touch)",
+    "Waveshare's board support package waveshare/esp32_s3_touch_amoled_2_06 2.0.0, Apache-2.0 (components.espressif.com): pins, the panel's start-up commands, x offset 22, even-aligned updates; read 2026-10-21"
+  ]
+}

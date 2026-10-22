@@ -64,6 +64,8 @@
             <dt>Address</dt><dd id="f-address"></dd>
             <dt>ID</dt><dd id="f-id"></dd>
           </dl>
+          <!-- Every other paired board: the same keys (mirrored), each with its own look. -->
+          <div id="other-boards"></div>
           <p class="actions left">
             <button type="button" id="change-wifi" class="secondary small-button">Change Wi-Fi</button>
             <button type="button" id="dashboard-bluetooth" class="secondary small-button">Bluetooth settings</button>
@@ -72,6 +74,8 @@
         <article class="card look">
           <h2>Look</h2>
           <div class="controls">
+          <label class="inline" id="look-board-wrap" hidden>Board
+            <select id="look-board" title="Each board keeps its own look"></select></label>
           <label class="inline">Key size
             <select id="key-size">
               <option value="big">Big: 2x2</option>
@@ -205,7 +209,8 @@
           <li><button type="button" data-known="look"><strong>Keys and look</strong><span class="sub">Key size, colours, which way round, fonts</span></button></li>
           <li><button type="button" data-known="wifi"><strong id="known-wifi-title">Wi-Fi</strong><span class="sub" id="known-wifi">Join or change the board's network (over USB)</span></button></li>
           <li><button type="button" data-known="bluetooth"><strong>Bluetooth keyboard</strong><span class="sub">Pair the board as "KnoEnd" with this computer, a tablet or a phone</span></button></li>
-          <li><button type="button" data-known="install"><strong>Install firmware again</strong><span class="sub">Update this board, or set up another one</span></button></li>
+          <li><button type="button" data-known="another"><strong>Add another board</strong><span class="sub">Plug it in by USB: it shows the same keys, with a look of its own</span></button></li>
+          <li><button type="button" data-known="install"><strong>Install firmware again</strong><span class="sub">Update this board's firmware</span></button></li>
         </ul>
       </article>
       <article class="card" id="mode-card">

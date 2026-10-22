@@ -70,6 +70,7 @@ function renderStatus(s) {
     $("f-firmware").textContent = s.board.firmware;
     $("f-address").textContent = s.board.address;
     $("f-id").textContent = s.board.id;
+    renderOtherBoards(s);
   }
   // A new board connection (a restart for a new look, other firmware): the choices follow it.
   const look = s.board ? JSON.stringify([s.board.firmware, s.board.display]) : "";
@@ -94,6 +95,35 @@ function renderStatus(s) {
   conf.textContent = s.configuring ? `The AI agent is drafting keys for ${s.configuring}...` : "";
 }
 
+/** Paired boards as /display last listed them (connected or not), for the Board section. */
+let pairedBoards = [];
+
+/** The Board section's other boards: each connected one with its facts (it shows the same keys,
+ * mirrored), and each paired one the service cannot reach now. */
+function renderOtherBoards(s) {
+  const connected = s?.boards || [];
+  const blocks = connected.slice(1).map((b) => facts(b.profile, [
+    ["Firmware", b.firmware], ["Address", b.address], ["ID", b.id], ["Keys", "the same keys, mirrored; its own look"]]));
+  for (const p of pairedBoards.filter((p) => !connected.some((b) => b.id === p.id))) {
+    blocks.push(facts(p.profile || "Paired board", [["ID", p.id],
+      ["State", "paired, not connected: give it Wi-Fi or plug it in by USB (Bluetooth alone types keys only)"]]));
+  }
+  $("other-boards").replaceChildren(...blocks);
+}
+
+function facts(title, rows) {
+  const dl = document.createElement("dl");
+  dl.className = "facts other-board";
+  for (const [k, v] of [["Board", title], ...rows]) {
+    const dt = document.createElement("dt");
+    dt.textContent = k;
+    const dd = document.createElement("dd");
+    dd.textContent = v;
+    dl.append(dt, dd);
+  }
+  return dl;
+}
+
 /** The person's display choices as last saved (or being tried in setup). */
 let displayState = { key_size: "medium", theme: "dark", turn: 0 };
 
@@ -103,7 +133,8 @@ let displayState = { key_size: "medium", theme: "dark", turn: 0 };
  */
 function drawScreen(el, layout, look) {
   if (!el) return;
-  const portrait = look.turn % 2 === 1;
+  // A board that is tall as it comes (an AMOLED watch) is portrait at turn 0.
+  const portrait = (look.turn % 2 === 1) !== !!look.native_portrait;
   el.className = `screen ${["white", "sepia"].includes(look.theme) ? look.theme : ""} ${portrait ? "portrait" : ""}`;
   // The keys as the board shows them now (it already follows the key size); turned to portrait, the
   // same slots in at most 3 columns and 4 rows.
@@ -676,7 +707,10 @@ function renderKnown() {
   if (fromKnown) delete $("apps-back").dataset.back; else $("apps-back").dataset.back = "6";
   if (!board) return;
   const wifi = !board.address.startsWith("USB");
-  $("known-text").textContent = `${board.profile} with firmware ${board.firmware}, connected ${wifi ? "over Wi-Fi" : "by USB"}. Pick what you'd like to do next.`;
+  const others = (s.boards || []).slice(1);
+  $("known-text").textContent = `${board.profile} with firmware ${board.firmware}, connected ${wifi ? "over Wi-Fi" : "by USB"}`
+    + (others.length ? `; also connected: ${others.map((b) => b.profile).join(", ")} (showing the same keys)` : "")
+    + ". Pick what you'd like to do next.";
   $("known-wifi-title").textContent = wifi ? "Change Wi-Fi" : "Wi-Fi";
   $("known-wifi").textContent = wifi ? "Move the board to another network (over the USB cable)" : "Use the board wirelessly, away from the cable (set over USB)";
   const waiting = apps.list.filter((a) => a.state === "none" && a.minutes > 0).length;
@@ -699,15 +733,28 @@ document.addEventListener("click", (e) => {
   if (e.target.closest("[data-known-back]")) { e.preventDefault(); backToBoard(); }
 });
 
+/** Forgets the board a set-up was about, so the next one starts clean (its id, identity, pairing). */
+function forgetSetupBoard() {
+  delete setup.boardId;
+  setup.identified = null;
+  setup.usbPaired = false;
+  setup.port = null;
+  setup.board = null;
+}
+
 document.querySelectorAll("[data-known]").forEach((b) => b.addEventListener("click", () => {
   setup.picked = true;
+  const shown = renderStatus.last?.board;
   const go = {
     apps: () => openApps(),
-    look: () => { setTask("setup"); keySizeStep(); },
+    // This board's own look (each board keeps its own).
+    look: () => { setTask("setup"); setup.boardId = shown?.id; keySizeStep(); },
+    // Another board: from "Find the board", with nothing carried over from this one.
+    another: () => { forgetSetupBoard(); setTask("setup"); step(1); scanPorts(); },
     // Joining or changing Wi-Fi goes over the USB cable: find the port, then the network.
     wifi: () => { setTask("wifi"); step(1); scanPorts(); },
     bluetooth: () => { setTask("setup"); step(6); },
-    install: () => { setTask("setup"); step(1); scanPorts(); },
+    install: () => { forgetSetupBoard(); setTask("setup"); step(1); scanPorts(); },
   }[b.dataset.known];
   renderKnown();
   go();
@@ -761,11 +808,17 @@ const THEMES = [
 ];
 
 const TURNS = [
-  ["0", "Landscape", "Wide, as the board comes."],
-  ["1", "Portrait", "Tall: the board turned a quarter clockwise. Three keys across at most."],
-  ["2", "Landscape, upside down", "Wide, turned half way round: for a cable that has to come out of the other side."],
-  ["3", "Portrait, upside down", "Tall, turned a quarter anticlockwise."],
+  ["0", "Landscape", "As the board comes."],
+  ["1", "Portrait", "The board turned a quarter clockwise."],
+  ["2", "Landscape, upside down", "Turned half way round: for a cable that has to come out of the other side."],
+  ["3", "Portrait, upside down", "Turned a quarter anticlockwise."],
 ];
+
+/** The turns named for how this board usually sits (`turns` from /display): on an AMOLED watch,
+ * which is tall as it comes, turn 0 is Portrait. */
+function turnsFor(d) {
+  return TURNS.map(([v, label, sub], i) => [v, d?.turns?.[i]?.label || label, sub]);
+}
 
 // ---- fonts from Google Fonts: the list live from the service, previews loaded by the browser ----
 
@@ -835,10 +888,17 @@ for (const [id, field] of [["key-font", "key_font"], ["key-font-setup", "key_fon
   });
 }
 
+/** The board whose look the dashboard (and the set-up's look step) shows and changes: each board
+ * keeps its own (#15). Null: the first connected board. */
+let lookBoard = null;
+/** The set-up's look step for a board that is not paired yet: choices change the preview only. */
+let lookPreviewOnly = false;
+
 async function saveDisplay(change) {
   displayState = { ...displayState, ...change };
   redrawScreens();
-  const saved = await api("/display", change);
+  if (lookPreviewOnly) return displayState;
+  const saved = await api("/display", lookBoard ? { ...change, board: lookBoard } : change);
   displayState = { ...displayState, ...saved };
   $("key-size").value = saved.key_size;
   $("theme").value = saved.theme;
@@ -850,23 +910,48 @@ async function saveDisplay(change) {
 
 /** Fills the dashboard's choices; the look only when the board's firmware can change it. */
 async function loadDisplay() {
-  const d = await api("/display");
-  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font };
+  const d = await api(lookBoard ? `/display?board=${encodeURIComponent(lookBoard)}` : "/display");
+  lookBoard = d.board || null;
+  pairedBoards = d.boards || [];
+  renderOtherBoards(renderStatus.last);
+  showLookBoards(d);
+  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font, native_portrait: d.native_portrait };
   showFonts(d);
   redrawScreens();
   $("key-size").value = d.key_size;
   $("theme").value = d.theme;
+  turnsFor(d).forEach(([v, label]) => { const o = $("turn").querySelector(`option[value="${v}"]`); if (o) o.textContent = label; });
   $("turn").value = String(d.turn);
   // Kept and shown in the preview either way; the board takes it once its firmware can.
   $("theme").title = d.board_can_change_look ? "" : "This board's firmware has one look only: the preview shows it, and the board takes it after a firmware update.";
   return d;
 }
 
+/** The board picker above the look: shown when more than one board is paired. */
+function showLookBoards(d) {
+  const boards = d.boards || [];
+  $("look-board-wrap").hidden = boards.length < 2;
+  $("look-board").replaceChildren(...boards.map((b) => {
+    const option = document.createElement("option");
+    option.value = b.id;
+    option.textContent = `${b.profile || b.id}${b.connected ? "" : " (not connected)"}`;
+    option.selected = b.id === d.board;
+    return option;
+  }));
+}
+$("look-board").addEventListener("change", (e) => { lookBoard = e.target.value; loadDisplay().catch(() => {}); });
+
 /** Setup step 4: keys and look, available right after USB install/identify (before Wi-Fi or Bluetooth). */
 async function keySizeStep() {
   step(4);
   $("setup-done").hidden = true;
-  const current = await api("/display").catch(() => ({ key_size: "medium", theme: "dark", board_can_change_look: false }));
+  // The board being set up: its own look, not another board's.
+  const settingUp = setup.boardId || setup.identified?.running?.deviceId || null;
+  lookPreviewOnly = !settingUp;
+  if (lookPreviewOnly) logTo($("activity"), "This board is not paired with this computer yet: the look shows in the preview, and is saved for the board once it is paired.");
+  lookBoard = settingUp;
+  const current = await api(lookBoard ? `/display?board=${encodeURIComponent(lookBoard)}` : "/display")
+    .catch(() => ({ key_size: "medium", theme: "dark", board_can_change_look: false }));
   const fill = (list, name, choices, value, disabled) => {
     list.replaceChildren();
     for (const [v, title, sub] of choices) {
@@ -878,10 +963,11 @@ async function keySizeStep() {
   fill($("key-size-setup"), "key-size-choice", KEY_SIZES, current.key_size);
   // The preview shows every look; the board follows when its firmware can.
   fill($("theme-setup"), "theme-choice", THEMES, current.theme);
-  fill($("turn-setup"), "turn-choice", TURNS, String(current.turn || 0));
+  fill($("turn-setup"), "turn-choice", turnsFor(current), String(current.turn || 0));
   const canLook = !!(current.board_can_change_look || setup.justInstalled || setup.identified?.running?.hasDisplay);
   $("theme-note").hidden = canLook;
-  displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0, key_font: current.key_font, start_font: current.start_font };
+  displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0, key_font: current.key_font, start_font: current.start_font,
+                   native_portrait: current.native_portrait };
   showFonts(current);
   redrawScreens();
   // Each choice applies at once: on the board (over USB or Wi-Fi), and in the preview.
@@ -895,7 +981,7 @@ async function keySizeStep() {
 }
 
 // Every choice is applied as it is made; the buttons let the person finish over USB or continue to optional Wi-Fi / Bluetooth.
-$("key-size-save").addEventListener("click", () => { $("setup-done").hidden = false; });
+$("key-size-save").addEventListener("click", () => { $("setup-done").hidden = false; lookPreviewOnly = false; });
 $("to-wifi").addEventListener("click", () => { step(5); scanWifi(); });
 $("to-bluetooth").addEventListener("click", () => bluetoothStep());
 
@@ -1005,7 +1091,7 @@ $("identify").addEventListener("click", async () => {
   status.textContent = "Asking the board who it is (this restarts it for a moment)...";
   $("identify").disabled = true;
   try {
-    const result = await api("/identify", { port: setup.port });
+    const result = await api("/identify", { port: setup.port, assisting: setup.mode === "ai" && aiReady });
     const [firmware] = await Promise.all([api("/firmware").catch(() => null)]);
     setup.firmware = firmware;
     setup.justInstalled = false;
@@ -1014,20 +1100,25 @@ $("identify").addEventListener("click", async () => {
     setup.identified = {
       chip: result.chip,
       chipError: result.chipError,
-      running: result.running ? { firmware: result.running.firmware, profile: result.running.board?.profile, hasDisplay: !!result.running.board?.display } : null,
+      running: result.running ? { firmware: result.running.firmware, profile: result.running.board?.profile, hasDisplay: !!result.running.board?.display,
+                                  deviceId: result.running.deviceId } : null,
       candidates: result.candidates,
+      known: result.known !== false,
+      summary: result.summary,
     };
     const chip = result.chip;
     const running = result.running;
     $("chip-summary").textContent = [
       chip ? `${chip.chip} ${chip.revision || ""}, ${chip.flash_size} flash, MAC ${chip.mac || "?"}` : `Chip not identified: ${result.chipError}`,
-      running ? `Running KnoEnd ${running.firmware} (${running.board.profile}).` : "Not running KnoEnd yet.",
+      running ? `Running KnoEnd ${running.firmware} (${running.board.profile}).` : carries(chip),
     ].join(" ");
     $("erase").checked = !running;
     $("skip-install").hidden = !running;
-    renderCandidates(result.candidates);
+    renderCandidates(result.candidates, result.known !== false, result.running_unlisted ? running : null);
     status.hidden = true;
     step(2);
+    // Asked as a question, not an error; the evidence goes in the context (identify_result).
+    if (result.known === false && chip && setup.mode === "ai" && aiReady) ask("Which board is this, and can KnoEnd run on it?");
   } catch (e) {
     status.className = "note error";
     status.textContent = `Could not identify the board: ${e.message}`;
@@ -1043,6 +1134,7 @@ async function pairOverUsb(logList) {
   try {
     const result = await api("/provision", { port: setup.port, ssid: null, password: null });
     setup.usbPaired = true;
+    setup.boardId = result.board; // the look chosen next is this board's own
     if (logList) logTo(logList, `Paired with board ${result.board} over USB.`);
     return true;
   } catch (e) {
@@ -1061,16 +1153,45 @@ $("skip-install").addEventListener("click", async () => {
   }
 });
 
-function renderCandidates(candidates) {
+/** What firmware a board not running KnoEnd carries now ("Carries xiaozhi 1.8.5 and phone_s3_box_3."). */
+function carries(chip) {
+  const apps = chip?.firmware?.apps || [];
+  if (!chip?.firmware) return "Not running KnoEnd yet.";
+  if (!apps.length) return "Its flash holds no app (erased, or not ESP-IDF).";
+  return `Not running KnoEnd: it carries ${apps.map((a) => `${a.project} ${a.version}`.trim()).join(" and ")}.`;
+}
+
+function renderCandidates(candidates, known = true, runningUnlisted = null) {
   const list = $("candidates");
   list.replaceChildren();
   setup.board = null;
   $("install").disabled = true;
-  if (!candidates.length) {
+  if (runningUnlisted) {
+    // KnoEnd from a build newer than the release: installing from the release would take it away.
     const li = document.createElement("li");
-    li.className = "muted";
-    li.textContent = "No known board matches this hardware yet.";
+    li.className = "note";
+    li.textContent = `This board already runs KnoEnd ${runningUnlisted.firmware} as ${runningUnlisted.board?.profile}. `
+      + "Choose Skip install: the firmware release this computer installs from does not include this board yet, "
+      + "so installing from it would leave the screen blank.";
     list.append(li);
+    return;
+  }
+  if (!known) {
+    // Chip alone matches every board with that chip: no guess is offered as the answer.
+    const li = document.createElement("li");
+    li.className = "note";
+    li.textContent = "KnoEnd does not know this board: no board it lists has this chip, flash size and USB connection. "
+      + "Do not install KnoEnd on it yet; its own firmware is untouched. "
+      + (aiReady ? "The assistant can tell you which board it most likely is and whether KnoEnd can run on it." : "Set up the AI and ask the assistant which board it is.");
+    list.append(li);
+    if (aiReady && setup.mode !== "ai") {
+      const ask_ = document.createElement("button");
+      ask_.type = "button";
+      ask_.className = "ghost";
+      ask_.textContent = "° Ask the assistant which board this is";
+      ask_.addEventListener("click", () => ask("Which board is this, and can KnoEnd run on it?"));
+      li.append(document.createElement("br"), ask_);
+    }
   }
   // Boards that look the same over USB (native-USB S3 boards all do): let the person choose.
   const installable = candidates.filter((c) => c.status === "supported" || c.status === "unverified");
@@ -1090,7 +1211,8 @@ function renderCandidates(candidates) {
     const { li, input } = choice("board", c.board, c.name, prefix + c.reasons.join("; "), !installable);
     input.addEventListener("change", () => { setup.board = c.board; $("install").disabled = false; });
     list.append(li);
-    if (!picked && installable) { picked = true; input.checked = true; setup.board = c.board; $("install").disabled = false; }
+    // A guess (chip only) is listed for someone who knows better, never chosen for them.
+    if (!picked && installable && known) { picked = true; input.checked = true; setup.board = c.board; $("install").disabled = false; }
   });
 }
 

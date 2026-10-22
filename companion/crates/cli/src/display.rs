@@ -1,7 +1,13 @@
-//! How the person wants the board: the key size, the theme and which way it sits, chosen at setup
-//! and changeable on the dashboard. Kept in `~/.config/knoend/display.json` (one board per
-//! computer for now, #15). The theme and turn are sent to the board (`knoend.display`,
+//! How the person wants their boards: each board's key size, theme, which way it sits, fonts and
+//! start-up size (`BoardLook`, one per board: an AMOLED watch and a landscape LCD want different
+//! ones, #15), and what belongs to the computer (the home screen, the assistant watching). Kept in
+//! `~/.config/knoend/display.json`. The theme and turn are sent to each board (`knoend.display`,
 //! spec/protocol.md 3.6d), which keeps them; the key size stays here.
+//!
+//! `Display` is read for one board with `for_board`: its look over the computer's settings. A
+//! board with no look of its own yet starts from the defaults. The look fields at the top level of
+//! the file are from before looks were per board: on first load they become the look of every board
+//! paired then.
 //!
 //! Key size is the grid every page is shown in: a layout's keys are packed into pages of that grid,
 //! in order (`layout::packed`), so a 3x3 layout fills a 4x4 page and a 4x4 one spreads over 3x3
@@ -105,6 +111,40 @@ pub struct Display {
     /// While the board listens for notes, sounds quieter than this (dB below full scale) are silence.
     #[serde(default = "listen_quiet")]
     pub listen_quiet: i8,
+    /// Each board's look, by board id.
+    #[serde(default)]
+    pub boards: std::collections::BTreeMap<String, BoardLook>,
+}
+
+/// One board's look: what differs from board to board.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoardLook {
+    #[serde(default)]
+    pub key_size: KeySize,
+    #[serde(default)]
+    pub theme: Theme,
+    #[serde(default)]
+    pub turn: u8,
+    #[serde(default)]
+    pub key_font: String,
+    #[serde(default)]
+    pub start_font: String,
+    #[serde(default = "start_size")]
+    pub start_size: u8,
+}
+
+impl Default for BoardLook {
+    fn default() -> Self {
+        BoardLook { key_size: KeySize::default(), theme: Theme::default(), turn: 0, key_font: String::new(),
+                    start_font: String::new(), start_size: start_size() }
+    }
+}
+
+impl BoardLook {
+    fn of(d: &Display) -> BoardLook {
+        BoardLook { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font.clone(),
+                    start_font: d.start_font.clone(), start_size: d.start_size }
+    }
 }
 
 fn listen_quiet() -> i8 {
@@ -123,11 +163,24 @@ impl Default for Display {
     fn default() -> Self {
         Display { key_size: KeySize::default(), theme: Theme::default(), turn: 0, key_font: String::new(),
                   start_font: String::new(), start_size: start_size(), assistant_watches: true, home_apps: Vec::new(), home_fill: true,
-                  listen_quiet: listen_quiet() }
+                  listen_quiet: listen_quiet(), boards: Default::default() }
     }
 }
 
 impl Display {
+    /// The settings as board `id` sees them: its own look (the defaults for a board with none
+    /// yet) over the computer's settings.
+    pub fn for_board(&self, id: &str) -> Display {
+        let look = self.boards.get(id).cloned().unwrap_or_default();
+        Display { key_size: look.key_size, theme: look.theme, turn: look.turn, key_font: look.key_font,
+                  start_font: look.start_font, start_size: look.start_size, ..self.clone() }
+    }
+
+    /// Stores the look fields of `seen` (a `for_board` copy, changed) as board `id`'s look.
+    pub fn set_board(&mut self, id: &str, seen: &Display) {
+        self.boards.insert(id.to_string(), BoardLook::of(seen));
+    }
+
     /// The `knoend.display` body for the board.
     pub fn look(&self) -> serde_json::Value {
         serde_json::json!({"theme": self.theme, "turn": self.turn, "startSize": self.start_size})
@@ -150,7 +203,30 @@ fn path() -> std::path::PathBuf {
 
 /// The saved choice, or the defaults.
 pub fn load() -> Display {
-    std::fs::read_to_string(path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    let text = std::fs::read_to_string(path()).ok();
+    let mut display: Display = text.as_deref().and_then(|t| serde_json::from_str(t).ok()).unwrap_or_default();
+    // Saved before looks were per board: the one look becomes that of every board paired now.
+    if display.boards.is_empty() && text.is_some() {
+        let paired: Vec<String> = knoend_transport::pairing::Pairings::load().boards.keys().cloned().collect();
+        if migrate(&mut display, &paired) {
+            let _ = save(&display);
+        }
+    }
+    display
+}
+
+/// Gives every board in `paired` the look saved at the top level, before looks were per board.
+fn migrate(display: &mut Display, paired: &[String]) -> bool {
+    let look = BoardLook::of(display);
+    for id in paired {
+        display.boards.insert(id.clone(), look.clone());
+    }
+    !paired.is_empty()
+}
+
+/// Board `id`'s settings (see `Display::for_board`).
+pub fn for_board(id: &str) -> Display {
+    load().for_board(id)
 }
 
 pub fn save(display: &Display) -> Result<(), String> {
@@ -179,7 +255,25 @@ mod tests {
         assert_eq!(serde_json::from_str::<Display>("{}").unwrap().key_size, KeySize::Medium);
         assert_eq!(serde_json::to_value(Display { key_size: KeySize::Big, ..Default::default() }).unwrap(),
                    serde_json::json!({"key_size": "big", "theme": "dark", "turn": 0, "key_font": "", "start_font": "",
-                                      "start_size": 64, "assistant_watches": true, "home_apps": [], "home_fill": true, "listen_quiet": -60}));
+                                      "start_size": 64, "assistant_watches": true, "home_apps": [], "home_fill": true, "listen_quiet": -60,
+                                      "boards": {}}));
+    }
+
+    #[test]
+    fn each_board_has_its_own_look_and_a_new_one_starts_from_the_defaults() {
+        // Saved before looks were per board, for the ONX.
+        let mut d: Display = serde_json::from_str(r#"{"theme": "sepia", "turn": 1, "key_font": "Silkscreen", "home_fill": false}"#).unwrap();
+        assert!(migrate(&mut d, &["80b54edbcdb8".to_string()]));
+        let onx = d.for_board("80b54edbcdb8");
+        assert_eq!((onx.theme, onx.turn, onx.key_font.as_str()), (Theme::Sepia, 1, "Silkscreen"));
+        let amoled = d.for_board("28848590beb8");
+        assert_eq!((amoled.theme, amoled.turn, amoled.key_font.as_str(), amoled.start_size), (Theme::Dark, 0, "", 64), "a new board: defaults");
+        assert!(!amoled.home_fill, "the computer's settings are shared");
+        let mut changed = amoled.clone();
+        changed.key_size = KeySize::Big;
+        d.set_board("28848590beb8", &changed);
+        assert_eq!(d.for_board("28848590beb8").key_size, KeySize::Big);
+        assert_eq!(d.for_board("80b54edbcdb8").key_size, KeySize::Medium, "the other board keeps its own");
     }
 
     #[test]

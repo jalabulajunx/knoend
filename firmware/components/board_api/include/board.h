@@ -22,6 +22,8 @@ typedef struct {
     bool has_speaker;
     bool has_native_usb; // true when the USB-C port can enumerate as a USB keyboard
     bool has_mic;        // a microphone named by the board definition ("mic")
+    uint16_t inset;      // keep content this far from every edge: a screen with rounded corners
+    bool oled;           // an OLED/AMOLED screen: still pictures burn in, so the UI dims and shifts
 } board_info_t;
 
 // Which line the companion talks to over USB.
@@ -46,6 +48,13 @@ void board_set_backlight(uint8_t percent);
 // Turns the screen `turn` quarter turns clockwise from the board's usual landscape (0-3); touch
 // follows. board_info() then gives the new width and height. Call with the LVGL lock held.
 void board_set_turn(int turn);
+
+// Physical buttons the definition names, and what each is for. board_button_presses() returns
+// the presses since it was last called, one bit per action (a GPIO button pressed to ground, or the
+// power key of an AXP2101 power chip); call it every 50-100 ms.
+#define BOARD_BUTTON_PAGE   (1u << 0) // next page of keys
+#define BOARD_BUTTON_SCREEN (1u << 1) // screen off, or back on
+uint32_t board_button_presses(void);
 
 // The microphone, when the definition names one: mono 16-bit samples at `sample_rate` Hz.
 // board_mic_read() waits up to `timeout_ms` and returns how many samples it put in `samples`.

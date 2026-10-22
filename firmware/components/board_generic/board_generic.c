@@ -20,6 +20,7 @@
 #include "driver/spi_master.h"
 #include "esp_check.h"
 #include "esp_lcd_ili9341.h"
+#include "esp_lcd_sh8601.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
@@ -37,7 +38,7 @@ static const char *TAG = "board";
 
 #define DEFINITION_SUBTYPE 0x40
 #define DEFINITION_MAX     4096
-#define TOUCH_REG_POINTS   0x02 // FocalTech layout (CST816, CST826, FT6336): count, then X high/low, Y high/low
+#define TOUCH_REG_POINTS   0x02 // FocalTech layout (CST816, CST826, FT6336, FT5x06): count, then X high/low, Y high/low
 #define GT911_REG_STATUS   0x814E // bit 7: new data ready; bits 0-3: number of points
 #define GT911_REG_POINT1   0x8150 // X low, X high, Y low, Y high
 #define MAX_INIT_CMDS      32
@@ -73,6 +74,13 @@ typedef struct {
     int expander_address, expander_initial;
     char display_driver[16];
     int sclk, mosi, dc, cs;
+    bool qspi;              // four data lines (AMOLED panels: SH8601, CO5300); commands are framed
+    int data[4];            // QSPI data lines 0-3
+    int x_gap, y_gap;       // where the visible area starts in the panel's memory
+    bool even_areas;        // the panel only takes updates that start and end on even pixels
+    bool dcs_brightness;    // no backlight: brightness is the panel's own command (0x51)
+    int corner_radius;      // a screen with rounded corners (most AMOLED watches), px
+    bool oled;              // pixels that burn in (OLED, AMOLED)
     line_t lcd_reset;
     bool reset_active_high;
     init_cmd_t init_cmds[MAX_INIT_CMDS];
@@ -88,6 +96,10 @@ typedef struct {
     line_t touch_reset;
     int touch_max_x, touch_max_y;
     bool touch_swap_xy, touch_mirror_x, touch_mirror_y;
+    int button_gpio[4];     // buttons to ground, -1 when unused
+    uint32_t button_action[4];
+    int power_chip_address; // an AXP2101 power chip whose power key is a button; 0 when none
+    uint32_t power_key_action;
     int mic_clk, mic_data;  // a PDM microphone; -1 when there is none
     bool mic_right;         // the microphone answers in the right slot
     bool mic_slot_fixed;    // the definition names the slot; otherwise the louder one is used
@@ -173,6 +185,20 @@ static esp_err_t parse(const char *text)
     def.dc = get_int(display, "dc", -1);
     def.cs = get_int(display, "cs", -1);
     def.lcd_reset = get_line(display, "reset");
+    char bus[8];
+    get_str(display, "bus", bus, sizeof(bus));
+    def.qspi = strcmp(bus, "qspi") == 0;
+    const cJSON *data_pins = cJSON_GetObjectItemCaseSensitive(display, "data");
+    for (int i = 0; i < 4; i++) {
+        const cJSON *pin = cJSON_GetArrayItem(data_pins, i);
+        def.data[i] = cJSON_IsNumber(pin) ? pin->valueint : -1;
+    }
+    def.x_gap = get_int(display, "x_gap", 0);
+    def.corner_radius = get_int(display, "corner_radius", 0);
+    def.oled = get_bool(display, "oled");
+    def.y_gap = get_int(display, "y_gap", 0);
+    def.even_areas = get_bool(display, "even_areas");
+    def.dcs_brightness = strcmp(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(display, "brightness")) ?: "", "panel") == 0;
     def.reset_active_high = get_bool(display, "reset_active_high");
     const cJSON *cmds = cJSON_GetObjectItemCaseSensitive(display, "init_cmds");
     const cJSON *cmd;
@@ -209,6 +235,25 @@ static esp_err_t parse(const char *text)
     def.touch_swap_xy = get_bool(touch_json, "swap_xy");
     def.touch_mirror_x = get_bool(touch_json, "mirror_x");
     def.touch_mirror_y = get_bool(touch_json, "mirror_y");
+    // Buttons: [{"gpio": 0, "action": "page"}, {"power_key": "axp2101", "address": 52, "action": "screen"}].
+    for (int i = 0; i < 4; i++) {
+        def.button_gpio[i] = -1;
+    }
+    int buttons = 0;
+    const cJSON *button;
+    cJSON_ArrayForEach(button, cJSON_GetObjectItemCaseSensitive(root, "buttons")) {
+        char action[8], key[12];
+        get_str(button, "action", action, sizeof(action));
+        get_str(button, "power_key", key, sizeof(key));
+        const uint32_t what = strcmp(action, "screen") == 0 ? BOARD_BUTTON_SCREEN : strcmp(action, "page") == 0 ? BOARD_BUTTON_PAGE : 0;
+        if (strcmp(key, "axp2101") == 0) {
+            def.power_chip_address = get_int(button, "address", 0x34);
+            def.power_key_action = what;
+        } else if (buttons < 4 && get_int(button, "gpio", -1) >= 0) {
+            def.button_gpio[buttons] = get_int(button, "gpio", -1);
+            def.button_action[buttons++] = what;
+        }
+    }
     get_str(mic_json, "driver", mic_driver, sizeof(mic_driver));
     get_str(mic_json, "slot", mic_slot, sizeof(mic_slot));
     const bool pdm = strcmp(mic_driver, "pdm") == 0;
@@ -224,17 +269,22 @@ static esp_err_t parse(const char *text)
     // The schema is checked by the companion before writing; this repeats what could harm the
     // board or the chip if it were wrong.
     const int pins[] = { def.sda, def.scl, def.sclk, def.mosi, def.dc, def.cs, def.backlight_gpio,
-                         def.lcd_reset.gpio, def.touch_reset.gpio, def.mic_clk, def.mic_data };
+                         def.lcd_reset.gpio, def.touch_reset.gpio, def.mic_clk, def.mic_data,
+                         def.data[0], def.data[1], def.data[2], def.data[3],
+                         def.button_gpio[0], def.button_gpio[1], def.button_gpio[2], def.button_gpio[3] };
     for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         ESP_RETURN_ON_FALSE(pin_ok(pins[i]), ESP_ERR_INVALID_ARG, TAG, "GPIO %d is not usable on the ESP32-S3", pins[i]);
     }
     ESP_RETURN_ON_FALSE(def.id[0] != '\0' && def.width >= 64 && def.height >= 64, ESP_ERR_INVALID_ARG, TAG, "incomplete definition");
-    ESP_RETURN_ON_FALSE(strcmp(def.display_driver, "st7789") == 0 || strcmp(def.display_driver, "ili9341") == 0,
+    const bool amoled = strcmp(def.display_driver, "sh8601") == 0;
+    ESP_RETURN_ON_FALSE(strcmp(def.display_driver, "st7789") == 0 || strcmp(def.display_driver, "ili9341") == 0 || amoled,
                         ESP_ERR_NOT_SUPPORTED, TAG, "display driver \"%s\" not supported", def.display_driver);
+    ESP_RETURN_ON_FALSE(!amoled || (def.qspi && def.data[0] >= 0 && def.data[1] >= 0 && def.data[2] >= 0 && def.data[3] >= 0),
+                        ESP_ERR_INVALID_ARG, TAG, "sh8601 needs the qspi bus and four data pins");
     if (strcmp(def.touch_driver, "gt911") == 0) {
         def.touch_kind = TOUCH_GT911;
     } else if (strcmp(def.touch_driver, "cst826") == 0 || strcmp(def.touch_driver, "cst816") == 0 ||
-               strcmp(def.touch_driver, "ft6336") == 0) {
+               strcmp(def.touch_driver, "ft6336") == 0 || strcmp(def.touch_driver, "ft5x06") == 0) {
         def.touch_kind = TOUCH_FOCALTECH;
     } else {
         ESP_LOGE(TAG, "touch driver \"%s\" not supported", def.touch_driver);
@@ -329,12 +379,66 @@ static esp_err_t touch_attach(void)
     if (def.touch_kind == TOUCH_GT911 && i2c_master_probe(i2c_bus, address, 50) != ESP_OK) {
         address = address == 0x5D ? 0x14 : 0x5D;
     }
+    ESP_RETURN_ON_ERROR(i2c_master_probe(i2c_bus, address, 50), TAG, "no touch controller answers at 0x%02x", address);
     const i2c_device_config_t config = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = address, .scl_speed_hz = 400000 };
     return i2c_master_bus_add_device(i2c_bus, &config, &touch);
 }
 
+// LVGL draws into buffers in PSRAM; each update is copied into internal memory for the SPI
+// transfer, so a buffer must fit what is free there: an eighth of the screen, at most 12000 pixels
+// (24 KB). A 410x502 AMOLED's eighth (51 KB) failed every update ("spi transmit color failed").
+#define DRAW_BUFFER_MAX_PIXELS 12000
+static int draw_buffer_pixels(void)
+{
+    const int eighth = def.width * def.height / 8;
+    return eighth < DRAW_BUFFER_MAX_PIXELS ? eighth : DRAW_BUFFER_MAX_PIXELS;
+}
+
+static esp_lcd_panel_io_handle_t panel_io;
+static sh8601_lcd_init_cmd_t amoled_cmds[MAX_INIT_CMDS];
+
+// An AMOLED on four data lines (SH8601 and CO5300, which takes the same commands), with Espressif's
+// esp_lcd_sh8601 (Apache-2.0). Its start-up commands come from the definition: the panel's driver
+// sends them framed for QSPI, which a plain command write here would not be.
+static esp_err_t amoled_init(esp_lcd_panel_io_handle_t *io, esp_lcd_panel_handle_t *panel)
+{
+    const spi_bus_config_t bus = SH8601_PANEL_BUS_QSPI_CONFIG(def.sclk, def.data[0], def.data[1], def.data[2], def.data[3],
+                                                              (draw_buffer_pixels() + 2 * def.width) * sizeof(uint16_t));
+    ESP_RETURN_ON_ERROR(spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO), TAG, "qspi");
+    esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(def.cs, NULL, NULL);
+    io_config.pclk_hz = def.pclk_hz;
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_config, io), TAG, "panel io");
+    for (int i = 0; i < def.init_count; i++) {
+        amoled_cmds[i] = (sh8601_lcd_init_cmd_t){ .cmd = def.init_cmds[i].cmd, .data = def.init_cmds[i].data,
+                                                  .data_bytes = def.init_cmds[i].len, .delay_ms = def.init_cmds[i].delay_ms };
+    }
+    sh8601_vendor_config_t vendor = { .init_cmds = def.init_count ? amoled_cmds : NULL, .init_cmds_size = def.init_count,
+                                      .flags = { .use_qspi_interface = 1 } };
+    const esp_lcd_panel_dev_config_t panel_config = {
+        .reset_gpio_num = -1, // pulsed by pulse_reset()
+        .rgb_ele_order = def.bgr ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB,
+        .bits_per_pixel = 16,
+        .vendor_config = &vendor,
+    };
+    ESP_RETURN_ON_ERROR(pulse_reset(def.lcd_reset, def.reset_active_high), TAG, "lcd reset");
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_sh8601(*io, &panel_config, panel), TAG, "sh8601");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(*panel), TAG, "panel reset");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(*panel), TAG, "panel init");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_set_gap(*panel, def.x_gap, def.y_gap), TAG, "gap");
+    if (def.invert) {
+        ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(*panel, true), TAG, "invert");
+    }
+    if (def.mirror_x) {
+        ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(*panel, true, false), TAG, "mirror");
+    }
+    return esp_lcd_panel_disp_on_off(*panel, true);
+}
+
 static esp_err_t display_init(esp_lcd_panel_io_handle_t *io, esp_lcd_panel_handle_t *panel)
 {
+    if (def.qspi) {
+        return amoled_init(io, panel);
+    }
     const spi_bus_config_t bus = {
         .sclk_io_num = def.sclk, .mosi_io_num = def.mosi, .miso_io_num = -1, .quadwp_io_num = -1, .quadhd_io_num = -1,
         .max_transfer_sz = def.width * 40 * sizeof(uint16_t),
@@ -375,6 +479,10 @@ static esp_err_t display_init(esp_lcd_panel_io_handle_t *io, esp_lcd_panel_handl
 
 static esp_err_t backlight_init(void)
 {
+    if (def.dcs_brightness) {
+        backlight_ready = true; // the panel's own brightness, set once the panel is up
+        return ESP_OK;
+    }
     if (def.backlight_gpio < 0) {
         return ESP_OK;
     }
@@ -400,6 +508,14 @@ void board_set_backlight(uint8_t percent)
     if (percent > 100) {
         percent = 100;
     }
+    if (def.dcs_brightness) {
+        // Write Display Brightness (0x51), framed for QSPI as the panel's driver frames commands.
+        if (panel_io != NULL) {
+            const uint8_t level = (uint8_t)(percent * 255 / 100);
+            esp_lcd_panel_io_tx_param(panel_io, (0x02 << 24) | (0x51 << 8), &level, 1);
+        }
+        return;
+    }
     const uint32_t max_duty = (1u << BACKLIGHT_BITS) - 1;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, BACKLIGHT_CHANNEL, max_duty * percent / 100);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, BACKLIGHT_CHANNEL);
@@ -414,6 +530,9 @@ static bool gt911_read(int *x, int *y)
     static int last_x, last_y;
     uint8_t reg[2] = { GT911_REG_STATUS >> 8, GT911_REG_STATUS & 0xFF };
     uint8_t status = 0;
+    if (touch == NULL) {
+        return false;
+    }
     if (i2c_master_transmit_receive(touch, reg, 2, &status, 1, 20) != ESP_OK) {
         return false;
     }
@@ -437,6 +556,9 @@ static bool gt911_read(int *x, int *y)
 
 static bool focaltech_read(int *x, int *y)
 {
+    if (touch == NULL) {
+        return false;
+    }
     uint8_t reg = TOUCH_REG_POINTS;
     uint8_t buf[5];
     if (i2c_master_transmit_receive(touch, &reg, 1, buf, sizeof(buf), 20) != ESP_OK || (buf[0] & 0x0F) == 0) {
@@ -521,6 +643,15 @@ static void redraw_check(lv_timer_t *timer)
     }
 }
 
+// Panels that only take even-aligned updates (AMOLED): every area grows to even edges.
+static void even_rounder(lv_disp_drv_t *drv, lv_area_t *area)
+{
+    area->x1 &= ~1;
+    area->y1 &= ~1;
+    area->x2 |= 1;
+    area->y2 |= 1;
+}
+
 static const lv_disp_rot_t rotations[] = { LV_DISP_ROT_NONE, LV_DISP_ROT_90, LV_DISP_ROT_180, LV_DISP_ROT_270 };
 
 // The screen size for a rotation of the native panel (90 and 270 swap width and height).
@@ -548,7 +679,7 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t 
     ESP_RETURN_ON_ERROR(lvgl_port_init(&port), TAG, "lvgl port");
     const lvgl_port_display_cfg_t display_config = {
         .io_handle = io, .panel_handle = panel,
-        .buffer_size = def.width * def.height / 8, .double_buffer = true,
+        .buffer_size = draw_buffer_pixels(), .double_buffer = true,
         .hres = def.width, .vres = def.height,
         // lvgl_port_add_disp() re-applies swap/mirror from this config when it registers the display,
         // overwriting what display_init() set: give it the definition's values.
@@ -563,6 +694,9 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t 
     port_flush = display->driver->flush_cb;
     display->driver->flush_cb = timed_flush;
     display->driver->wait_cb = flush_wait;
+    if (def.even_areas) {
+        display->driver->rounder_cb = even_rounder;
+    }
     lv_timer_create(redraw_check, 100, NULL);
     lv_disp_set_rotation(display, rotations[def.rotation / 90]);
     static lv_indev_drv_t touch_driver;
@@ -574,6 +708,62 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t 
     lvgl_port_unlock();
     ESP_RETURN_ON_FALSE(indev != NULL, ESP_FAIL, TAG, "lvgl touch");
     return ESP_OK;
+}
+
+// ---- buttons ----
+
+#define AXP2101_INTEN2  0x41 // interrupt enables, second byte
+#define AXP2101_INTSTS2 0x49 // interrupt status, second byte; write 1 to clear
+#define AXP2101_PKEY_SHORT 0x08 // power key short press (XPowersLib, MIT: PKEY_SHORT_IRQ = bit 11)
+
+static i2c_master_dev_handle_t power_chip;
+static bool button_down[4];
+
+static esp_err_t power_chip_write(uint8_t reg, uint8_t value)
+{
+    const uint8_t buf[2] = { reg, value };
+    return i2c_master_transmit(power_chip, buf, sizeof(buf), 20);
+}
+
+static esp_err_t buttons_init(void)
+{
+    for (int i = 0; i < 4 && def.button_gpio[i] >= 0; i++) {
+        const gpio_config_t config = { .pin_bit_mask = 1ULL << def.button_gpio[i], .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE };
+        ESP_RETURN_ON_ERROR(gpio_config(&config), TAG, "button gpio %d", def.button_gpio[i]);
+    }
+    if (def.power_chip_address == 0 || i2c_bus == NULL) {
+        return ESP_OK;
+    }
+    ESP_RETURN_ON_ERROR(i2c_master_probe(i2c_bus, def.power_chip_address, 50), TAG, "no power chip answers at 0x%02x", def.power_chip_address);
+    const i2c_device_config_t config = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = def.power_chip_address, .scl_speed_hz = 400000 };
+    ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(i2c_bus, &config, &power_chip), TAG, "power chip");
+    // Enable the short-press flag (other enables kept), then clear anything already latched.
+    uint8_t reg = AXP2101_INTEN2, enabled = 0;
+    ESP_RETURN_ON_ERROR(i2c_master_transmit_receive(power_chip, &reg, 1, &enabled, 1, 20), TAG, "power chip read");
+    ESP_RETURN_ON_ERROR(power_chip_write(AXP2101_INTEN2, enabled | AXP2101_PKEY_SHORT), TAG, "power chip enable");
+    power_chip_write(AXP2101_INTSTS2, AXP2101_PKEY_SHORT);
+    ESP_LOGI(TAG, "power key on the AXP2101 at 0x%02x", def.power_chip_address);
+    return ESP_OK;
+}
+
+uint32_t board_button_presses(void)
+{
+    uint32_t presses = 0;
+    for (int i = 0; i < 4 && def.button_gpio[i] >= 0; i++) {
+        const bool down = gpio_get_level(def.button_gpio[i]) == 0;
+        if (down && !button_down[i]) {
+            presses |= def.button_action[i];
+        }
+        button_down[i] = down;
+    }
+    if (power_chip != NULL) {
+        uint8_t reg = AXP2101_INTSTS2, status = 0;
+        if (i2c_master_transmit_receive(power_chip, &reg, 1, &status, 1, 20) == ESP_OK && (status & AXP2101_PKEY_SHORT)) {
+            power_chip_write(AXP2101_INTSTS2, AXP2101_PKEY_SHORT);
+            presses |= def.power_key_action;
+        }
+    }
+    return presses;
 }
 
 board_serial_t board_serial(void)
@@ -592,6 +782,10 @@ esp_err_t board_init(void)
         .id = def.id, .name = def.name,
         .has_speaker = def.speaker, .has_native_usb = def.native_usb,
         .has_mic = def.mic_clk >= 0 && def.mic_data >= 0,
+        // A rectangle's corner clears a rounded corner of radius r when it sits r(1 - 1/sqrt 2)
+        // (0.29 r) in from both edges; a little more, for the keys' own edges.
+        .inset = (uint16_t)((def.corner_radius * 3 + 9) / 10),
+        .oled = def.oled,
     };
     set_size(def.rotation);
     ESP_LOGI(TAG, "definition %s: %s display, %s touch", def.id, def.display_driver, def.touch_driver);
@@ -601,7 +795,19 @@ esp_err_t board_init(void)
     ESP_RETURN_ON_ERROR(i2c_init(), TAG, "i2c");
     ESP_RETURN_ON_ERROR(backlight_init(), TAG, "backlight");
     ESP_RETURN_ON_ERROR(display_init(&io, &panel), TAG, "display");
-    ESP_RETURN_ON_ERROR(touch_attach(), TAG, "touch");
+    panel_io = io;
+    // A screen without touch still shows the board's state; a touch that does not answer is logged
+    // rather than leaving the screen dark.
+    // Buttons are extras: one that cannot start is logged and the board runs without it.
+    if (buttons_init() != ESP_OK) {
+        ESP_LOGE(TAG, "buttons did not start; running without them");
+        power_chip = NULL;
+    }
+    err = touch_attach();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "touch did not start (%s); running without touch", esp_err_to_name(err));
+        touch = NULL;
+    }
     return lvgl_init(io, panel);
 }
 

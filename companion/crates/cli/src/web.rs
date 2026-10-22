@@ -262,6 +262,10 @@ async fn ports() -> ApiResult {
 #[derive(Deserialize)]
 struct PortRequest {
     port: String,
+    /// Identify: the web app asks the setup assistant itself about an unknown board (AI-guided
+    /// set-up), so the service does not raise it too.
+    #[serde(default)]
+    assisting: bool,
 }
 
 /// Who is on this port: KnoEnd's own identity if it answers (gentle), else the chip's boot
@@ -285,10 +289,13 @@ async fn identify(State(app): State<App>, Json(request): Json<PortRequest>) -> A
         Err(e) => (None, Some(e)),
     };
     let candidates = match crate::firmware::manifest(&app.shared.firmware_source).await {
-        Ok(m) => serde_json::to_value(m.candidates(&port, chip.as_ref(), profile.as_deref())).unwrap_or_default(),
-        Err(_) => json!([]),
+        Ok(m) => m.candidates(&port, chip.as_ref(), profile.as_deref()),
+        Err(_) => Vec::new(),
     };
-    Ok(Json(json!({"port": port, "chip": chip, "chipError": chip_error, "running": running, "candidates": candidates})))
+    // Whether KnoEnd knows this board; an unknown one goes to the setup assistant (boards.rs).
+    let verdict = crate::boards::record(&port, chip.as_ref(), &candidates, !request.assisting, running.as_ref());
+    Ok(Json(json!({"port": port, "chip": chip, "chipError": chip_error, "running": running, "candidates": candidates,
+                   "known": verdict["known"], "summary": verdict["summary"], "running_unlisted": verdict["running_unlisted"]})))
 }
 
 #[derive(Deserialize)]
@@ -406,24 +413,43 @@ async fn ai_settings() -> ApiResult {
     }
 }
 
-/// How the keys look: the key size (and the grid it allows) and the choices.
-async fn display_settings(State(app): State<App>) -> ApiResult {
-    let display = crate::display::load();
-    let board = app_board(&app).await;
-    Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn,
-                   "key_font": display.key_font, "start_font": display.start_font, "start_size": display.start_size,
-                   "board_can_change_fonts": board.as_ref().is_some_and(|b| b.fonts.is_some()),
-                   // False when the board's firmware has one look only (or no board is connected).
-                   "board_can_change_look": board.is_some_and(|b| b.display.is_some())})))
+#[derive(Deserialize)]
+struct BoardQuery {
+    board: Option<String>,
 }
 
-async fn app_board(app: &App) -> Option<crate::service::BoardStatus> {
-    app.shared.status.read().await.board.clone()
+/// How one board's keys look (each board keeps its own, #15): its key size, theme, turn, fonts
+/// and start-up size, and the boards there are to choose from. `?board=<id>`; without it, the
+/// first connected board.
+async fn display_settings(State(app): State<App>, Query(query): Query<BoardQuery>) -> ApiResult {
+    Ok(Json(look_of(&app, query.board.as_deref()).await))
+}
+
+async fn look_of(app: &App, wanted: Option<&str>) -> Value {
+    let settings = crate::settings::all_for(&app.shared, wanted).await;
+    let id = settings.iter().find(|s| s["id"] == "board").map(|s| s["current"].clone()).unwrap_or(Value::Null);
+    let display = id.as_str().map(crate::display::for_board).unwrap_or_else(crate::display::load);
+    let connected = app.shared.status.read().await.boards.clone();
+    let board = connected.iter().find(|b| Some(b.id.as_str()) == id.as_str());
+    let boards: Vec<Value> = knoend_transport::pairing::Pairings::load().boards.keys().map(|pid| {
+        let on = connected.iter().find(|b| &b.id == pid);
+        json!({"id": pid, "profile": on.map(|b| b.profile.clone()), "connected": on.is_some()})
+    }).collect();
+    json!({"board": id, "boards": boards,
+           "key_size": display.key_size, "theme": display.theme, "turn": display.turn,
+           "key_font": display.key_font, "start_font": display.start_font, "start_size": display.start_size,
+           "turns": crate::settings::turn_choices(board.is_some_and(|b| b.native_portrait)),
+           "native_portrait": board.is_some_and(|b| b.native_portrait),
+           "board_can_change_fonts": board.is_some_and(|b| b.fonts.is_some()),
+           // False when the board's firmware has one look only (or it is not connected).
+           "board_can_change_look": board.is_some_and(|b| b.display.is_some())})
 }
 
 /// Any of the three; what is left out stays as it is.
 #[derive(Deserialize)]
 struct DisplayRequest {
+    /// The board whose look this is; the first connected board when left out.
+    board: Option<String>,
     key_size: Option<Value>,
     theme: Option<Value>,
     turn: Option<Value>,
@@ -441,10 +467,11 @@ async fn save_display(State(app): State<App>, Json(request): Json<DisplayRequest
             changes.insert(id.into(), value);
         }
     }
+    if let Some(board) = &request.board {
+        changes.insert("board".into(), json!(board));
+    }
     crate::settings::apply(&app.shared, &changes).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
-    let display = crate::display::load();
-    Ok(Json(json!({"key_size": display.key_size, "theme": display.theme, "turn": display.turn,
-                   "key_font": display.key_font, "start_font": display.start_font, "start_size": display.start_size})))
+    Ok(Json(look_of(&app, request.board.as_deref()).await))
 }
 
 /// Google Fonts' families with Latin letters, live (fonts.rs), for the font picker.

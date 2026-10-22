@@ -99,9 +99,10 @@ touch controller and pins, so adding a board is usually a definition, not new co
 | Espressif ESP32-S3-BOX-3 | unverified | 2.4" 320×240 ILI9342C | GT911 |
 | Waveshare ESP32-S3-Touch-LCD-2 | unverified | 2" 240×320 ST7789T3 | CST816D |
 | Freenove FNK0104B | coming | 2.8" 320×240 ILI9341 | FT6336 |
+| Waveshare ESP32-S3-Touch-AMOLED-2.06 | unverified (run on the board; not yet in a release) | 2.06" 410×502 AMOLED, QSPI (SH8601/CO5300) | FT3168 (FT5x06) |
 
 "Unverified" means written from the maker's documentation and not yet run on the board. Any
-ESP32-S3 board with octal PSRAM, an ST7789 or ILI9341 SPI display and CST816, CST826, FT6336 or
+ESP32-S3 board with octal PSRAM, an ST7789 or ILI9341 SPI display (or an SH8601-family QSPI AMOLED) and CST816, CST826, FT6336, FT5x06 or
 GT911 touch can be added; see [docs/boards/research.md](docs/boards/research.md).
 
 ## What works today
@@ -122,6 +123,11 @@ a Freenove FNK0104B with Linux and macOS:
   icons and site favicons
 - Claude Code permission requests and questions answered from the board
 - An AI setup assistant in the web app that knows the failures we have hit
+- Several boards on one computer at once, mirroring each other, each with its own look (key size,
+  theme, way round, fonts); every board reached over Wi-Fi, USB or Bluetooth alone (the Bluetooth
+  data service beside the keyboard; tested on Linux)
+- A board KnoEnd does not know is said plainly, from the firmware already on it, and the assistant
+  names it
 
 Builds but untested: the unverified boards (`esp32_s3_box_3`, `waveshare_s3_touch_lcd_2`).
 
