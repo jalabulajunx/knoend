@@ -284,6 +284,16 @@ prints `listen: loudest N dB in the last second` and `listen: note C4 (...)`.
 - **Pairing never completes with a number prompt.** The board uses "Just Works" (no number); if a
   desktop agent (e.g. Blueman on Linux) shows a confirmation, accept it. The board's Bluetooth
   address is its base MAC + 2.
+- **The board takes minutes to connect, or the computer briefly shows a Bluetooth pairing prompt
+  every 20 s (macOS focuses `BluetoothUIServer`; the board shows "Unsupported" for a moment).** A
+  board paired with this computer earlier is not around (a friend's board, one since erased), and
+  the service looks for it over Bluetooth. It cannot tell boards apart before opening them, so it
+  opens the board that is connected over Wi-Fi too; a board not paired as a keyboard with this
+  computer refuses (its serial log: `GATT_INSUF_AUTHENTICATION`, then `smp_rsp_timeout` about 30 s
+  later), and the service waits that long. Seen on macOS with the FNK0104B, 2026-10-22: 2.5 minutes
+  to the first connection. Workaround until the service is fixed: remove the absent board's pairing
+  (a new set-up with that board pairs it again). Confirmed: with the stale pairing removed, the
+  board connected in 2 s and no Bluetooth attempt followed.
 
 ### macOS
 
