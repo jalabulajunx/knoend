@@ -3,7 +3,8 @@
 //! for several apps at once, before they are used.
 //!
 //! Linux: the menus' desktop entries (class: StartupWMClass or the program; instance: the program).
-//! macOS: the `.app` bundles in the Applications folders (app: the bundle id; instance: the name).
+//! macOS: the `.app` bundles in the Applications folders, Apple's included, and Finder (app: the
+//! bundle id; instance: the name).
 //! Windows: the programs registered under `App Paths` (app: "Code.exe"; instance: "Code").
 
 /// One installed app.
@@ -42,18 +43,20 @@ fn linux_app(entry: crate::apps::App) -> Option<Installed> {
 #[cfg(target_os = "macos")]
 fn os_list() -> Vec<Installed> {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
-    let folders = [std::path::PathBuf::from("/Applications"), std::path::PathBuf::from("/Applications/Utilities"), home.join("Applications")];
+    // Apple's own apps (Notes, Terminal...) are in /System/Applications; Finder alone of CoreServices.
+    let folders = ["/Applications", "/Applications/Utilities", "/System/Applications", "/System/Applications/Utilities"]
+        .map(std::path::PathBuf::from).into_iter().chain([home.join("Applications")]);
+    let bundles = folders.flat_map(|folder| std::fs::read_dir(folder).into_iter().flatten().flatten().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "app"))
+        .chain([std::path::PathBuf::from("/System/Library/CoreServices/Finder.app")]);
     let mut apps = Vec::new();
-    for folder in folders {
-        let Ok(entries) = std::fs::read_dir(&folder) else { continue };
-        for path in entries.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "app")) {
-            let plist = path.join("Contents/Info.plist");
-            let read = |key: &str| std::process::Command::new("plutil").args(["-extract", key, "raw", "-o", "-"]).arg(&plist).output().ok()
-                .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|v| !v.is_empty());
-            let Some(bundle) = read("CFBundleIdentifier") else { continue };
-            let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or(&bundle).to_string();
-            apps.push(Installed { id: bundle.clone(), name: name.clone(), app: bundle, instance: name });
-        }
+    for path in bundles {
+        let plist = path.join("Contents/Info.plist");
+        let read = |key: &str| std::process::Command::new("plutil").args(["-extract", key, "raw", "-o", "-"]).arg(&plist).output().ok()
+            .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|v| !v.is_empty());
+        let Some(bundle) = read("CFBundleIdentifier") else { continue };
+        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or(&bundle).to_string();
+        apps.push(Installed { id: bundle.clone(), name: name.clone(), app: bundle, instance: name });
     }
     apps
 }

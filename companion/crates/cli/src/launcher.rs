@@ -120,6 +120,23 @@ impl Usage {
         self.save();
     }
 
+    /// Forgets the apps `gone` names (by id) and saves: on macOS, background programs such as
+    /// loginwindow were counted before #74.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn forget_apps(&mut self, gone: impl Fn(&str) -> bool) {
+        if self.drop_apps(gone) {
+            self.save();
+        }
+    }
+
+    /// Drops the apps `gone` names; sites stay. True if any went.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn drop_apps(&mut self, gone: impl Fn(&str) -> bool) -> bool {
+        let before = self.items.len();
+        self.items.retain(|key, _| key.strip_prefix("app:").is_none_or(|id| !gone(id)));
+        self.items.len() != before
+    }
+
     /// The top `n`, best first.
     /// Seconds `key` ("app:firefox") has been in front, all time.
     pub fn seconds(&self, key: &str) -> f64 {
@@ -164,6 +181,10 @@ pub fn usage_key(focus: &Focus, apps: &[AppInfo]) -> Option<(String, Entry)> {
         return Some((format!("site:{host}"), entry(host.clone(), Target::Site { host: web.host.clone() })));
     }
     if cfg!(target_os = "macos") {
+        #[cfg(target_os = "macos")]
+        if knoend_desktop::mac_apps::background(&focus.app) {
+            return None;
+        }
         return (!focus.app.is_empty()).then(|| (format!("app:{}", focus.app),
                                                  entry(focus.display_name().to_string(), Target::App { id: focus.app.clone() })));
     }
@@ -288,6 +309,21 @@ mod tests {
         assert_eq!(names(&usage.home(&pinned, true, 9, name)), ["MuseScore", "github.com", "Firefox"], "pinned, then the rest by use");
         assert_eq!(names(&usage.home(&pinned, false, 9, name)), ["MuseScore", "github.com"], "pinned only");
         assert_eq!(names(&usage.home(&[], true, 1, name)), ["Firefox"]);
+    }
+
+    #[test]
+    fn background_programs_are_forgotten() {
+        let mut usage = Usage::default();
+        let entry = |name: &str, target: Target| Entry { name: name.into(), target, seconds: 60.0, last: now() };
+        for id in ["com.apple.Terminal", "com.apple.loginwindow"] {
+            usage.items.insert(format!("app:{id}"), entry(id, Target::App { id: id.into() }));
+        }
+        usage.items.insert("site:github.com".into(), entry("github.com", Target::Site { host: "github.com".into() }));
+        assert!(!usage.drop_apps(|_| false));
+        assert!(usage.drop_apps(|id| id == "com.apple.loginwindow"));
+        let mut kept: Vec<_> = usage.items.keys().cloned().collect();
+        kept.sort();
+        assert_eq!(kept, ["app:com.apple.Terminal", "site:github.com"], "sites stay");
     }
 
     #[test]

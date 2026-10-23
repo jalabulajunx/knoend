@@ -2107,3 +2107,28 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - Release v0.2.2 cut and tagged.
 - Open:
   - None.
+
+## 2026-10-22 - Tom (Claude Code, Opus 5.5) - macOS app lists: Apple's apps, no background programs (#73, #74)
+
+- Changed:
+  - `desktop/src/installed.rs`: macOS also lists `/System/Applications` (and its Utilities) and
+    Finder (#73).
+  - `desktop/src/mac_apps.rs` `background`, used by `cli/src/launcher.rs`: on macOS a background
+    program (found by Spotlight under /System/Library, Finder excepted, or marked LSUIElement /
+    LSBackgroundOnly) is not counted as used, and at start the service forgets those already in
+    `usage.json`: loginwindow, Spotlight, Dock, controlcenter, UserNotificationCenter,
+    BluetoothUIServer no longer fill the home screen (#74).
+- Tested (macOS 26.6, FNK0104B over Wi-Fi):
+  - Bug on main: Tom's 2026-10-22 test (16 apps listed; loginwindow and others on the home screen).
+  - `/api/apps`: 82 apps (16 before), with Finder, Terminal, Notes, Mail, Calendar, Preview.
+  - `usage.json` after start: VS Code, Firefox, Terminal, Finder, Calculator, Clock, VLC kept; the
+    seven background programs gone. Home screen on the board (Tom): real apps only.
+  - `cargo test -p knoend launcher`: passing (new `apps_not_installed_are_forgotten`).
+- Decided:
+  - Codex review: the first version counted only apps found at start in the Applications folders;
+    Codex pointed out that drops apps in subfolders and apps installed while the service runs. Now
+    each app is checked where Spotlight finds it, once per run.
+    A second pass found Keychain Access and DVD Player (in /System/Library/CoreServices/Applications)
+    were skipped too; Applications folders under /System/Library now count as apps.
+- Open:
+  - None.

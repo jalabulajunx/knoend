@@ -630,6 +630,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs Sundar's own Copy of MindStudio Bootcamp.pptx, not in the repository"]
     fn load_mindstudio_notes() {
         let pres = load_presentation("Copy of MindStudio Bootcamp.pptx");
         assert!(pres.is_some(), "Presentation file not found");
