@@ -2162,5 +2162,7 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
     (could undo a size set elsewhere); a save that failed could not be retried with the same
     choice (the page now goes back to what is saved); Escape while the catalogue loaded let the
     menu open after. Menu text in the text colour, not the label's grey (Tom noticed).
+  - Third pass: an older font save failing after a newer one succeeded put the field back two
+    picks; after a failure the field now takes the font the service holds.
 - Open:
   - None.

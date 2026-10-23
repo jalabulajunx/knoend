@@ -886,10 +886,10 @@ function settle(field, ms, then) {
 }
 
 /** A look change that was not saved: said, and the page back to what is saved, so the same choice
- * can be tried again. */
+ * can be tried again. Resolves once the saved look is read back. */
 function lookNotSaved(what, err) {
   alert(`Could not change the ${what}: ${err.message}`);
-  loadDisplay().catch(() => {});
+  return loadDisplay().catch(() => {});
 }
 
 /** Sends the start-up size, once it is a size and differs from what was sent. */
@@ -974,13 +974,12 @@ function fontMenu(input, field) {
     close();
     input.value = family;
     if (family === chosen) return;
-    const before = chosen;
     chosen = family;
-    saveDisplay({ [field]: family }).catch((err) => {
-      chosen = before;
-      if (document.activeElement !== input) input.value = before;
-      lookNotSaved("font", err);
-    });
+    // After a failure, the font the service holds (a newer pick may have been saved meanwhile).
+    saveDisplay({ [field]: family }).catch((err) => lookNotSaved("font", err).then(() => {
+      chosen = displayState[field] || "";
+      if (document.activeElement !== input) input.value = chosen;
+    }));
   };
   // Keeps the field focused: a click on the menu would otherwise leave it first.
   menu.addEventListener("mousedown", (e) => {
