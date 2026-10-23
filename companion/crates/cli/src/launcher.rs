@@ -122,6 +122,7 @@ impl Usage {
 
     /// Forgets the apps `gone` names (by id) and saves: on macOS, background programs such as
     /// loginwindow were counted before #74.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn forget_apps(&mut self, gone: impl Fn(&str) -> bool) {
         if self.drop_apps(gone) {
             self.save();
@@ -129,6 +130,7 @@ impl Usage {
     }
 
     /// Drops the apps `gone` names; sites stay. True if any went.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     fn drop_apps(&mut self, gone: impl Fn(&str) -> bool) -> bool {
         let before = self.items.len();
         self.items.retain(|key, _| key.strip_prefix("app:").is_none_or(|id| !gone(id)));

@@ -45,7 +45,8 @@ fn bundle_path(bundle_id: &str, name: &str) -> Option<PathBuf> {
 }
 
 /// A background program rather than an app the person opens: one of macOS's own under
-/// /System/Library (loginwindow, Spotlight, Control Center; Finder is not), or one marked as having
+/// /System/Library outside its Applications folders (loginwindow, Spotlight, Control Center; Finder
+/// is not), or one marked as having
 /// no Dock icon (LSUIElement, LSBackgroundOnly). One not found is an app. Remembered per bundle id.
 pub fn background(bundle_id: &str) -> bool {
     static CACHE: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
@@ -56,7 +57,9 @@ pub fn background(bundle_id: &str) -> bool {
         let plist = bundle.join("Contents/Info.plist");
         let flag = |key: &str| plist.to_str().and_then(|p| output("plutil", &["-extract", key, "raw", "-o", "-", p]))
             .is_some_and(|v| v == "true" || v == "1");
-        (bundle.starts_with("/System/Library") && bundle_id != "com.apple.finder") || flag("LSUIElement") || flag("LSBackgroundOnly")
+        // Apps Apple keeps there (Keychain Access) are in an Applications folder.
+        let system = bundle.starts_with("/System/Library") && !bundle.components().any(|c| c.as_os_str() == "Applications");
+        (system && bundle_id != "com.apple.finder") || flag("LSUIElement") || flag("LSBackgroundOnly")
     });
     if let Ok(mut cache) = CACHE.lock() {
         cache.get_or_insert_with(HashMap::new).insert(bundle_id.to_string(), found);

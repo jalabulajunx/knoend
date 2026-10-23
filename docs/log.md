@@ -2128,5 +2128,7 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - Codex review: the first version counted only apps found at start in the Applications folders;
     Codex pointed out that drops apps in subfolders and apps installed while the service runs. Now
     each app is checked where Spotlight finds it, once per run.
+    A second pass found Keychain Access and DVD Player (in /System/Library/CoreServices/Applications)
+    were skipped too; Applications folders under /System/Library now count as apps.
 - Open:
   - None.
