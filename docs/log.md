@@ -2132,3 +2132,24 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
     were skipped too; Applications folders under /System/Library now count as apps.
 - Open:
   - None.
+
+## 2026-10-23 - Tom (Claude Code, Opus 5.5) - Font fields open their list every time; size and font shown at once (#50)
+
+- Changed (`web/app.js`):
+  - A font field empties while in use, so the whole Google Fonts list opens every time (a browser
+    lists only entries matching the field); the current choice is its placeholder, and leaving
+    without picking keeps it. "Built-in (Montserrat)" is the list's first entry.
+  - A font picked from the list goes to the board without leaving the field (after 0.8 s, so a
+    name typed in full can still grow: "Roboto" of "Roboto Mono"). The start-up size goes 1 s
+    after the last step.
+- Tested (macOS 26.6, FNK0104B over Wi-Fi):
+  - #50 point 2 (size alone not sent) no longer happens on main: `POST /api/display
+    {"start_size": 95}` logs `Display: asking the board for {"startSize":95,...}` and the board
+    reports 95 (put back to 96 after).
+  - `app.js` parses (JavaScriptCore, `new Function`); no new element ids.
+  - In the browser with the board: see below.
+- Decided:
+  - The browser's own list (`<datalist>`) stays, emptied on focus, rather than a drop-down written
+    for the web app: the smallest change before the demo.
+- Open:
+  - None.

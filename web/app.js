@@ -835,6 +835,8 @@ function turnsFor(d) {
 // ---- fonts from Google Fonts: the list live from the service, previews loaded by the browser ----
 
 let fontFamilies = null;
+/** The font list's first entry: back to the board's own font. */
+const BUILT_IN_FONT = "Built-in (Montserrat)";
 
 /** Fills the font search list from Google's catalogue (once per page). */
 async function loadFontFamilies() {
@@ -842,7 +844,7 @@ async function loadFontFamilies() {
   fontFamilies = [];
   try {
     ({ families: fontFamilies } = await api("/fonts"));
-    $("font-families").replaceChildren(...fontFamilies.map((f) => new Option(f.category ? `${f.family} (${f.category})` : f.family, f.family)));
+    $("font-families").replaceChildren(new Option(BUILT_IN_FONT), ...fontFamilies.map((f) => new Option(f.category ? `${f.family} (${f.category})` : f.family, f.family)));
   } catch (err) {
     fontFamilies = null;
     logTo($("activity"), `Could not load the list of Google Fonts: ${err.message}`, "error");
@@ -878,26 +880,69 @@ function showFonts(d) {
   }
 }
 
+/** Waits for the person to stop changing a field (`ms`) before `then`; one timer per field. */
+function settle(field, ms, then) {
+  clearTimeout(field.settling);
+  field.settling = setTimeout(then, ms);
+}
+
+/** Sends the start-up size, once it is a size and differs from what was sent. */
+function pickSize(input) {
+  clearTimeout(input.settling);
+  const size = Number(input.value);
+  if (!Number.isInteger(size) || size < 24 || size > 96) { input.reportValidity(); return; }
+  if (size === displayState.start_size) return;
+  saveDisplay({ start_size: size }).catch((err) => alert(`Could not change the size: ${err.message}`));
+}
+
 for (const id of ["start-size", "start-size-setup"]) {
-  $(id).addEventListener("change", (e) => {
-    const size = Number(e.target.value);
-    if (!Number.isInteger(size) || size < 24 || size > 96) { e.target.reportValidity(); return; }
-    saveDisplay({ start_size: size }).catch((err) => alert(`Could not change the size: ${err.message}`));
-  });
+  // Shown on the board 1 s after the last step, not on every one (#50).
+  $(id).addEventListener("input", (e) => settle(e.target, 1000, () => pickSize(e.target)));
+  $(id).addEventListener("change", (e) => pickSize(e.target));
+}
+
+/** Sends the font named in `input`: a family from the list, or the built-in one. An unfinished
+ * name waits; when `done` (the person left the field) it is pointed out. */
+function pickFont(input, field, done) {
+  clearTimeout(input.settling);
+  const typed = input.value.trim();
+  if (!typed) return;
+  const family = typed === BUILT_IN_FONT ? "" : typed;
+  if (family && fontFamilies && !fontFamilies.some((f) => f.family === family)) {
+    if (done) {
+      input.setCustomValidity("Pick a family from the list");
+      input.reportValidity();
+    }
+    return;
+  }
+  input.setCustomValidity("");
+  if (family === input.dataset.chosen) return;
+  input.dataset.chosen = family;
+  saveDisplay({ [field]: family }).catch((err) => alert(`Could not change the font: ${err.message}`));
 }
 
 for (const [id, field] of [["key-font", "key_font"], ["key-font-setup", "key_font"], ["start-font", "start_font"], ["start-font-setup", "start_font"]]) {
-  $(id).addEventListener("focus", loadFontFamilies);
-  $(id).addEventListener("change", (e) => {
-    const family = e.target.value.trim();
-    if (family && fontFamilies && !fontFamilies.some((f) => f.family === family)) {
-      e.target.setCustomValidity("Pick a family from the list");
-      e.target.reportValidity();
-      return;
-    }
-    e.target.setCustomValidity("");
-    saveDisplay({ [field]: family }).catch((err) => alert(`Could not change the font: ${err.message}`));
+  const input = $(id);
+  input.dataset.placeholder = input.placeholder;
+  // A browser lists only the entries matching what the field holds: it is emptied while in use,
+  // so the whole list opens every time, with the current choice as its placeholder (#50).
+  input.addEventListener("focus", () => {
+    loadFontFamilies();
+    input.dataset.chosen = input.value.trim();
+    input.placeholder = input.dataset.chosen || BUILT_IN_FONT;
+    input.value = "";
   });
+  input.addEventListener("blur", () => {
+    clearTimeout(input.settling);
+    const typed = input.value.trim();
+    if (!typed || typed === BUILT_IN_FONT || typed !== input.dataset.chosen) input.value = input.dataset.chosen || "";
+    input.placeholder = input.dataset.placeholder;
+    input.setCustomValidity("");
+  });
+  // A family picked from the list reaches the board without leaving the field; a name typed in
+  // full waits a moment, in case it is the start of a longer one ("Roboto" of "Roboto Mono").
+  input.addEventListener("input", () => settle(input, 800, () => pickFont(input, field, false)));
+  input.addEventListener("change", () => pickFont(input, field, true));
 }
 
 /** The board whose look the dashboard (and the set-up's look step) shows and changes: each board
@@ -927,7 +972,8 @@ async function loadDisplay() {
   pairedBoards = d.boards || [];
   renderOtherBoards(renderStatus.last);
   showLookBoards(d);
-  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font, native_portrait: d.native_portrait };
+  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font, start_size: d.start_size,
+                  native_portrait: d.native_portrait };
   showFonts(d);
   redrawScreens();
   $("key-size").value = d.key_size;
@@ -1036,7 +1082,7 @@ async function keySizeStep() {
   const canLook = !!(current.board_can_change_look || setup.justInstalled || setup.identified?.running?.hasDisplay);
   $("theme-note").hidden = canLook;
   displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0, key_font: current.key_font, start_font: current.start_font,
-                   native_portrait: current.native_portrait };
+                   start_size: current.start_size, native_portrait: current.native_portrait };
   showFonts(current);
   redrawScreens();
   // Each choice applies at once: on the board (over USB or Wi-Fi), and in the preview.
