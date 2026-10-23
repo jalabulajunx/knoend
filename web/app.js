@@ -835,19 +835,18 @@ function turnsFor(d) {
 // ---- fonts from Google Fonts: the list live from the service, previews loaded by the browser ----
 
 let fontFamilies = null;
+/** The catalogue request while it is on its way: every menu waits for the same one. */
+let fontsLoading = null;
 /** The font menu's first entry: back to the board's own font. */
 const BUILT_IN_FONT = "Built-in (Montserrat)";
 
 /** Loads Google's catalogue for the font menus (once per page). */
-async function loadFontFamilies() {
-  if (fontFamilies) return;
-  fontFamilies = [];
-  try {
-    ({ families: fontFamilies } = await api("/fonts"));
-  } catch (err) {
-    fontFamilies = null;
+function loadFontFamilies() {
+  fontsLoading ??= api("/fonts").then(({ families }) => { fontFamilies = families; }).catch((err) => {
+    fontsLoading = null;
     logTo($("activity"), `Could not load the list of Google Fonts: ${err.message}`, "error");
-  }
+  });
+  return fontsLoading;
 }
 
 /** Lets the browser draw `family` (for the previews), with the characters the board shows. */
@@ -910,10 +909,14 @@ function fontMenu(input, field) {
   box.className = "font-box";
   input.replaceWith(box);
   const menu = document.createElement("ul");
-  menu.className = "font-menu";
+  menu.className = "combo-list";
+  menu.id = `${input.id}-list`;
   menu.setAttribute("role", "listbox");
   menu.hidden = true;
   box.append(input, menu);
+  // Read out as a combobox, the option the arrow keys are on included (as the model picker).
+  Object.entries({ role: "combobox", "aria-autocomplete": "list", "aria-expanded": "false", "aria-controls": menu.id })
+    .forEach(([name, value]) => input.setAttribute(name, value));
   // The saved family ("": built-in), those listed, and the one the arrow keys are on.
   let chosen = "";
   let listed = [];
@@ -921,8 +924,15 @@ function fontMenu(input, field) {
   const named = (family) => family || BUILT_IN_FONT;
   const light = (i) => {
     lit = i;
-    [...menu.children].forEach((li, n) => li.classList.toggle("lit", n === i));
+    [...menu.children].forEach((li, n) => li.classList.toggle("active", n === i));
     menu.children[i]?.scrollIntoView({ block: "nearest" });
+    if (menu.children[i]) input.setAttribute("aria-activedescendant", menu.children[i].id);
+    else input.removeAttribute("aria-activedescendant");
+  };
+  const close = () => {
+    menu.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
   };
   const open = async () => {
     await loadFontFamilies();
@@ -933,19 +943,21 @@ function fontMenu(input, field) {
     const all = [{ family: "" }, ...(fontFamilies || [])];
     const matching = all.filter((f) => !filter || named(f.family).toLowerCase().includes(filter)).slice(0, 300);
     listed = matching.map((f) => f.family);
-    menu.replaceChildren(...matching.map((f) => {
+    menu.replaceChildren(...matching.map((f, i) => {
       const li = document.createElement("li");
       li.setAttribute("role", "option");
-      li.classList.toggle("chosen", f.family === chosen);
+      li.id = `${input.id}-opt-${i}`;
+      li.setAttribute("aria-selected", String(f.family === chosen));
       li.append(named(f.family));
       if (f.category) li.append(Object.assign(document.createElement("span"), { className: "muted", textContent: ` ${f.category}` }));
       return li;
     }));
     menu.hidden = !listed.length;
+    input.setAttribute("aria-expanded", String(!menu.hidden));
     light(filter ? 0 : listed.indexOf(chosen));
   };
   const pick = (family) => {
-    menu.hidden = true;
+    close();
     input.value = family;
     if (family === chosen) return;
     chosen = family;
@@ -971,12 +983,12 @@ function fontMenu(input, field) {
       e.preventDefault();
       pick(listed[lit]);
     } else if (e.key === "Escape") {
-      menu.hidden = true;
+      close();
     }
   });
   // Leaving without picking keeps the font chosen (an unfinished name is dropped).
   input.addEventListener("blur", () => {
-    menu.hidden = true;
+    close();
     input.value = chosen;
   });
 }

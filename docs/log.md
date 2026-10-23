@@ -2154,5 +2154,9 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
     font shows on the board at once; several clicks on the size arrows show one start-up screen.
 - Decided:
   - A menu written for the web app rather than `<datalist>`: browsers differ on when it opens.
+  - Codex review: two findings, both fixed. Moving to the second font field while the catalogue was
+    still loading listed Built-in only (now every menu waits for the same request); the menu was
+    not read out by screen readers (now a combobox with `aria-activedescendant`, as the model
+    picker, and its `combo-list` styles).
 - Open:
   - None.
