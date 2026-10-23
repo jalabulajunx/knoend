@@ -2158,5 +2158,9 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
     still loading listed Built-in only (now every menu waits for the same request); the menu was
     not read out by screen readers (now a combobox with `aria-activedescendant`, as the model
     picker, and its `combo-list` styles).
+  - Second Codex pass, all fixed: leaving the size field sent its value even when not changed
+    (could undo a size set elsewhere); a save that failed could not be retried with the same
+    choice (the page now goes back to what is saved); Escape while the catalogue loaded let the
+    menu open after. Menu text in the text colour, not the label's grey (Tom noticed).
 - Open:
   - None.

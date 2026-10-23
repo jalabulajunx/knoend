@@ -878,26 +878,36 @@ function showFonts(d) {
   }
 }
 
-/** Waits for the person to stop changing a field (`ms`) before `then`; one timer per field. */
+/** Waits for the person to stop changing a field (`ms`) before `then`; one timer per field,
+ * `field.settling` while it waits. */
 function settle(field, ms, then) {
   clearTimeout(field.settling);
-  field.settling = setTimeout(then, ms);
+  field.settling = setTimeout(() => { field.settling = null; then(); }, ms);
+}
+
+/** A look change that was not saved: said, and the page back to what is saved, so the same choice
+ * can be tried again. */
+function lookNotSaved(what, err) {
+  alert(`Could not change the ${what}: ${err.message}`);
+  loadDisplay().catch(() => {});
 }
 
 /** Sends the start-up size, once it is a size and differs from what was sent. */
 function pickSize(input) {
   clearTimeout(input.settling);
+  input.settling = null;
   const size = Number(input.value);
   if (!Number.isInteger(size) || size < 24 || size > 96) { input.reportValidity(); return; }
   if (size === displayState.start_size) return;
-  saveDisplay({ start_size: size }).catch((err) => alert(`Could not change the size: ${err.message}`));
+  saveDisplay({ start_size: size }).catch((err) => lookNotSaved("size", err));
 }
 
 for (const id of ["start-size", "start-size-setup"]) {
   // Shown on the board 1.5 s after the last click on the arrows (each click is a "change" too),
   // or when the person leaves the field (#50).
   for (const kind of ["input", "change"]) $(id).addEventListener(kind, (e) => settle(e.target, 1500, () => pickSize(e.target)));
-  $(id).addEventListener("blur", (e) => pickSize(e.target));
+  // Only a change still waiting: a field merely visited may hold a size changed elsewhere since.
+  $(id).addEventListener("blur", (e) => { if (e.target.settling) pickSize(e.target); });
 }
 
 /** Turns a font field into a menu of Google Fonts under it: the whole list on every click, narrowed
@@ -921,6 +931,8 @@ function fontMenu(input, field) {
   let chosen = "";
   let listed = [];
   let lit = -1;
+  // Counts opens and closes: an open still waiting for the catalogue is dropped by a close since.
+  let turn = 0;
   const named = (family) => family || BUILT_IN_FONT;
   const light = (i) => {
     lit = i;
@@ -930,13 +942,15 @@ function fontMenu(input, field) {
     else input.removeAttribute("aria-activedescendant");
   };
   const close = () => {
+    turn += 1;
     menu.hidden = true;
     input.setAttribute("aria-expanded", "false");
     input.removeAttribute("aria-activedescendant");
   };
   const open = async () => {
+    const mine = ++turn;
     await loadFontFamilies();
-    if (document.activeElement !== input) return;
+    if (mine !== turn || document.activeElement !== input) return;
     // The field showing the choice lists everything; typing narrows it.
     const typed = input.value.trim();
     const filter = typed === chosen ? "" : typed.toLowerCase();
@@ -960,8 +974,13 @@ function fontMenu(input, field) {
     close();
     input.value = family;
     if (family === chosen) return;
+    const before = chosen;
     chosen = family;
-    saveDisplay({ [field]: family }).catch((err) => alert(`Could not change the font: ${err.message}`));
+    saveDisplay({ [field]: family }).catch((err) => {
+      chosen = before;
+      if (document.activeElement !== input) input.value = before;
+      lookNotSaved("font", err);
+    });
   };
   // Keeps the field focused: a click on the menu would otherwise leave it first.
   menu.addEventListener("mousedown", (e) => {
