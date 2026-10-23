@@ -1,0 +1,67 @@
+# Microsoft PowerPoint: editing controls and slide show launch.
+# In presentation / slide show mode, the companion automatically switches to the
+# presentation layout with full speaker notes and slideshow controls.
+[pack]
+id = "builtin.powerpnt"
+name = "PowerPoint"
+version = "0.2.0"
+source = "builtin"
+description = "PowerPoint controls: open, new slide, save, undo, present, and duplicate."
+grid = "3x3"
+
+[match]
+windows = ["POWERPNT.EXE", "powerpnt.exe", "POWERPNT", "powerpnt"]
+
+[[key]]
+label = "Open"
+icon = "folder_open"
+speak = "Open presentation"
+action = { kind = "shortcut", keys = "Primary+O" }
+
+[[key]]
+label = "New Slide"
+icon = "add"
+speak = "New slide"
+action = { kind = "shortcut", keys = "Primary+M" }
+
+[[key]]
+label = "Save"
+icon = "save"
+speak = "Save presentation"
+action = { kind = "shortcut", keys = "Primary+S" }
+
+[[key]]
+label = "Undo"
+icon = "undo"
+speak = "Undo"
+action = { kind = "shortcut", keys = "Primary+Z" }
+
+[[key]]
+label = "Present"
+icon = "slideshow"
+speak = "Start presentation from beginning"
+action = { kind = "shortcut", keys = "F5" }
+
+[[key]]
+label = "Redo"
+icon = "redo"
+speak = "Redo"
+action = { kind = "shortcut", keys = "Primary+Y" }
+
+[[key]]
+label = "Duplicate"
+icon = "content_copy"
+speak = "Duplicate slide"
+action = { kind = "shortcut", keys = "Primary+D" }
+
+[[key]]
+label = "From Current"
+icon = "play_arrow"
+speak = "Start presentation from current slide"
+action = { kind = "shortcut", keys = "Shift+F5" }
+
+[[key]]
+label = "Laser / Pen"
+icon = "edit"
+speak = "Toggle laser pointer or pen"
+action = { kind = "shortcut", keys = "Primary+L" }

@@ -365,7 +365,16 @@ Windows service in `drivers`), `keys_follow_apps: true`, and `service_can_type: 
   unplug and replug the board.
 - **Port listed (`COM3`, `COM4`, ...) but cannot be opened ("Access is denied").** On Windows only
   one program can open a COM port at a time. Close any serial monitor (Arduino IDE, PuTTY, VS Code
-  Serial Monitor, `idf.py monitor`, or another `knoend`) and try again.
+  Serial Monitor, `idf.py monitor`, or another `knoend`) and try again. Also: rapid reconnects or
+  Wi-Fi setup right after flashing/pairing on CH340 boards can briefly see `ERROR_ACCESS_DENIED` while
+  the driver finishes closing the previous handle; `SerialLink::open` and `knoend_flash::connect`
+  retry automatically with backoff (~6 attempts over 1.2 s).
+- **Removing a board from the web app (#77).** Click "Remove board" on the main Board card (or "Remove"
+  on any secondary board in the board list). The modal offers two choices: **Forget & unpair** (drops
+  the active connection, removes the board from `companion.json` and clears its look) or **Remove look only**
+  (resets custom display settings back to defaults while keeping the board connected). If a board was
+  previously removed but returned upon refresh, update to v0.2.2 where `display.rs` preserves empty
+  board maps.
 - **Keys typed by the companion do nothing in one specific window ("SendInput sent 0 of ... events").**
   Windows needs no special permission to type into ordinary apps, but User Interface Privilege
   Isolation (UIPI) blocks a normal process from typing into an elevated ("Run as administrator")

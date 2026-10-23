@@ -206,6 +206,13 @@ impl Shared {
         }
     }
 
+    /// Disconnects board `id` when connected and stops tracking it.
+    pub fn drop_board(&self, id: String) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.try_send(Event::DropBoard(id));
+        }
+    }
+
     /// A library drafted outside the service loop (the web app's app setup): the loop adds it and
     /// shows it if its app is in front.
     pub async fn configured(&self, target: Focus, result: Result<(PathBuf, Library), String>) {
@@ -249,7 +256,7 @@ impl Shared {
         crate::journal::recent(60)
     }
 
-    async fn update(&self, change: impl FnOnce(&mut Status)) {
+    pub async fn update(&self, change: impl FnOnce(&mut Status)) {
         let mut status = self.status.write().await;
         change(&mut status);
         let snapshot = serde_json::to_value(&*status).expect("serialisable");
@@ -313,6 +320,7 @@ enum Event {
     /// Another paired board was found while others are connected: it joins them (#15, mirror).
     Joined(BoardStatus, Link),
     Configured(Focus, Result<(PathBuf, Library), String>),
+    DropBoard(String),
     /// The person chose another theme or turn in the web app (already saved).
     Look(String),
     /// A font fetched for a slot ("keys", "start"): its family (empty: back to the built-in font),
@@ -417,7 +425,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     loop {
         let pairings = Pairings::load();
         if pairings.boards.is_empty() {
-            shared.update(|s| { s.link = "no-pairing".into(); s.board = None; }).await;
+            shared.update(|s| { s.link = "no-pairing".into(); s.board = None; s.boards.clear(); }).await;
             // Keep following focus while waiting, so the dashboard shows it.
             match tokio::time::timeout(Duration::from_secs(2), inbox.recv()).await {
                 Ok(Some(Event::Focus(Some(f)))) => {
@@ -565,6 +573,9 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     if !same_app {
                         tab = shared.browser.focus_changed(&f.app, &f.instance);
                     }
+                    if !f.app.to_ascii_lowercase().contains("powerpnt") && !f.instance.to_ascii_lowercase().contains("powerpnt") {
+                        crate::powerpoint::clear();
+                    }
                     focus = Some(f);
                     let f = effective(&focus, &tab).expect("focus");
                     if calling.as_ref().is_some_and(|c| c.is(&f)) {
@@ -575,7 +586,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                     match &f.terminal {
                         Some(t) => say!("Focus: {} ({}), tab {} runs {}", f.display_name(), f.instance, t.tty, t.programs.join(" + ")),
-                        None => say!("Focus: {} ({})", f.display_name(), f.instance),
+                        None => say!("Focus: {} ({}) [{}]", f.display_name(), f.instance, f.title),
                     }
                     let name = f.display_name().to_string();
                     shared.update(|s| s.app = Some(name)).await;
@@ -604,6 +615,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Event::Focus(None) => {
                     // Nothing in front: the launcher.
                     say!("Focus: nothing (launcher)");
+                    crate::powerpoint::clear();
                     tab = shared.browser.focus_changed("", "");
                     focus = None;
                     usage.focused(None);
@@ -624,7 +636,16 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     say!("  tap on page {} of {}, which is no longer shown; ignored", packet.body["page"], paging.layout);
                 }
                 Event::Page(to) => {
-                    if approvals.is_empty() && paging.turn(&to) {
+                    if shown.as_deref().is_some_and(|s| s.starts_with(PRESENTATION_SIGNATURE)) {
+                        let turned = if to == "prev" {
+                            crate::powerpoint::prev_note_page()
+                        } else {
+                            crate::powerpoint::next_note_page()
+                        };
+                        if let Some(sn) = turned {
+                            show_presentation(&mut sender, &sn, paging.grid, &mut shown, &shared).await;
+                        }
+                    } else if approvals.is_empty() && paging.turn(&to) {
                         say!("  page {}/{} of {}", paging.page + 1, paging.pages, paging.layout);
                         match effective(&focus, &tab) {
                             Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
@@ -812,6 +833,51 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         show_approval(&mut sender, front, &catalog, &mut shown, &shared).await;
                     }
                 }
+                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] == PRESENTATION => {
+                    let key = packet.body["key"].as_u64().unwrap_or(0);
+                    let bottom_start = (paging.grid.cols * (paging.grid.rows - 1)) as u64;
+                    let typist = shared.typist.clone();
+                    let tap = |usage: u8| {
+                        let typist = typist.clone();
+                        tokio::task::spawn_blocking(move || {
+                            let mut slot = typist.lock().map_err(|_| "typist lock".to_string())?;
+                            if slot.is_none() {
+                                *slot = Some(knoend_input::Typist::connect()?);
+                            }
+                            slot.as_ref().expect("connected").tap(0, usage)
+                        })
+                    };
+                    if key == 1 {
+                        let _ = tap(0x50).await; // Left arrow (Prev)
+                        crate::powerpoint::prev_slide();
+                    } else if key == 2 {
+                        let _ = tap(0x29).await; // Escape (End)
+                        crate::powerpoint::set_presenting(false);
+                    } else if key == 3 {
+                        let _ = tap(0x4f).await; // Right arrow (Next)
+                        crate::powerpoint::next_slide();
+                    } else if key == bottom_start + 1 {
+                        let _ = tap(0x4a).await; // Home (First)
+                        crate::powerpoint::first_slide();
+                    } else if key == bottom_start + 2 {
+                        let has_multiple_pages = crate::powerpoint::current_slide_notes().map_or(false, |sn| sn.total_note_pages > 1);
+                        if has_multiple_pages {
+                            crate::powerpoint::next_note_page();
+                        } else {
+                            let _ = tap(0x05).await; // B (Black screen)
+                        }
+                    } else if key == bottom_start + 3 {
+                        let _ = tap(0x1a).await; // W (White screen)
+                    }
+                    if let Some(sn) = crate::powerpoint::current_slide_notes().filter(|sn| sn.is_presenting) {
+                        show_presentation(&mut sender, &sn, paging.grid, &mut shown, &shared).await;
+                    } else {
+                        shown = None;
+                        if let Some(f) = effective(&focus, &tab) {
+                            show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
+                        }
+                    }
+                }
                 Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] == APPROVE => {
                     let key = packet.body["key"].as_u64().unwrap_or(0);
                     let decision = match approvals.front_mut() {
@@ -878,6 +944,11 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     if let Some(target) = on_board_packet(&packet, current.as_ref(), &shown_actions, &players, &mut sender, &shared).await {
                         let scope = site_scope(&catalog, &target);
                         start_configure(target, scope, &events, &shared).await;
+                    }
+                    if packet.kind == "knoend.key" {
+                        if let Some(f) = current.filter(|f| f.app.to_ascii_lowercase().contains("powerpnt") || f.instance.to_ascii_lowercase().contains("powerpnt")) {
+                            show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
+                        }
                     }
                 }
                 Event::Agent(crate::agent_hooks::AgentEvent::Permission { request, answer }) => {
@@ -1025,6 +1096,22 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         break;
                     }
                     // The others carry on; a smaller board leaving may allow a bigger grid.
+                    paging.board = common_grid(&boards);
+                    paging.max = mirror_grid(&boards);
+                    scout.watch(boards.iter().map(|b| b.id.clone()).collect());
+                    publish_boards(&boards, &shared).await;
+                }
+                Event::DropBoard(id) => {
+                    say!("Board {id} dropped from active connections");
+                    let _ = sender.send("knoend.bye", json!({})).await;
+                    sender.remove(&id);
+                    heard.remove(&id);
+                    boards.retain(|b| b.id != id);
+                    if boards.is_empty() {
+                        scout.abort();
+                        shared.update(|s| { s.link = if Pairings::load().boards.is_empty() { "no-pairing".into() } else { "searching".into() }; s.layout = None; s.board = None; s.boards.clear(); }).await;
+                        break;
+                    }
                     paging.board = common_grid(&boards);
                     paging.max = mirror_grid(&boards);
                     scout.watch(boards.iter().map(|b| b.id.clone()).collect());
@@ -1537,6 +1624,17 @@ async fn show(sender: &mut BoardSender, catalog: &Catalog, focus: &Focus, player
               shown: &mut Option<String>, shown_actions: &mut HashMap<u8, KeyRef>, paging: &mut Paging, calling: Option<&Calling>, shared: &Shared) {
     if shown.as_deref().is_some_and(|s| s.starts_with(APPROVE_SIGNATURE)) {
         return; // a permission request is on the board; it stays until answered
+    }
+    let is_ppt = focus.app.to_ascii_lowercase().contains("powerpnt") || focus.instance.to_ascii_lowercase().contains("powerpnt");
+    if is_ppt {
+        if let Some(sn) = crate::powerpoint::get_notes(focus) {
+            shown_actions.clear();
+            show_presentation(sender, &sn, paging.grid, shown, shared).await;
+            return;
+        }
+    }
+    if shown.as_deref().is_some_and(|s| s.starts_with(PRESENTATION_SIGNATURE)) {
+        *shown = None;
     }
     if show_edit(sender, paging, shown, shared).await {
         shown_actions.clear();
@@ -2134,6 +2232,9 @@ fn image_png(rgba: &[u8]) -> Option<Vec<u8>> {
 /// Layout id of a coding agent's permission request on the board.
 const APPROVE: &str = "system.approve";
 const APPROVE_SIGNATURE: &str = "approve|";
+/// Layout id of an active presentation on the board.
+const PRESENTATION: &str = "system.presentation";
+const PRESENTATION_SIGNATURE: &str = "presentation|";
 /// The board while the person answers the agent's questions on the computer.
 const ANSWERING: &str = "system.answering";
 /// The "Answer here" key on that screen (the bottom row's middle on 3x3).
@@ -2382,6 +2483,86 @@ async fn show_approval(sender: &mut BoardSender, approval: &Approval, catalog: &
     }
 }
 
+/// Shows active presentation speaker notes and controls on the board in a dedicated layout,
+/// using the exact same detail panel structure as Claude questions (middle rows left empty).
+async fn show_presentation(sender: &mut BoardSender, sn: &crate::powerpoint::SlideNotes, grid: Grid, shown: &mut Option<String>, shared: &Shared) {
+    let clean = |text: &str| -> String { text.chars().map(|c| if c == '\n' || c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).take(240).collect() };
+    let note_text = if sn.notes.is_empty() {
+        "No notes for this slide".to_string()
+    } else {
+        clean(&sn.notes)
+    };
+
+    let mut keys = vec![
+        LayoutKey { key: 1, label: "Prev".into(), speak: Some("Previous slide".into()), icon: Some("chevron_left".into()), confirm: false, send: Send::Event(true) },
+        LayoutKey { key: 2, label: "End".into(), speak: Some("End presentation".into()), icon: Some("stop".into()), confirm: false, send: Send::Event(true) },
+        LayoutKey { key: 3, label: "Next".into(), speak: Some("Next slide".into()), icon: Some("chevron_right".into()), confirm: false, send: Send::Event(true) },
+    ];
+    if grid.rows >= 3 {
+        let bottom_start = grid.cols * (grid.rows - 1);
+        let more_or_black = if sn.total_note_pages > 1 {
+            LayoutKey {
+                key: bottom_start + 2,
+                label: format!("{}/{}", sn.note_page + 1, sn.total_note_pages),
+                speak: Some("Next note page".into()),
+                icon: Some("description".into()),
+                confirm: false,
+                send: Send::Event(true),
+            }
+        } else {
+            LayoutKey {
+                key: bottom_start + 2,
+                label: "Black".into(),
+                speak: Some("Black screen".into()),
+                icon: Some("dark_mode".into()),
+                confirm: false,
+                send: Send::Event(true),
+            }
+        };
+        keys.extend([
+            LayoutKey { key: bottom_start + 1, label: "First".into(), speak: Some("First slide".into()), icon: Some("first_page".into()), confirm: false, send: Send::Event(true) },
+            more_or_black,
+            LayoutKey { key: bottom_start + 3, label: "White".into(), speak: Some("White screen".into()), icon: Some("light_mode".into()), confirm: false, send: Send::Event(true) },
+        ]);
+    }
+    keys.sort_by_key(|k| k.key);
+
+    let status_text = if sn.total_slides > 0 {
+        if sn.total_note_pages > 1 {
+            format!("Slide {} of {} (p. {}/{})", sn.slide_index, sn.total_slides, sn.note_page + 1, sn.total_note_pages)
+        } else {
+            format!("Slide {} of {}", sn.slide_index, sn.total_slides)
+        }
+    } else if sn.slide_index > 0 {
+        format!("Slide {}", sn.slide_index)
+    } else {
+        "Presenting".to_string()
+    };
+
+    let title = if sn.file_name.is_empty() { "PowerPoint" } else { &sn.file_name };
+    let body = LayoutBody {
+        layout: PRESENTATION.into(),
+        name: board_text(title, 128),
+        source: "builtin".into(),
+        reviewed: true,
+        keys,
+        detail: Some(note_text),
+        grid: Some(grid),
+        ..LayoutBody::default()
+    };
+    let signature = format!("{PRESENTATION_SIGNATURE}{}|{}", serde_json::to_string(&body).unwrap_or_default(), status_text);
+    if shown.as_deref() == Some(signature.as_str()) {
+        return;
+    }
+    say!("  -> {} ({}) [{}] keys: {}", body.name, PRESENTATION, status_text,
+         body.keys.iter().map(|k| format!("{}={}", k.key, k.label)).collect::<Vec<_>>().join(", "));
+    if sender.send("knoend.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
+        let _ = sender.send("knoend.status", json!({"text": status_text, "level": "info"})).await;
+        *shown = Some(signature);
+        shared.update(|s| s.layout = Some(json!({"id": PRESENTATION, "name": title, "summary": status_text}))).await;
+    }
+}
+
 /// The panel while the person answers on the computer: the questions, short, then what happens.
 /// The board's panel takes 240 characters and its built-in font is ASCII, so each question gets
 /// an equal share, cut with "...".
@@ -2573,10 +2754,33 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                         shared.emit("type-failed", json!({"text": format!("  could not type key {key}: {e}")}));
                     }
                 }
+                if focus.is_some_and(|f| f.app.to_ascii_lowercase().contains("powerpnt") || f.instance.to_ascii_lowercase().contains("powerpnt")) {
+                    handle_powerpoint_key(key, shown_actions);
+                }
                 return None;
             }
             // A key whose action happens on the web page: the browser extension carries it out.
             let acting = u8::try_from(key).ok().and_then(|k| shown_actions.get(&k));
+            if let (Some(acting_key), Some(f)) = (acting, focus) {
+                if let Action::Shortcut { keys } = &acting_key.action {
+                    if let Ok(chord) = knoend_core::keys::parse_shortcut(keys, f.os) {
+                        let (typist, label, shared, keys_str) = (shared.typist.clone(), acting_key.label.clone(), shared.clone(), keys.clone());
+                        let _ = tokio::task::spawn_blocking(move || {
+                            let mut slot = typist.lock().map_err(|_| "typist lock".to_string())?;
+                            if slot.is_none() {
+                                *slot = Some(knoend_input::Typist::connect()?);
+                            }
+                            slot.as_ref().expect("connected").tap(chord.modifiers, chord.usage)?;
+                            Ok::<(), String>(())
+                        }).await;
+                        shared.emit("typed", json!({"text": format!("  {label}: typed {keys_str} on this computer")}));
+                    }
+                    if f.app.to_ascii_lowercase().contains("powerpnt") || f.instance.to_ascii_lowercase().contains("powerpnt") {
+                        handle_powerpoint_key(key, shown_actions);
+                    }
+                    return None;
+                }
+            }
             if let Some(library_key) = acting.filter(|k| matches!(k.action, Action::Listen)) {
                 let on = !crate::midi::listening();
                 if on {
@@ -2694,6 +2898,39 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
         _ => {}
     }
     None
+}
+
+fn handle_powerpoint_key(key: u64, shown_actions: &HashMap<u8, KeyRef>) {
+    let acting = u8::try_from(key).ok().and_then(|k| shown_actions.get(&k));
+    if let Some(acting) = acting {
+        match acting.label.to_ascii_lowercase().as_str() {
+            "next" | "next slide" => { crate::powerpoint::next_slide(); }
+            "prev" | "previous" | "prev slide" => { crate::powerpoint::prev_slide(); }
+            "first" | "first slide" => { crate::powerpoint::first_slide(); }
+            "present" | "from current" => {
+                crate::powerpoint::set_presenting(true);
+                crate::powerpoint::first_slide();
+            }
+            "end" | "end show" | "end presentation" => {
+                crate::powerpoint::set_presenting(false);
+            }
+            _ => {
+                if let Action::Shortcut { keys } = &acting.action {
+                    match keys.as_str() {
+                        "Right" | "PageDown" | "Down" | "Space" => { crate::powerpoint::next_slide(); }
+                        "Left" | "PageUp" | "Up" | "Backspace" => { crate::powerpoint::prev_slide(); }
+                        "Home" => { crate::powerpoint::first_slide(); }
+                        "F5" | "Shift+F5" => {
+                            crate::powerpoint::set_presenting(true);
+                            crate::powerpoint::first_slide();
+                        }
+                        "Escape" => { crate::powerpoint::set_presenting(false); }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

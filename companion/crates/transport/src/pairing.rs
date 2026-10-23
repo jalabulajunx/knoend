@@ -80,4 +80,9 @@ impl Pairings {
     pub fn key_for(&self, board: &str) -> Option<Key> {
         self.boards.get(board).and_then(|h| hex::decode(h).ok()).and_then(|b| b.try_into().ok())
     }
+
+    /// Removes a board from pairings (`companion.json`).
+    pub fn forget(&mut self, board: &str) -> bool {
+        self.boards.remove(board).is_some()
+    }
 }

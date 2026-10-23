@@ -13,7 +13,7 @@ Wi-Fi or Bluetooth it becomes a pager: carry it around the house, see status fro
 answer a prompt (approve a coding agent's command, answer its questions) from another room. With a
 microphone it listens: sing or play a note and it reaches a music app as MIDI.
 
-> **Status: early development, released as v0.2.1.** Setting up, the keys, the Wi-Fi and
+> **Status: early development, released as v0.2.2.** Setting up, the keys, the Wi-Fi and
 > Bluetooth links, AI-drafted layouts and flashing work on Linux (X11), macOS and Windows. See
 > [What works today](#what-works-today). **To set one up, follow [docs/setup.md](docs/setup.md).**
 
@@ -122,10 +122,12 @@ Freenove FNK0104B with Linux and macOS, and on the Waveshare AMOLED with Linux:
   Anthropic, OpenRouter, local Ollama, or Claude Code / Antigravity CLI / Codex CLI already signed in.
 - Edit keys live in the web app; a home screen of pinned and most-used apps when nothing is in front.
 - Claude Code permission requests and questions answered from the board.
+- PowerPoint: standard editing keys in edit mode; in presentation mode, the board switches to speaker notes paginated cleanly in the detail panel, with slideshow controls (Prev, Next, First, End, Black, White).
 
 **Boards and links**
 - Several boards on one computer at once, mirroring each other; each keeps its own look: key size,
   theme (Dark, White, Sepia), way round, Google Fonts and start-up size.
+- Remove boards easily in the web app: forget/unpair completely or reset look settings.
 - Every board reached over Wi-Fi (authenticated, found by mDNS), USB, or Bluetooth alone (the data
   service beside the keyboard; tested on Linux). As a Bluetooth keyboard it types with nothing
   installed.

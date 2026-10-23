@@ -181,6 +181,11 @@ impl Display {
         self.boards.insert(id.to_string(), BoardLook::of(seen));
     }
 
+    /// Removes board `id`'s individual look from `boards`.
+    pub fn remove_board(&mut self, id: &str) -> bool {
+        self.boards.remove(id).is_some()
+    }
+
     /// The `knoend.display` body for the board.
     pub fn look(&self) -> serde_json::Value {
         serde_json::json!({"theme": self.theme, "turn": self.turn, "startSize": self.start_size})
@@ -205,8 +210,12 @@ fn path() -> std::path::PathBuf {
 pub fn load() -> Display {
     let text = std::fs::read_to_string(path()).ok();
     let mut display: Display = text.as_deref().and_then(|t| serde_json::from_str(t).ok()).unwrap_or_default();
-    // Saved before looks were per board: the one look becomes that of every board paired now.
-    if display.boards.is_empty() && text.is_some() {
+    // Saved before looks were per board (pre-#15 had no "boards" key): migrate top-level settings.
+    // If the file already has a "boards" key (even if empty after removing boards), do NOT re-migrate.
+    let has_boards_key = text.as_deref().and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+        .and_then(|v| v.as_object().map(|o| o.contains_key("boards")))
+        .unwrap_or(false);
+    if !has_boards_key && text.is_some() {
         let paired: Vec<String> = knoend_transport::pairing::Pairings::load().boards.keys().cloned().collect();
         if migrate(&mut display, &paired) {
             let _ = save(&display);
@@ -227,6 +236,16 @@ fn migrate(display: &mut Display, paired: &[String]) -> bool {
 /// Board `id`'s settings (see `Display::for_board`).
 pub fn for_board(id: &str) -> Display {
     load().for_board(id)
+}
+
+/// Removes board `id` from `display.json`.
+pub fn remove_board(id: &str) -> Result<bool, String> {
+    let mut display = load();
+    let removed = display.remove_board(id);
+    if removed {
+        save(&display)?;
+    }
+    Ok(removed)
 }
 
 pub fn save(display: &Display) -> Result<(), String> {
@@ -285,6 +304,15 @@ mod tests {
         assert_eq!(sepia.shown_by(&board("dark")), Some(false));
         assert_eq!(sepia.shown_by(&serde_json::json!({"board": {}})), None, "older firmware");
         assert_eq!(serde_json::from_str::<Display>(r#"{"theme": "paper"}"#).unwrap().theme, Theme::White, "saved before White had its name");
+    }
+
+    #[test]
+    fn removing_a_board_drops_it_from_display_map() {
+        let mut d = Display::default();
+        d.boards.insert("test-board".into(), BoardLook::default());
+        assert!(d.remove_board("test-board"));
+        assert!(!d.boards.contains_key("test-board"));
+        assert!(!d.remove_board("non-existent"));
     }
 
     #[test]

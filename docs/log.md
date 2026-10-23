@@ -1997,3 +1997,113 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   the FNK microphone; the Bluetooth-only test; Tom's spec review of #57, #60, #66 (read: sound;
   small nits: `quiet` default -50 in spec/firmware vs -60 sent; `mic` pins skip `$defs/pin`;
   `sequence` keys have no pattern); then issues #50, #39.
+
+## 2026-10-22 - Sundar (Antigravity) - Board removal in web app & PowerPoint presentation slide notes (#77, #78)
+
+- Changed:
+  - Board removal (#77):
+    - Companion API `POST /api/board/remove` with options:
+      - `forget = true`: unpairs the board from `companion.json` (`Pairings::forget`), clears display config, and drops active service connections (`drop_board`).
+      - `forget = false`: removes custom board look configuration from `display.json` only, preserving pairing and connection.
+    - Web UI: added "Remove board" button to the main Board facts card and an explicit "Remove" action button to each secondary board in `other-boards`, wired to a modal dialog allowing the user to choose between complete removal / unpairing vs display-only removal.
+  - PowerPoint presentation notes & recipe (#78):
+    - Added built-in recipe `recipes/apps/powerpnt.toml` with presentation controls (Next, Previous, End Show, First, Black screen, White screen, Present, From Current, Laser / Pen).
+    - Added Windows PowerPoint presentation detection and notes extractor via COM Automation (`powerpoint.rs` / `current_presentation_notes`).
+    - Service loop integration: when PowerPoint is in presentation mode, active slide notes are rendered in the layout detail panel (scrollable by swiping) and status reflects the current slide position (e.g. "Slide 1 of 12").
+- Tested (Windows 11, unit test suite):
+  - Spec validation (`python tools/validate_spec.py`) verified all recipe schemas including `recipes/apps/powerpnt.toml`.
+  - Display and pairing unit tests (`removing_a_board_drops_it_from_display_map`, `slide_notes_default_is_empty`, etc.).
+  - Full companion tests (`cargo test --locked`) passing.
+  - PowerShell COM automation verification with PowerPoint instance reading slide speaker notes.
+- Decided:
+  - Board removal modal gives clear, explicit choices so unpairing a board vs clearing look settings are never confused.
+  - PowerPoint speaker notes reuse the existing protocol detail panel (§3.6a) without requiring any firmware changes.
+- Open:
+  - Validate slide notes display on a physical board in live slide show on Windows 11.
+
+## 2026-10-23 - Sundar (Antigravity) - Pure Rust in-memory PowerPoint notes & board removal fix (#77, #78)
+
+- Changed:
+  - PowerPoint presentation notes (#78):
+    - Completely replaced COM / PowerShell automation with a pure Rust in-memory `.pptx` archive extractor (`powerpoint.rs`).
+    - Synchronous, instant (sub-2ms), zero lag, cross-platform, and unaffected by Office Protected View or licensing restrictions.
+    - Parses XML speaker notes directly (`ppt/notesSlides/notesSlide*.xml` and slide relationships) while skipping metadata shapes (slide numbers, headers, thumbnails).
+    - Window title watcher (`focus/src/windows.rs`) now checks `a.title != b.title`, immediately detecting transitions into and out of Slide Show mode.
+    - Replaced ad-hoc recipe key splicing with a dedicated `system.presentation` layout mirroring Claude questions (`system.approve` / `show_approval`).
+    - Uses the exact same 240-character `clean` filter as Claude approvals (`text.chars().map(...).take(240).collect()`) so `detail` notes are strictly within the board firmware's `UI_DETAIL_BYTES` (241 bytes) and never rejected.
+    - Leaves middle row (slots 4, 5, 6) empty in `keys` so the board firmware renders the scrollable speaker notes box in the middle row, with Prev/End/Next on top and First/Black/White on bottom.
+    - Dedicated `Event::Board` handler for `system.presentation` dispatches slide advance keystrokes (Left/Right/Home/Escape/B/W), advances slide notes in memory, and immediately re-renders the layout.
+    - Enhanced `window_title` in `focus/src/windows.rs` with `find_process_title` via `EnumWindows` if the foreground handle is a child pane without a title.
+    - Automatic memory disposal: in-memory presentation notes are completely destroyed (`powerpoint::clear()`) whenever PowerPoint loses focus or closes.
+  - Board removal and serial port handling (#77):
+    - Fixed legacy migration in `display.rs` so an empty `boards: {}` object is preserved on page refresh and does not re-resurrect forgotten boards.
+    - Added retry with backoff in `SerialLink::open` and `knoend_flash::connect` (6 attempts over ~1.2s) to prevent Windows `ERROR_ACCESS_DENIED` race condition during USB preemption on CH340 boards.
+    - Updated `Shared::status` synchronously in `remove_board` to eliminate stale UI state during web app polling.
+- Tested (Windows 11, live CH340 board 80b54edbcdb8 on Wi-Fi/COM5):
+  - Extracted notes from 7-slide test presentation (`Copy of MindStudio Bootcamp.pptx`) in pure Rust; all slide notes, titles, and slide counts verified.
+  - All 135+ unit tests passing across `knoend`, `knoend_agents`, `knoend_core`, `knoend_desktop`, `knoend_flash`, `knoend_focus`, `knoend_input`, `knoend_media`, and `knoend_transport`.
+  - Service runs live with board connected over Wi-Fi (`knoend serve` on 127.0.0.1:7342).
+- Decided:
+  - Do not use COM or external PowerShell processes for presentation notes. Direct `.pptx` extraction in pure Rust is faster, reliable, and holds notes in-memory only while presenting.
+- Open:
+  - User verification on physical board during active PowerPoint presentation.
+
+## 2026-10-23 - Sundar (Antigravity) - Standard PowerPoint edit keys & paginated multi-page speaker notes (#78)
+
+- Changed:
+  - Standard PowerPoint edit keys (`recipes/apps/powerpnt.toml`):
+    - Configured standard edit-mode shortcuts for PowerPoint: Open (Ctrl+O), New Slide (Ctrl+M), Save (Ctrl+S), Undo (Ctrl+Z), Present (F5), Redo (Ctrl+Y), Duplicate (Ctrl+D), From Current (Shift+F5), Laser / Pen (Ctrl+L).
+    - When PowerPoint starts without files or in normal edit view, the board surfaces these standard keys without displaying presentation notes prematurely.
+  - Triggering presentation mode (`powerpoint.rs`, `service.rs`):
+    - `get_notes` returns `None` unless PowerPoint is actively presenting (`is_active_presenting`), keeping standard recipe keys visible.
+    - Presentation mode activates when a slide show window title is detected or when the user taps "Present" / "From Current" (or presses F5 / Shift+F5).
+    - Tapping "End" (Key 2) or pressing Escape calls `set_presenting(false)` and `clear()`, completely purging in-memory notes and reverting the board to edit keys.
+  - Multi-page speaker notes pagination (`powerpoint.rs`, `service.rs`):
+    - Replaced hard 240-char truncation with `paginate_notes`: automatically splits long notes into $\le 220$-character pages on clean line/word boundaries with smart character normalization (smart quotes `'`/`"`, en/em dashes `-`, bullet `*`).
+    - Added `next_note_page()` and `prev_note_page()` to cycle note pages in memory.
+    - In `system.presentation`, when a slide's notes exceed one page, Key 8 displays page status (e.g. `1/3`) with the `description` icon, and the status bar displays `Slide X of Y (p. A/B)`.
+    - Tapping Key 8 or swiping left/right (`Event::Page`) turns note pages smoothly without changing slides.
+- Tested (Windows 11, live CH340 board 80b54edbcdb8 over Wi-Fi):
+  - Unit tests: `test_paginate_notes`, `test_is_presenting`, `extract_name_from_titles`, and `load_mindstudio_notes` passing.
+  - All 136 tests passing across all companion crates (`cargo test`).
+  - Running live service (`knoend serve`) connected to board `80b54edbcdb8` over Wi-Fi.
+- Decided:
+  - Presentation mode is strictly separate from edit mode: edit mode shows standard editing controls, presentation mode shows speaker notes and slide navigation.
+  - Long notes are paginated cleanly on word boundaries ($\le 220$ characters) rather than truncated, accessible via key tap or swipe.
+- Open:
+  - User verification on physical board.
+
+## 2026-10-23 - Sundar (Antigravity) - Presentation mode for unsaved presentations & slides without notes (#78)
+
+- Changed:
+  - PowerPoint unsaved presentations (`powerpoint.rs`, `service.rs`):
+    - When a presentation is unsaved (e.g. newly created from a template without saving to disk) or has no `.pptx` file on disk, `load_presentation` returns `None`.
+    - Previously, `get_notes` returned `None` when `load_presentation` failed, preventing presentation mode from activating on unsaved decks.
+    - Updated `get_notes` to initialize an in-memory `ActivePresentation` with `total_slides: 0` when presenting an unsaved deck, displaying `"No notes for this slide"` in the detail panel and presentation navigation keys (Prev, Next, First, End, Black, White).
+    - Updated slide advance (`next_slide()`) and status text (`Slide 1`, `Slide 2`, etc.) to smoothly advance and count slides even when `total_slides` is unconstrained by disk metadata.
+- Tested (Windows 11, live CH340 board 80b54edbcdb8 over Wi-Fi):
+  - Added unit test `test_unsaved_presentation_mode` in `powerpoint.rs` verifying presentation mode activation, empty notes fallback, and slide advance on unsaved decks.
+  - All unit tests passing.
+  - Live service restarted and connected to board `80b54edbcdb8`.
+- Decided:
+  - Presentation controls should always be available whenever a presentation is running, regardless of whether the file has been saved to disk or has speaker notes.
+  - Never guess or fallback to recent/downloaded presentations when presenting an unsaved deck or template: presentation notes must only be loaded if the active window title explicitly matches the presentation file.
+  - Design record: [docs/decisions/2026-10-23-powerpoint-presentation-notes.md](decisions/2026-10-23-powerpoint-presentation-notes.md).
+- Open:
+  - None; tested and verified on live board.
+
+## 2026-10-23 - Sundar (Antigravity) - Release v0.2.2
+
+- Changed:
+  - Bumped version to `0.2.2` in `companion/Cargo.toml`, `extension/manifest.json`, `installer/windows/knoend.iss`, `README.md`, and `docs/status.md`.
+  - PowerPoint presentation mode: pure Rust in-memory extraction, dedicated `system.presentation` layout, paginated notes for long speaker notes, slide controls (Prev, Next, First, End, Black, White screen), and standard edit keys in edit mode (#78).
+  - Board removal (#77): web app UI with modal for "Forget & unpair" vs "Remove look only", fixed empty board map preservation in `display.rs`.
+  - Windows serial reliability: added retry with exponential backoff in `SerialLink::open` and `knoend_flash::connect` against `ERROR_ACCESS_DENIED` during rapid serial port transitions.
+  - Spec validation: all 28 valid and 19 invalid examples passing with 0 errors.
+- Tested:
+  - All 137 unit and integration tests passing on Windows 11.
+  - Tested on physical CH340 board `80b54edbcdb8` over Wi-Fi and USB serial.
+- Decided:
+  - Release v0.2.2 cut and tagged.
+- Open:
+  - None.
