@@ -835,18 +835,18 @@ function turnsFor(d) {
 // ---- fonts from Google Fonts: the list live from the service, previews loaded by the browser ----
 
 let fontFamilies = null;
+/** The catalogue request while it is on its way: every menu waits for the same one. */
+let fontsLoading = null;
+/** The font menu's first entry: back to the board's own font. */
+const BUILT_IN_FONT = "Built-in (Montserrat)";
 
-/** Fills the font search list from Google's catalogue (once per page). */
-async function loadFontFamilies() {
-  if (fontFamilies) return;
-  fontFamilies = [];
-  try {
-    ({ families: fontFamilies } = await api("/fonts"));
-    $("font-families").replaceChildren(...fontFamilies.map((f) => new Option(f.category ? `${f.family} (${f.category})` : f.family, f.family)));
-  } catch (err) {
-    fontFamilies = null;
+/** Loads Google's catalogue for the font menus (once per page). */
+function loadFontFamilies() {
+  fontsLoading ??= api("/fonts").then(({ families }) => { fontFamilies = families; }).catch((err) => {
+    fontsLoading = null;
     logTo($("activity"), `Could not load the list of Google Fonts: ${err.message}`, "error");
-  }
+  });
+  return fontsLoading;
 }
 
 /** Lets the browser draw `family` (for the previews), with the characters the board shows. */
@@ -878,26 +878,141 @@ function showFonts(d) {
   }
 }
 
+/** Waits for the person to stop changing a field (`ms`) before `then`; one timer per field,
+ * `field.settling` while it waits. */
+function settle(field, ms, then) {
+  clearTimeout(field.settling);
+  field.settling = setTimeout(() => { field.settling = null; then(); }, ms);
+}
+
+/** A look change that was not saved: said, and the page back to what is saved, so the same choice
+ * can be tried again. Resolves once the saved look is read back. */
+function lookNotSaved(what, err) {
+  alert(`Could not change the ${what}: ${err.message}`);
+  return loadDisplay().catch(() => {});
+}
+
+/** Sends the start-up size, once it is a size and differs from what was sent. */
+function pickSize(input) {
+  clearTimeout(input.settling);
+  input.settling = null;
+  const size = Number(input.value);
+  if (!Number.isInteger(size) || size < 24 || size > 96) { input.reportValidity(); return; }
+  if (size === displayState.start_size) return;
+  saveDisplay({ start_size: size }).catch((err) => lookNotSaved("size", err));
+}
+
 for (const id of ["start-size", "start-size-setup"]) {
-  $(id).addEventListener("change", (e) => {
-    const size = Number(e.target.value);
-    if (!Number.isInteger(size) || size < 24 || size > 96) { e.target.reportValidity(); return; }
-    saveDisplay({ start_size: size }).catch((err) => alert(`Could not change the size: ${err.message}`));
+  // Shown on the board 1.5 s after the last click on the arrows (each click is a "change" too),
+  // or when the person leaves the field (#50).
+  for (const kind of ["input", "change"]) $(id).addEventListener(kind, (e) => settle(e.target, 1500, () => pickSize(e.target)));
+  // Only a change still waiting: a field merely visited may hold a size changed elsewhere since.
+  $(id).addEventListener("blur", (e) => { if (e.target.settling) pickSize(e.target); });
+}
+
+/** Turns a font field into a menu of Google Fonts under it: the whole list on every click, narrowed
+ * as the person types; a family picked goes to the board at once. Written for the web app, as a
+ * browser's own list (`<datalist>`) lists only entries matching the field and opens when it likes
+ * (#50). */
+function fontMenu(input, field) {
+  const box = document.createElement("span");
+  box.className = "font-box";
+  input.replaceWith(box);
+  const menu = document.createElement("ul");
+  menu.className = "combo-list";
+  menu.id = `${input.id}-list`;
+  menu.setAttribute("role", "listbox");
+  menu.hidden = true;
+  box.append(input, menu);
+  // Read out as a combobox, the option the arrow keys are on included (as the model picker).
+  Object.entries({ role: "combobox", "aria-autocomplete": "list", "aria-expanded": "false", "aria-controls": menu.id })
+    .forEach(([name, value]) => input.setAttribute(name, value));
+  // The saved family ("": built-in), those listed, and the one the arrow keys are on.
+  let chosen = "";
+  let listed = [];
+  let lit = -1;
+  // Counts opens and closes: an open still waiting for the catalogue is dropped by a close since.
+  let turn = 0;
+  const named = (family) => family || BUILT_IN_FONT;
+  const light = (i) => {
+    lit = i;
+    [...menu.children].forEach((li, n) => li.classList.toggle("active", n === i));
+    menu.children[i]?.scrollIntoView({ block: "nearest" });
+    if (menu.children[i]) input.setAttribute("aria-activedescendant", menu.children[i].id);
+    else input.removeAttribute("aria-activedescendant");
+  };
+  const close = () => {
+    turn += 1;
+    menu.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+  };
+  const open = async () => {
+    const mine = ++turn;
+    await loadFontFamilies();
+    if (mine !== turn || document.activeElement !== input) return;
+    // The field showing the choice lists everything; typing narrows it.
+    const typed = input.value.trim();
+    const filter = typed === chosen ? "" : typed.toLowerCase();
+    const all = [{ family: "" }, ...(fontFamilies || [])];
+    const matching = all.filter((f) => !filter || named(f.family).toLowerCase().includes(filter)).slice(0, 300);
+    listed = matching.map((f) => f.family);
+    menu.replaceChildren(...matching.map((f, i) => {
+      const li = document.createElement("li");
+      li.setAttribute("role", "option");
+      li.id = `${input.id}-opt-${i}`;
+      li.setAttribute("aria-selected", String(f.family === chosen));
+      li.append(named(f.family));
+      if (f.category) li.append(Object.assign(document.createElement("span"), { className: "muted", textContent: ` ${f.category}` }));
+      return li;
+    }));
+    menu.hidden = !listed.length;
+    input.setAttribute("aria-expanded", String(!menu.hidden));
+    light(filter ? 0 : listed.indexOf(chosen));
+  };
+  const pick = (family) => {
+    close();
+    input.value = family;
+    if (family === chosen) return;
+    chosen = family;
+    // After a failure, the font the service holds (a newer pick may have been saved meanwhile).
+    saveDisplay({ [field]: family }).catch((err) => lookNotSaved("font", err).then(() => {
+      chosen = displayState[field] || "";
+      if (document.activeElement !== input) input.value = chosen;
+    }));
+  };
+  // Keeps the field focused: a click on the menu would otherwise leave it first.
+  menu.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const i = [...menu.children].indexOf(e.target.closest("li"));
+    if (i >= 0) pick(listed[i]);
+  });
+  // The field is in a <label>: a click in the menu would reach the field and open it again.
+  menu.addEventListener("click", (e) => e.preventDefault());
+  input.addEventListener("focus", () => { chosen = input.value.trim(); open(); });
+  input.addEventListener("click", () => { if (menu.hidden) open(); });
+  input.addEventListener("input", open);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (menu.hidden) { open(); return; }
+      light(Math.max(0, Math.min(listed.length - 1, lit + (e.key === "ArrowDown" ? 1 : -1))));
+    } else if (e.key === "Enter" && !menu.hidden && lit >= 0) {
+      e.preventDefault();
+      pick(listed[lit]);
+    } else if (e.key === "Escape") {
+      close();
+    }
+  });
+  // Leaving without picking keeps the font chosen (an unfinished name is dropped).
+  input.addEventListener("blur", () => {
+    close();
+    input.value = chosen;
   });
 }
 
 for (const [id, field] of [["key-font", "key_font"], ["key-font-setup", "key_font"], ["start-font", "start_font"], ["start-font-setup", "start_font"]]) {
-  $(id).addEventListener("focus", loadFontFamilies);
-  $(id).addEventListener("change", (e) => {
-    const family = e.target.value.trim();
-    if (family && fontFamilies && !fontFamilies.some((f) => f.family === family)) {
-      e.target.setCustomValidity("Pick a family from the list");
-      e.target.reportValidity();
-      return;
-    }
-    e.target.setCustomValidity("");
-    saveDisplay({ [field]: family }).catch((err) => alert(`Could not change the font: ${err.message}`));
-  });
+  fontMenu($(id), field);
 }
 
 /** The board whose look the dashboard (and the set-up's look step) shows and changes: each board
@@ -927,7 +1042,8 @@ async function loadDisplay() {
   pairedBoards = d.boards || [];
   renderOtherBoards(renderStatus.last);
   showLookBoards(d);
-  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font, native_portrait: d.native_portrait };
+  displayState = { key_size: d.key_size, theme: d.theme, turn: d.turn, key_font: d.key_font, start_font: d.start_font, start_size: d.start_size,
+                  native_portrait: d.native_portrait };
   showFonts(d);
   redrawScreens();
   $("key-size").value = d.key_size;
@@ -1036,7 +1152,7 @@ async function keySizeStep() {
   const canLook = !!(current.board_can_change_look || setup.justInstalled || setup.identified?.running?.hasDisplay);
   $("theme-note").hidden = canLook;
   displayState = { key_size: current.key_size, theme: current.theme, turn: current.turn || 0, key_font: current.key_font, start_font: current.start_font,
-                   native_portrait: current.native_portrait };
+                   start_size: current.start_size, native_portrait: current.native_portrait };
   showFonts(current);
   redrawScreens();
   // Each choice applies at once: on the board (over USB or Wi-Fi), and in the preview.

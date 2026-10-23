@@ -248,6 +248,10 @@ label.inline {
 label.inline > * { font-family: var(--sans); text-transform: none; letter-spacing: 0; }
 .start-preview { font-size: 40px; margin: 2px 0; line-height: 1.15; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .font-pick { min-width: 0; }
+.font-box { position: relative; display: grid; min-width: 0; }
+/* In a label.inline, which is muted: the font names in the text colour. */
+.font-box .combo-list { color: var(--text); font-weight: 400; }
+.font-box .combo-list .muted { font-size: 12px; color: var(--muted); }
 .size-pick { width: 6em; }
 .note { color: var(--muted); margin: 14px 0 0; }
 .success { color: var(--ok); }
