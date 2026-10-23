@@ -17,9 +17,17 @@ pub struct SerialLink {
 
 impl SerialLink {
     pub fn open(path: &str) -> Result<SerialLink, String> {
-        let port = serialport::new(path, 115_200).timeout(Duration::from_millis(100)).open()
-            .map_err(|e| format!("cannot open {path}: {e}"))?;
-        Ok(SerialLink { port, buffer: Vec::new(), next_id: 0, old_names: false })
+        let mut last_err = String::new();
+        for attempt in 0..6 {
+            if attempt > 0 {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            match serialport::new(path, 115_200).timeout(Duration::from_millis(100)).open() {
+                Ok(port) => return Ok(SerialLink { port, buffer: Vec::new(), next_id: 0, old_names: false }),
+                Err(e) => last_err = e.to_string(),
+            }
+        }
+        Err(format!("cannot open {path}: {last_err}"))
     }
 
     /// Next complete line within `timeout`, or None.

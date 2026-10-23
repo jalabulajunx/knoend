@@ -70,8 +70,8 @@ function renderStatus(s) {
     $("f-firmware").textContent = s.board.firmware;
     $("f-address").textContent = s.board.address;
     $("f-id").textContent = s.board.id;
-    renderOtherBoards(s);
   }
+  renderOtherBoards(s);
   // A new board connection (a restart for a new look, other firmware): the choices follow it.
   const look = s.board ? JSON.stringify([s.board.firmware, s.board.display]) : "";
   if (look !== renderStatus.look) {
@@ -128,7 +128,7 @@ function facts(title, rows, boardId) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "secondary small-button danger-button";
-    btn.textContent = "Remove";
+    btn.textContent = "Remove board";
     btn.addEventListener("click", () => openRemoveBoardDialog(boardId));
     dd.appendChild(btn);
     dl.append(dt, dd);
@@ -964,7 +964,15 @@ function openRemoveBoardDialog(boardId) {
 }
 
 $("remove-board-btn")?.addEventListener("click", () => {
-  openRemoveBoardDialog(renderStatus.last?.board?.id);
+  const current = renderStatus.last?.board?.id;
+  if (current) {
+    openRemoveBoardDialog(current);
+  } else if (pairedBoards.length === 1) {
+    openRemoveBoardDialog(pairedBoards[0].id);
+  } else if (pairedBoards.length > 1) {
+    // If no board is actively connected, pick the first or show dialog
+    openRemoveBoardDialog(pairedBoards[0].id);
+  }
 });
 
 $("remove-board-cancel")?.addEventListener("click", () => {
@@ -981,10 +989,7 @@ $("remove-board-confirm")?.addEventListener("click", async () => {
   status.textContent = "Removing board...";
 
   try {
-    const res = await api("/board/remove", {
-      method: "POST",
-      body: JSON.stringify({ board: boardToRemove, forget })
-    });
+    const res = await api("/board/remove", { board: boardToRemove, forget });
     if (res.ok) {
       status.className = "success";
       status.textContent = forget ? "Board forgotten and removed." : "Board removed from display.";

@@ -516,6 +516,16 @@ async fn remove_board(State(app): State<App>, Json(request): Json<RemoveBoardReq
             pairings.save().map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         }
         let _ = crate::display::remove_board(board);
+        app.shared.update(|s| {
+            s.boards.retain(|b| b.id != board);
+            if s.board.as_ref().is_some_and(|b| b.id == board) {
+                s.board = s.boards.first().cloned();
+            }
+            if s.boards.is_empty() {
+                s.link = "no-pairing".into();
+                s.board = None;
+            }
+        }).await;
         app.shared.drop_board(board.to_string());
         say!("Board {board} removed and unpaired");
     } else {

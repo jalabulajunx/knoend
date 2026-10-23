@@ -114,11 +114,24 @@ fn usb_info(port: &str) -> UsbPortInfo {
 }
 
 fn connect(port: &str, after: ResetAfterOperation) -> Result<Flasher, String> {
-    let serial = serialport::new(port, 115_200)
-        .flow_control(serialport::FlowControl::None)
-        .timeout(Duration::from_secs(3))
-        .open_native()
-        .map_err(|e| format!("cannot open {port}: {e}"))?;
+    let mut last_err = String::new();
+    let mut serial = None;
+    for attempt in 0..6 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        match serialport::new(port, 115_200)
+            .flow_control(serialport::FlowControl::None)
+            .timeout(Duration::from_secs(3))
+            .open_native() {
+            Ok(s) => {
+                serial = Some(s);
+                break;
+            }
+            Err(e) => last_err = e.to_string(),
+        }
+    }
+    let serial = serial.ok_or_else(|| format!("cannot open {port}: {last_err}"))?;
     let connection = Connection::new(serial, usb_info(port), after, ResetBeforeOperation::DefaultReset, 115_200);
     // Stub on, verify on, skip unchanged regions off, chip auto-detected, 460800 baud after sync.
     Flasher::connect(connection, true, true, false, None, Some(460_800))

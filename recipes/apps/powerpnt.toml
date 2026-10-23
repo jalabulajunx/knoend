@@ -1,58 +1,58 @@
-# Microsoft PowerPoint: presentation controls and slide notes.
-# In presentation / slide show mode, the board displays the active slide's speaker notes
-# in the detail panel (scrollable by swiping) and presents quick controls for advancing slides.
+# Microsoft PowerPoint: editing controls and slide show launch.
+# In presentation / slide show mode, the companion automatically switches to the
+# presentation layout with full speaker notes and slideshow controls.
 [pack]
 id = "builtin.powerpnt"
 name = "PowerPoint"
-version = "0.1.0"
+version = "0.2.0"
 source = "builtin"
-description = "Presentation controls and slide notes: advance, go back, end show, and read speaker notes."
+description = "PowerPoint controls: open, new slide, save, undo, present, and duplicate."
 grid = "3x3"
 
 [match]
 windows = ["POWERPNT.EXE", "powerpnt.exe", "POWERPNT", "powerpnt"]
 
 [[key]]
-label = "Next"
-icon = "chevron_right"
-speak = "Next slide"
-action = { kind = "shortcut", keys = "Right" }
+label = "Open"
+icon = "folder_open"
+speak = "Open presentation"
+action = { kind = "shortcut", keys = "Primary+O" }
 
 [[key]]
-label = "Previous"
-icon = "chevron_left"
-speak = "Previous slide"
-action = { kind = "shortcut", keys = "Left" }
+label = "New Slide"
+icon = "add"
+speak = "New slide"
+action = { kind = "shortcut", keys = "Primary+M" }
 
 [[key]]
-label = "End Show"
-icon = "stop"
-speak = "End presentation"
-action = { kind = "shortcut", keys = "Escape" }
+label = "Save"
+icon = "save"
+speak = "Save presentation"
+action = { kind = "shortcut", keys = "Primary+S" }
 
 [[key]]
-label = "First"
-icon = "first_page"
-speak = "First slide"
-action = { kind = "shortcut", keys = "Home" }
-
-[[key]]
-label = "Black"
-icon = "dark_mode"
-speak = "Black screen"
-action = { kind = "shortcut", keys = "B" }
-
-[[key]]
-label = "White"
-icon = "light_mode"
-speak = "White screen"
-action = { kind = "shortcut", keys = "W" }
+label = "Undo"
+icon = "undo"
+speak = "Undo"
+action = { kind = "shortcut", keys = "Primary+Z" }
 
 [[key]]
 label = "Present"
 icon = "slideshow"
 speak = "Start presentation from beginning"
 action = { kind = "shortcut", keys = "F5" }
+
+[[key]]
+label = "Redo"
+icon = "redo"
+speak = "Redo"
+action = { kind = "shortcut", keys = "Primary+Y" }
+
+[[key]]
+label = "Duplicate"
+icon = "content_copy"
+speak = "Duplicate slide"
+action = { kind = "shortcut", keys = "Primary+D" }
 
 [[key]]
 label = "From Current"

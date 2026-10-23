@@ -94,6 +94,18 @@ and say in the error which setting. A rebuild is only for our own bugs.
   `HWND`s (`DWMWA_CLOAKED`, `WS_EX_TOOLWINDOW`, zero title length) and unlock the Windows Foreground
   Lock before `SetForegroundWindow`.
 
+- **On Windows, COM port reopen races cause `ERROR_ACCESS_DENIED`.** When rapidly closing and
+  reopening a serial line (such as during Wi-Fi setup right after flashing or USB pairing on CH340
+  boards), Windows driver teardown can take up to ~1 s. Always open with retry backoff
+  (`SerialLink::open` and `knoend_flash::connect`).
+- **Board detail packets have a strict firmware limit (`UI_DETAIL_BYTES 241`).** Any detail text
+  (slide speaker notes, approval descriptions) longer than ~220 characters must be paginated into
+  word-boundary pages with a page cycler / swipe rather than cut off midway.
+- **Never use heuristic "most recent file" fallback for active documents.** If an app's window title
+  points to an unsaved presentation or template without a saved file on disk, fallback to an
+  empty/default state (`"No notes for this slide"`); never guess a past file from `Recent` or
+  `Downloads`, which contaminates new documents with stale notes.
+
 - **A board has up to three channels, and Bluetooth is two things.** Paired as a keyboard it types;
   the service talks to it over Wi-Fi, USB or the Bluetooth data service beside the keyboard. A
   board "paired over Bluetooth" with no Wi-Fi and no USB is reached over that data service only if

@@ -77,6 +77,7 @@ extern "system" {
     fn GetWindowThreadProcessId(hwnd: Hwnd, process_id: *mut u32) -> u32;
     fn GetClassNameW(hwnd: Hwnd, class_name: *mut u16, max_count: i32) -> i32;
     fn GetWindowTextLengthW(hwnd: Hwnd) -> i32;
+    fn GetWindowTextW(hwnd: Hwnd, lp_string: *mut u16, n_max_count: i32) -> i32;
     fn GetWindow(hwnd: Hwnd, cmd: u32) -> Hwnd;
     fn GetWindowLongW(hwnd: Hwnd, index: i32) -> i32;
     fn IsWindowVisible(hwnd: Hwnd) -> Bool;
@@ -153,7 +154,7 @@ impl Watcher {
             std::thread::sleep(Duration::from_millis(250));
             let now = self.current();
             let changed = match (&now, previous) {
-                (Some(a), Some(b)) => a.app != b.app || a.instance != b.instance,
+                (Some(a), Some(b)) => a.app != b.app || a.instance != b.instance || a.title != b.title,
                 (None, None) => false,
                 _ => true,
             };
@@ -313,13 +314,70 @@ fn focus_for_window(hwnd: Hwnd) -> Option<Focus> {
         return None;
     }
     let class = window_class(hwnd);
-    let (_, exe) = effective_pid_and_exe(hwnd)?;
+    let (pid, exe) = effective_pid_and_exe(hwnd)?;
     let file_name = exe.file_name()?.to_str()?;
     if is_desktop_or_shell_class(&class, file_name) {
         return None;
     }
     let (app, instance) = app_and_stem(file_name)?;
-    Some(Focus { os: Os::Windows, app, instance, title: String::new(), web: None, pid: None, terminal: None })
+    let title = window_title(hwnd, Some(pid));
+    Some(Focus { os: Os::Windows, app, instance, title, web: None, pid: None, terminal: None })
+}
+
+fn raw_window_title(hwnd: Hwnd) -> String {
+    unsafe {
+        let len = GetWindowTextLengthW(hwnd);
+        if len <= 0 {
+            return String::new();
+        }
+        let mut buf = vec![0u16; (len + 1) as usize];
+        let copied = GetWindowTextW(hwnd, buf.as_mut_ptr(), len + 1);
+        String::from_utf16_lossy(&buf[..copied.max(0) as usize])
+    }
+}
+
+fn find_process_title(target_pid: u32) -> String {
+    attach_input_desktop();
+    struct Search {
+        pid: u32,
+        title: String,
+    }
+    unsafe extern "system" fn check_window(hwnd: Hwnd, lparam: isize) -> Bool {
+        let search = &mut *(lparam as *mut Search);
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == search.pid && IsWindowVisible(hwnd) != 0 {
+            let t = raw_window_title(hwnd);
+            if !t.is_empty() {
+                let lower = t.to_ascii_lowercase();
+                if lower.contains("slide show") || lower.contains("diaporama") {
+                    search.title = t;
+                    return 0; // slide show window has highest priority
+                }
+                if search.title.is_empty() {
+                    search.title = t;
+                }
+            }
+        }
+        1
+    }
+    let mut search = Search { pid: target_pid, title: String::new() };
+    unsafe { EnumWindows(check_window, &mut search as *mut _ as isize) };
+    search.title
+}
+
+fn window_title(hwnd: Hwnd, pid: Option<u32>) -> String {
+    let title = raw_window_title(hwnd);
+    if !title.is_empty() {
+        return title;
+    }
+    if let Some(pid) = pid {
+        let proc_title = find_process_title(pid);
+        if !proc_title.is_empty() {
+            return proc_title;
+        }
+    }
+    String::new()
 }
 
 unsafe fn is_main_window(hwnd: Hwnd) -> bool {

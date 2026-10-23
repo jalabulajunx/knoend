@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KnoEnd",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Your KnoEnd board follows the website you are on, and its buttons act on the page you allow.",
   "permissions": ["tabs", "nativeMessaging", "scripting"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],

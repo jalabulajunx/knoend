@@ -210,8 +210,12 @@ fn path() -> std::path::PathBuf {
 pub fn load() -> Display {
     let text = std::fs::read_to_string(path()).ok();
     let mut display: Display = text.as_deref().and_then(|t| serde_json::from_str(t).ok()).unwrap_or_default();
-    // Saved before looks were per board: the one look becomes that of every board paired now.
-    if display.boards.is_empty() && text.is_some() {
+    // Saved before looks were per board (pre-#15 had no "boards" key): migrate top-level settings.
+    // If the file already has a "boards" key (even if empty after removing boards), do NOT re-migrate.
+    let has_boards_key = text.as_deref().and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+        .and_then(|v| v.as_object().map(|o| o.contains_key("boards")))
+        .unwrap_or(false);
+    if !has_boards_key && text.is_some() {
         let paired: Vec<String> = knoend_transport::pairing::Pairings::load().boards.keys().cloned().collect();
         if migrate(&mut display, &paired) {
             let _ = save(&display);
