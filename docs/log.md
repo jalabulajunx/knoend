@@ -2107,3 +2107,25 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - Release v0.2.2 cut and tagged.
 - Open:
   - None.
+
+## 2026-10-22 - Tom (Claude Code, Opus 5.5) - macOS app lists: Apple's apps, no background programs (#73, #74)
+
+- Changed:
+  - `desktop/src/installed.rs`: macOS also lists `/System/Applications` (and its Utilities) and
+    Finder (#73).
+  - `cli/src/launcher.rs`: on macOS only installed apps count as used, and at start the service
+    forgets apps in `usage.json` that are not installed: loginwindow, Spotlight, Dock,
+    controlcenter, UserNotificationCenter, BluetoothUIServer no longer fill the home screen (#74).
+    An app outside the Applications folders (run from a disk image) is not counted.
+  - `cli/src/app_setup.rs`: an app icon no longer lists every app (only Linux needs the list).
+- Tested (macOS 26.6, FNK0104B over Wi-Fi):
+  - Bug on main: Tom's 2026-10-22 test (16 apps listed; loginwindow and others on the home screen).
+  - `/api/apps`: 82 apps (16 before), with Finder, Terminal, Notes, Mail, Calendar, Preview.
+  - `usage.json` after start: VS Code, Firefox, Terminal, Finder, Calculator, Clock, VLC kept; the
+    seven background programs gone. Home screen on the board (Tom): real apps only.
+  - `cargo test -p knoend launcher`: passing (new `apps_not_installed_are_forgotten`).
+- Decided:
+  - "Can it be opened again from an Applications folder" is the rule, rather than the running
+    app's activation policy: it also cleans entries counted before.
+- Open:
+  - None.

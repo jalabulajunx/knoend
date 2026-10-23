@@ -412,6 +412,9 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     // The launcher: usage per app/site, installed apps, site icons, icons already on the board.
     let mut usage = crate::launcher::Usage::load();
     let apps = crate::launcher::installed_apps();
+    if cfg!(target_os = "macos") {
+        usage.forget_uninstalled(&apps);
+    }
     let mut favicons = load_favicons();
     let mut fetching: HashSet<String> = HashSet::new();
     let mut launcher_targets: HashMap<u8, crate::launcher::Target> = HashMap::new();

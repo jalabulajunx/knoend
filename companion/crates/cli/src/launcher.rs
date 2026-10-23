@@ -120,6 +120,23 @@ impl Usage {
         self.save();
     }
 
+    /// Forgets the apps that are not installed (`apps`) and saves: on macOS, background programs
+    /// such as loginwindow were counted before #74.
+    pub fn forget_uninstalled(&mut self, apps: &[AppInfo]) {
+        if self.keep_installed(apps) {
+            self.save();
+        }
+    }
+
+    /// Keeps the sites and the installed apps (all of them when the list is empty); true if any went.
+    fn keep_installed(&mut self, apps: &[AppInfo]) -> bool {
+        let before = self.items.len();
+        if !apps.is_empty() {
+            self.items.retain(|key, _| key.strip_prefix("app:").is_none_or(|id| apps.iter().any(|a| a.id == id)));
+        }
+        self.items.len() != before
+    }
+
     /// The top `n`, best first.
     /// Seconds `key` ("app:firefox") has been in front, all time.
     pub fn seconds(&self, key: &str) -> f64 {
@@ -164,7 +181,8 @@ pub fn usage_key(focus: &Focus, apps: &[AppInfo]) -> Option<(String, Entry)> {
         return Some((format!("site:{host}"), entry(host.clone(), Target::Site { host: web.host.clone() })));
     }
     if cfg!(target_os = "macos") {
-        return (!focus.app.is_empty()).then(|| (format!("app:{}", focus.app),
+        // Only apps that are installed: not loginwindow, Spotlight or other background programs.
+        return apps.iter().any(|a| a.id == focus.app).then(|| (format!("app:{}", focus.app),
                                                  entry(focus.display_name().to_string(), Target::App { id: focus.app.clone() })));
     }
     if cfg!(target_os = "windows") {
@@ -203,8 +221,13 @@ impl AppInfo {
     }
 }
 
-/// Installed apps (Linux); empty elsewhere.
+/// Installed apps (Linux, macOS); empty elsewhere.
 pub fn installed_apps() -> Vec<AppInfo> {
+    #[cfg(target_os = "macos")]
+    {
+        knoend_desktop::installed::list().into_iter()
+            .map(|a| AppInfo { id: a.id, name: a.name, icon: String::new(), wm_class: String::new() }).collect()
+    }
     #[cfg(target_os = "linux")]
     {
         // Same order of preference as knoend_desktop::apps::for_window: window class first.
@@ -213,7 +236,7 @@ pub fn installed_apps() -> Vec<AppInfo> {
         apps.sort_by_key(|a| a.wm_class.is_empty());
         apps
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     Vec::new()
 }
 
@@ -288,6 +311,22 @@ mod tests {
         assert_eq!(names(&usage.home(&pinned, true, 9, name)), ["MuseScore", "github.com", "Firefox"], "pinned, then the rest by use");
         assert_eq!(names(&usage.home(&pinned, false, 9, name)), ["MuseScore", "github.com"], "pinned only");
         assert_eq!(names(&usage.home(&[], true, 1, name)), ["Firefox"]);
+    }
+
+    #[test]
+    fn apps_not_installed_are_forgotten() {
+        let mut usage = Usage::default();
+        let entry = |name: &str, target: Target| Entry { name: name.into(), target, seconds: 60.0, last: now() };
+        for id in ["com.apple.Terminal", "com.apple.loginwindow"] {
+            usage.items.insert(format!("app:{id}"), entry(id, Target::App { id: id.into() }));
+        }
+        usage.items.insert("site:github.com".into(), entry("github.com", Target::Site { host: "github.com".into() }));
+        assert!(!usage.keep_installed(&[]), "an empty list forgets nothing");
+        let terminal = AppInfo { id: "com.apple.Terminal".into(), name: "Terminal".into(), icon: String::new(), wm_class: String::new() };
+        assert!(usage.keep_installed(&[terminal]));
+        let mut kept: Vec<_> = usage.items.keys().cloned().collect();
+        kept.sort();
+        assert_eq!(kept, ["app:com.apple.Terminal", "site:github.com"], "sites stay");
     }
 
     #[test]
