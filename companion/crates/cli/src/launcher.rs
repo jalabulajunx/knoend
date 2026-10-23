@@ -120,20 +120,18 @@ impl Usage {
         self.save();
     }
 
-    /// Forgets the apps that are not installed (`apps`) and saves: on macOS, background programs
-    /// such as loginwindow were counted before #74.
-    pub fn forget_uninstalled(&mut self, apps: &[AppInfo]) {
-        if self.keep_installed(apps) {
+    /// Forgets the apps `gone` names (by id) and saves: on macOS, background programs such as
+    /// loginwindow were counted before #74.
+    pub fn forget_apps(&mut self, gone: impl Fn(&str) -> bool) {
+        if self.drop_apps(gone) {
             self.save();
         }
     }
 
-    /// Keeps the sites and the installed apps (all of them when the list is empty); true if any went.
-    fn keep_installed(&mut self, apps: &[AppInfo]) -> bool {
+    /// Drops the apps `gone` names; sites stay. True if any went.
+    fn drop_apps(&mut self, gone: impl Fn(&str) -> bool) -> bool {
         let before = self.items.len();
-        if !apps.is_empty() {
-            self.items.retain(|key, _| key.strip_prefix("app:").is_none_or(|id| apps.iter().any(|a| a.id == id)));
-        }
+        self.items.retain(|key, _| key.strip_prefix("app:").is_none_or(|id| !gone(id)));
         self.items.len() != before
     }
 
@@ -181,8 +179,11 @@ pub fn usage_key(focus: &Focus, apps: &[AppInfo]) -> Option<(String, Entry)> {
         return Some((format!("site:{host}"), entry(host.clone(), Target::Site { host: web.host.clone() })));
     }
     if cfg!(target_os = "macos") {
-        // Only apps that are installed: not loginwindow, Spotlight or other background programs.
-        return apps.iter().any(|a| a.id == focus.app).then(|| (format!("app:{}", focus.app),
+        #[cfg(target_os = "macos")]
+        if knoend_desktop::mac_apps::background(&focus.app) {
+            return None;
+        }
+        return (!focus.app.is_empty()).then(|| (format!("app:{}", focus.app),
                                                  entry(focus.display_name().to_string(), Target::App { id: focus.app.clone() })));
     }
     if cfg!(target_os = "windows") {
@@ -221,13 +222,8 @@ impl AppInfo {
     }
 }
 
-/// Installed apps (Linux, macOS); empty elsewhere.
+/// Installed apps (Linux); empty elsewhere.
 pub fn installed_apps() -> Vec<AppInfo> {
-    #[cfg(target_os = "macos")]
-    {
-        knoend_desktop::installed::list().into_iter()
-            .map(|a| AppInfo { id: a.id, name: a.name, icon: String::new(), wm_class: String::new() }).collect()
-    }
     #[cfg(target_os = "linux")]
     {
         // Same order of preference as knoend_desktop::apps::for_window: window class first.
@@ -236,7 +232,7 @@ pub fn installed_apps() -> Vec<AppInfo> {
         apps.sort_by_key(|a| a.wm_class.is_empty());
         apps
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(target_os = "linux"))]
     Vec::new()
 }
 
@@ -314,16 +310,15 @@ mod tests {
     }
 
     #[test]
-    fn apps_not_installed_are_forgotten() {
+    fn background_programs_are_forgotten() {
         let mut usage = Usage::default();
         let entry = |name: &str, target: Target| Entry { name: name.into(), target, seconds: 60.0, last: now() };
         for id in ["com.apple.Terminal", "com.apple.loginwindow"] {
             usage.items.insert(format!("app:{id}"), entry(id, Target::App { id: id.into() }));
         }
         usage.items.insert("site:github.com".into(), entry("github.com", Target::Site { host: "github.com".into() }));
-        assert!(!usage.keep_installed(&[]), "an empty list forgets nothing");
-        let terminal = AppInfo { id: "com.apple.Terminal".into(), name: "Terminal".into(), icon: String::new(), wm_class: String::new() };
-        assert!(usage.keep_installed(&[terminal]));
+        assert!(!usage.drop_apps(|_| false));
+        assert!(usage.drop_apps(|id| id == "com.apple.loginwindow"));
         let mut kept: Vec<_> = usage.items.keys().cloned().collect();
         kept.sort();
         assert_eq!(kept, ["app:com.apple.Terminal", "site:github.com"], "sites stay");

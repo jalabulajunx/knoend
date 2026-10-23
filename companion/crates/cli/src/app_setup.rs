@@ -96,8 +96,7 @@ pub async fn draft(shared: &Arc<Shared>, ids: Vec<String>) -> Result<Value, Stri
 /// The app's icon as a 32x32 PNG, from its own files.
 pub async fn icon(id: String) -> Option<Vec<u8>> {
     tokio::task::spawn_blocking(move || {
-        // Only Linux finds icons through the launcher's list (macOS would list every app twice).
-        let apps = if cfg!(target_os = "linux") { crate::launcher::installed_apps() } else { Vec::new() };
+        let apps = crate::launcher::installed_apps();
         let name = knoend_desktop::installed::list().into_iter().find(|a| a.id == id).map(|a| a.name).unwrap_or_default();
         let rgba = crate::launcher::icon_pixels(&crate::launcher::Target::App { id }, &name, &apps, &Default::default())?;
         knoend_desktop::picture::png(&rgba, 32, 32)
