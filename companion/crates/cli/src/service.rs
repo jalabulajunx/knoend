@@ -206,6 +206,13 @@ impl Shared {
         }
     }
 
+    /// Disconnects board `id` when connected and stops tracking it.
+    pub fn drop_board(&self, id: String) {
+        if let Some(inbox) = self.inbox.get() {
+            let _ = inbox.try_send(Event::DropBoard(id));
+        }
+    }
+
     /// A library drafted outside the service loop (the web app's app setup): the loop adds it and
     /// shows it if its app is in front.
     pub async fn configured(&self, target: Focus, result: Result<(PathBuf, Library), String>) {
@@ -313,6 +320,7 @@ enum Event {
     /// Another paired board was found while others are connected: it joins them (#15, mirror).
     Joined(BoardStatus, Link),
     Configured(Focus, Result<(PathBuf, Library), String>),
+    DropBoard(String),
     /// The person chose another theme or turn in the web app (already saved).
     Look(String),
     /// A font fetched for a slot ("keys", "start"): its family (empty: back to the built-in font),
@@ -494,7 +502,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // A Claude notification with no hook event near it: offer "Go to Claude".
                     let decided = unexplained.as_ref().is_some_and(|(_, at)| at.elapsed() >= HOOK_GRACE);
                     let expired = calling.as_ref().is_some_and(|c| c.since.elapsed() >= CALLING_FOR);
-                    if decided || expired {
+                    let ppt_presenting = effective(&focus, &tab).is_some_and(|f| f.app.to_ascii_lowercase().contains("powerpnt") || f.instance.to_ascii_lowercase().contains("powerpnt"));
+                    if decided || expired || ppt_presenting {
                         if expired {
                             calling = None;
                         }
@@ -1025,6 +1034,20 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         break;
                     }
                     // The others carry on; a smaller board leaving may allow a bigger grid.
+                    paging.board = common_grid(&boards);
+                    paging.max = mirror_grid(&boards);
+                    scout.watch(boards.iter().map(|b| b.id.clone()).collect());
+                    publish_boards(&boards, &shared).await;
+                }
+                Event::DropBoard(id) => {
+                    sender.remove(&id);
+                    heard.remove(&id);
+                    boards.retain(|b| b.id != id);
+                    if boards.is_empty() {
+                        scout.abort();
+                        shared.update(|s| { s.link = if Pairings::load().boards.is_empty() { "no-pairing".into() } else { "searching".into() }; s.layout = None; s.board = None; s.boards.clear(); }).await;
+                        break;
+                    }
                     paging.board = common_grid(&boards);
                     paging.max = mirror_grid(&boards);
                     scout.watch(boards.iter().map(|b| b.id.clone()).collect());
@@ -1627,6 +1650,17 @@ async fn show(sender: &mut BoardSender, catalog: &Catalog, focus: &Focus, player
                 body.keys.sort_by_key(|k| k.key);
             }
             None => status = json!({"text": calling.status(), "level": "attention"}),
+        }
+    }
+    // In presentation mode for PowerPoint, show speaker notes in the detail panel if available.
+    if focus.app.to_ascii_lowercase().contains("powerpnt") || focus.instance.to_ascii_lowercase().contains("powerpnt") {
+        if let Some(sn) = crate::powerpoint::current_presentation_notes() {
+            if !sn.notes.is_empty() {
+                body.detail = Some(sn.notes);
+                if sn.total_slides > 0 {
+                    status = json!({"text": format!("Slide {} of {}", sn.slide_index, sn.total_slides), "level": "info"});
+                }
+            }
         }
     }
     body.name = board_text(&body.name, 128);

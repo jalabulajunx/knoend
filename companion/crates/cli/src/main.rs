@@ -32,6 +32,7 @@ mod settings;
 mod firmware;
 mod macos_help;
 mod midi;
+mod powerpoint;
 mod provision;
 mod service;
 mod web;

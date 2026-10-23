@@ -63,6 +63,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/ai/models", post(ai_models))
         .route("/ai/tools", get(ai_tools))
         .route("/display", get(display_settings).post(save_display))
+        .route("/board/remove", post(remove_board))
         .route("/settings", get(settings).post(change_settings))
         .route("/fonts", get(font_catalogue))
         .route("/assist", post(assist))
@@ -492,6 +493,37 @@ async fn save_display(State(app): State<App>, Json(request): Json<DisplayRequest
     }
     crate::settings::apply(&app.shared, &changes).await.map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
     Ok(Json(look_of(&app, request.board.as_deref()).await))
+}
+
+#[derive(Deserialize)]
+struct RemoveBoardRequest {
+    board: String,
+    #[serde(default)]
+    forget: bool,
+}
+
+/// Removes a board: either completely unpairing/forgetting it, or removing its display entry.
+async fn remove_board(State(app): State<App>, Json(request): Json<RemoveBoardRequest>) -> ApiResult {
+    let board = request.board.trim();
+    if board.is_empty() {
+        return Err(fail(StatusCode::BAD_REQUEST, "board id is required"));
+    }
+
+    if request.forget {
+        let mut pairings = knoend_transport::pairing::Pairings::load();
+        let was_paired = pairings.forget(board);
+        if was_paired {
+            pairings.save().map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        }
+        let _ = crate::display::remove_board(board);
+        app.shared.drop_board(board.to_string());
+        say!("Board {board} removed and unpaired");
+    } else {
+        let _ = crate::display::remove_board(board).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        say!("Board {board} removed from display settings");
+    }
+
+    Ok(Json(json!({"ok": true, "board": board, "forgotten": request.forget})))
 }
 
 /// Google Fonts' families with Latin letters, live (fonts.rs), for the font picker.

@@ -69,6 +69,7 @@
           <p class="actions left">
             <button type="button" id="change-wifi" class="secondary small-button">Change Wi-Fi</button>
             <button type="button" id="dashboard-bluetooth" class="secondary small-button">Bluetooth settings</button>
+            <button type="button" id="remove-board-btn" class="secondary small-button danger-button">Remove board</button>
             <span class="muted small">The board works over USB, 2.4 GHz Wi-Fi, and Bluetooth ("KnoEnd" keyboard).</span></p>
         </article>
         <article class="card look">
@@ -477,6 +478,27 @@
       </form>
     </div>
   </aside>
+  <dialog id="remove-board-dialog" class="modal">
+    <form method="dialog" class="modal-body">
+      <h3>Remove board</h3>
+      <p>Choose how you want to remove <strong id="remove-board-id"></strong>:</p>
+      <div class="modal-options">
+        <label class="radio-label">
+          <input type="radio" name="remove-scope" value="forget" checked>
+          <span><strong>Remove all properties and configuration</strong><br><span class="muted small">Unpairs the board completely, forgets pairing keys, disconnects active link, and removes custom look settings.</span></span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="remove-scope" value="display">
+          <span><strong>Remove from display only</strong><br><span class="muted small">Keeps pairing and connectivity intact, but removes custom look configuration from display settings.</span></span>
+        </label>
+      </div>
+      <p id="remove-board-status" class="note" hidden></p>
+      <div class="actions right">
+        <button type="button" id="remove-board-cancel" class="secondary">Cancel</button>
+        <button type="button" id="remove-board-confirm" class="primary danger-button">Remove</button>
+      </div>
+    </form>
+  </dialog>
   <datalist id="font-families"></datalist>
   <script src="/app.js" type="module"></script>
 </body>

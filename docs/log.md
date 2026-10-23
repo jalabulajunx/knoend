@@ -1997,3 +1997,26 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   the FNK microphone; the Bluetooth-only test; Tom's spec review of #57, #60, #66 (read: sound;
   small nits: `quiet` default -50 in spec/firmware vs -60 sent; `mic` pins skip `$defs/pin`;
   `sequence` keys have no pattern); then issues #50, #39.
+
+## 2026-10-22 - Sundar (Antigravity) - Board removal in web app & PowerPoint presentation slide notes (#77, #78)
+
+- Changed:
+  - Board removal (#77):
+    - Companion API `POST /api/board/remove` with options:
+      - `forget = true`: unpairs the board from `companion.json` (`Pairings::forget`), clears display config, and drops active service connections (`drop_board`).
+      - `forget = false`: removes custom board look configuration from `display.json` only, preserving pairing and connection.
+    - Web UI: added "Remove board" button to the main Board facts card and an explicit "Remove" action button to each secondary board in `other-boards`, wired to a modal dialog allowing the user to choose between complete removal / unpairing vs display-only removal.
+  - PowerPoint presentation notes & recipe (#78):
+    - Added built-in recipe `recipes/apps/powerpnt.toml` with presentation controls (Next, Previous, End Show, First, Black screen, White screen, Present, From Current, Laser / Pen).
+    - Added Windows PowerPoint presentation detection and notes extractor via COM Automation (`powerpoint.rs` / `current_presentation_notes`).
+    - Service loop integration: when PowerPoint is in presentation mode, active slide notes are rendered in the layout detail panel (scrollable by swiping) and status reflects the current slide position (e.g. "Slide 1 of 12").
+- Tested (Windows 11, unit test suite):
+  - Spec validation (`python tools/validate_spec.py`) verified all recipe schemas including `recipes/apps/powerpnt.toml`.
+  - Display and pairing unit tests (`removing_a_board_drops_it_from_display_map`, `slide_notes_default_is_empty`, etc.).
+  - Full companion tests (`cargo test --locked`) passing.
+  - PowerShell COM automation verification with PowerPoint instance reading slide speaker notes.
+- Decided:
+  - Board removal modal gives clear, explicit choices so unpairing a board vs clearing look settings are never confused.
+  - PowerPoint speaker notes reuse the existing protocol detail panel (§3.6a) without requiring any firmware changes.
+- Open:
+  - Validate slide notes display on a physical board in live slide show on Windows 11.

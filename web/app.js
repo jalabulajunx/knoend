@@ -103,15 +103,15 @@ let pairedBoards = [];
 function renderOtherBoards(s) {
   const connected = s?.boards || [];
   const blocks = connected.slice(1).map((b) => facts(b.profile, [
-    ["Firmware", b.firmware], ["Address", b.address], ["ID", b.id], ["Keys", "the same keys, mirrored; its own look"]]));
+    ["Firmware", b.firmware], ["Address", b.address], ["ID", b.id], ["Keys", "the same keys, mirrored; its own look"]], b.id));
   for (const p of pairedBoards.filter((p) => !connected.some((b) => b.id === p.id))) {
     blocks.push(facts(p.profile || "Paired board", [["ID", p.id],
-      ["State", "paired, not connected: give it Wi-Fi or plug it in by USB (Bluetooth alone types keys only)"]]));
+      ["State", "paired, not connected: give it Wi-Fi or plug it in by USB (Bluetooth alone types keys only)"]], p.id));
   }
   $("other-boards").replaceChildren(...blocks);
 }
 
-function facts(title, rows) {
+function facts(title, rows, boardId) {
   const dl = document.createElement("dl");
   dl.className = "facts other-board";
   for (const [k, v] of [["Board", title], ...rows]) {
@@ -119,6 +119,18 @@ function facts(title, rows) {
     dt.textContent = k;
     const dd = document.createElement("dd");
     dd.textContent = v;
+    dl.append(dt, dd);
+  }
+  if (boardId) {
+    const dt = document.createElement("dt");
+    dt.textContent = "Actions";
+    const dd = document.createElement("dd");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "secondary small-button danger-button";
+    btn.textContent = "Remove";
+    btn.addEventListener("click", () => openRemoveBoardDialog(boardId));
+    dd.appendChild(btn);
     dl.append(dt, dd);
   }
   return dl;
@@ -940,6 +952,58 @@ function showLookBoards(d) {
   }));
 }
 $("look-board").addEventListener("change", (e) => { lookBoard = e.target.value; loadDisplay().catch(() => {}); });
+
+let boardToRemove = null;
+
+function openRemoveBoardDialog(boardId) {
+  boardToRemove = boardId || (renderStatus.last?.board?.id) || null;
+  if (!boardToRemove) return;
+  $("remove-board-id").textContent = boardToRemove;
+  $("remove-board-status").hidden = true;
+  $("remove-board-dialog").showModal();
+}
+
+$("remove-board-btn")?.addEventListener("click", () => {
+  openRemoveBoardDialog(renderStatus.last?.board?.id);
+});
+
+$("remove-board-cancel")?.addEventListener("click", () => {
+  $("remove-board-dialog").close();
+});
+
+$("remove-board-confirm")?.addEventListener("click", async () => {
+  if (!boardToRemove) return;
+  const scope = document.querySelector('input[name="remove-scope"]:checked')?.value || "forget";
+  const forget = scope === "forget";
+  const status = $("remove-board-status");
+  status.hidden = false;
+  status.className = "note";
+  status.textContent = "Removing board...";
+
+  try {
+    const res = await api("/board/remove", {
+      method: "POST",
+      body: JSON.stringify({ board: boardToRemove, forget })
+    });
+    if (res.ok) {
+      status.className = "success";
+      status.textContent = forget ? "Board forgotten and removed." : "Board removed from display.";
+      setTimeout(() => {
+        $("remove-board-dialog").close();
+        if (lookBoard === boardToRemove) {
+          lookBoard = null;
+        }
+        loadDisplay().catch(() => {});
+        api("/state").then(({ status }) => renderStatus(status)).catch(() => {});
+      }, 500);
+    } else {
+      throw new Error(res.error || "Failed to remove board");
+    }
+  } catch (err) {
+    status.className = "note error";
+    status.textContent = `Could not remove board: ${err.message}`;
+  }
+});
 
 /** Setup step 4: keys and look, available right after USB install/identify (before Wi-Fi or Bluetooth). */
 async function keySizeStep() {

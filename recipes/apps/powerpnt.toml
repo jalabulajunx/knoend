@@ -1,0 +1,67 @@
+# Microsoft PowerPoint: presentation controls and slide notes.
+# In presentation / slide show mode, the board displays the active slide's speaker notes
+# in the detail panel (scrollable by swiping) and presents quick controls for advancing slides.
+[pack]
+id = "builtin.powerpnt"
+name = "PowerPoint"
+version = "0.1.0"
+source = "builtin"
+description = "Presentation controls and slide notes: advance, go back, end show, and read speaker notes."
+grid = "3x3"
+
+[match]
+windows = ["POWERPNT.EXE", "powerpnt.exe", "POWERPNT", "powerpnt"]
+
+[[key]]
+label = "Next"
+icon = "chevron_right"
+speak = "Next slide"
+action = { kind = "shortcut", keys = "Right" }
+
+[[key]]
+label = "Previous"
+icon = "chevron_left"
+speak = "Previous slide"
+action = { kind = "shortcut", keys = "Left" }
+
+[[key]]
+label = "End Show"
+icon = "stop"
+speak = "End presentation"
+action = { kind = "shortcut", keys = "Escape" }
+
+[[key]]
+label = "First"
+icon = "first_page"
+speak = "First slide"
+action = { kind = "shortcut", keys = "Home" }
+
+[[key]]
+label = "Black"
+icon = "dark_mode"
+speak = "Black screen"
+action = { kind = "shortcut", keys = "B" }
+
+[[key]]
+label = "White"
+icon = "light_mode"
+speak = "White screen"
+action = { kind = "shortcut", keys = "W" }
+
+[[key]]
+label = "Present"
+icon = "slideshow"
+speak = "Start presentation from beginning"
+action = { kind = "shortcut", keys = "F5" }
+
+[[key]]
+label = "From Current"
+icon = "play_arrow"
+speak = "Start presentation from current slide"
+action = { kind = "shortcut", keys = "Shift+F5" }
+
+[[key]]
+label = "Laser / Pen"
+icon = "edit"
+speak = "Toggle laser pointer or pen"
+action = { kind = "shortcut", keys = "Primary+L" }
