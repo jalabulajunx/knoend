@@ -835,16 +835,15 @@ function turnsFor(d) {
 // ---- fonts from Google Fonts: the list live from the service, previews loaded by the browser ----
 
 let fontFamilies = null;
-/** The font list's first entry: back to the board's own font. */
+/** The font menu's first entry: back to the board's own font. */
 const BUILT_IN_FONT = "Built-in (Montserrat)";
 
-/** Fills the font search list from Google's catalogue (once per page). */
+/** Loads Google's catalogue for the font menus (once per page). */
 async function loadFontFamilies() {
   if (fontFamilies) return;
   fontFamilies = [];
   try {
     ({ families: fontFamilies } = await api("/fonts"));
-    $("font-families").replaceChildren(new Option(BUILT_IN_FONT), ...fontFamilies.map((f) => new Option(f.category ? `${f.family} (${f.category})` : f.family, f.family)));
   } catch (err) {
     fontFamilies = null;
     logTo($("activity"), `Could not load the list of Google Fonts: ${err.message}`, "error");
@@ -896,53 +895,94 @@ function pickSize(input) {
 }
 
 for (const id of ["start-size", "start-size-setup"]) {
-  // Shown on the board 1 s after the last step, not on every one (#50).
-  $(id).addEventListener("input", (e) => settle(e.target, 1000, () => pickSize(e.target)));
-  $(id).addEventListener("change", (e) => pickSize(e.target));
+  // Shown on the board 1.5 s after the last click on the arrows (each click is a "change" too),
+  // or when the person leaves the field (#50).
+  for (const kind of ["input", "change"]) $(id).addEventListener(kind, (e) => settle(e.target, 1500, () => pickSize(e.target)));
+  $(id).addEventListener("blur", (e) => pickSize(e.target));
 }
 
-/** Sends the font named in `input`: a family from the list, or the built-in one. An unfinished
- * name waits; when `done` (the person left the field) it is pointed out. */
-function pickFont(input, field, done) {
-  clearTimeout(input.settling);
-  const typed = input.value.trim();
-  if (!typed) return;
-  const family = typed === BUILT_IN_FONT ? "" : typed;
-  if (family && fontFamilies && !fontFamilies.some((f) => f.family === family)) {
-    if (done) {
-      input.setCustomValidity("Pick a family from the list");
-      input.reportValidity();
+/** Turns a font field into a menu of Google Fonts under it: the whole list on every click, narrowed
+ * as the person types; a family picked goes to the board at once. Written for the web app, as a
+ * browser's own list (`<datalist>`) lists only entries matching the field and opens when it likes
+ * (#50). */
+function fontMenu(input, field) {
+  const box = document.createElement("span");
+  box.className = "font-box";
+  input.replaceWith(box);
+  const menu = document.createElement("ul");
+  menu.className = "font-menu";
+  menu.setAttribute("role", "listbox");
+  menu.hidden = true;
+  box.append(input, menu);
+  // The saved family ("": built-in), those listed, and the one the arrow keys are on.
+  let chosen = "";
+  let listed = [];
+  let lit = -1;
+  const named = (family) => family || BUILT_IN_FONT;
+  const light = (i) => {
+    lit = i;
+    [...menu.children].forEach((li, n) => li.classList.toggle("lit", n === i));
+    menu.children[i]?.scrollIntoView({ block: "nearest" });
+  };
+  const open = async () => {
+    await loadFontFamilies();
+    if (document.activeElement !== input) return;
+    // The field showing the choice lists everything; typing narrows it.
+    const typed = input.value.trim();
+    const filter = typed === chosen ? "" : typed.toLowerCase();
+    const all = [{ family: "" }, ...(fontFamilies || [])];
+    const matching = all.filter((f) => !filter || named(f.family).toLowerCase().includes(filter)).slice(0, 300);
+    listed = matching.map((f) => f.family);
+    menu.replaceChildren(...matching.map((f) => {
+      const li = document.createElement("li");
+      li.setAttribute("role", "option");
+      li.classList.toggle("chosen", f.family === chosen);
+      li.append(named(f.family));
+      if (f.category) li.append(Object.assign(document.createElement("span"), { className: "muted", textContent: ` ${f.category}` }));
+      return li;
+    }));
+    menu.hidden = !listed.length;
+    light(filter ? 0 : listed.indexOf(chosen));
+  };
+  const pick = (family) => {
+    menu.hidden = true;
+    input.value = family;
+    if (family === chosen) return;
+    chosen = family;
+    saveDisplay({ [field]: family }).catch((err) => alert(`Could not change the font: ${err.message}`));
+  };
+  // Keeps the field focused: a click on the menu would otherwise leave it first.
+  menu.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const i = [...menu.children].indexOf(e.target.closest("li"));
+    if (i >= 0) pick(listed[i]);
+  });
+  // The field is in a <label>: a click in the menu would reach the field and open it again.
+  menu.addEventListener("click", (e) => e.preventDefault());
+  input.addEventListener("focus", () => { chosen = input.value.trim(); open(); });
+  input.addEventListener("click", () => { if (menu.hidden) open(); });
+  input.addEventListener("input", open);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (menu.hidden) { open(); return; }
+      light(Math.max(0, Math.min(listed.length - 1, lit + (e.key === "ArrowDown" ? 1 : -1))));
+    } else if (e.key === "Enter" && !menu.hidden && lit >= 0) {
+      e.preventDefault();
+      pick(listed[lit]);
+    } else if (e.key === "Escape") {
+      menu.hidden = true;
     }
-    return;
-  }
-  input.setCustomValidity("");
-  if (family === input.dataset.chosen) return;
-  input.dataset.chosen = family;
-  saveDisplay({ [field]: family }).catch((err) => alert(`Could not change the font: ${err.message}`));
+  });
+  // Leaving without picking keeps the font chosen (an unfinished name is dropped).
+  input.addEventListener("blur", () => {
+    menu.hidden = true;
+    input.value = chosen;
+  });
 }
 
 for (const [id, field] of [["key-font", "key_font"], ["key-font-setup", "key_font"], ["start-font", "start_font"], ["start-font-setup", "start_font"]]) {
-  const input = $(id);
-  input.dataset.placeholder = input.placeholder;
-  // A browser lists only the entries matching what the field holds: it is emptied while in use,
-  // so the whole list opens every time, with the current choice as its placeholder (#50).
-  input.addEventListener("focus", () => {
-    loadFontFamilies();
-    input.dataset.chosen = input.value.trim();
-    input.placeholder = input.dataset.chosen || BUILT_IN_FONT;
-    input.value = "";
-  });
-  input.addEventListener("blur", () => {
-    clearTimeout(input.settling);
-    const typed = input.value.trim();
-    if (!typed || typed === BUILT_IN_FONT || typed !== input.dataset.chosen) input.value = input.dataset.chosen || "";
-    input.placeholder = input.dataset.placeholder;
-    input.setCustomValidity("");
-  });
-  // A family picked from the list reaches the board without leaving the field; a name typed in
-  // full waits a moment, in case it is the start of a longer one ("Roboto" of "Roboto Mono").
-  input.addEventListener("input", () => settle(input, 800, () => pickFont(input, field, false)));
-  input.addEventListener("change", () => pickFont(input, field, true));
+  fontMenu($(id), field);
 }
 
 /** The board whose look the dashboard (and the set-up's look step) shows and changes: each board

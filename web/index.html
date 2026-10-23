@@ -90,9 +90,9 @@
               <option value="sepia">Sepia: brown on warm paper</option>
             </select></label>
           <label class="inline">Key font
-            <input id="key-font" class="font-pick" list="font-families" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
+            <input id="key-font" class="font-pick" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
           <label class="inline">Start-up font
-            <input id="start-font" class="font-pick" list="font-families" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
+            <input id="start-font" class="font-pick" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
           <label class="inline">Start-up size
             <input id="start-size" type="number" min="24" max="96" step="1" class="size-pick"> px</label>
           <p id="start-preview" class="start-preview" aria-label="The name the board shows at start-up">Kn°End</p>
@@ -350,9 +350,9 @@
             <ul class="choices" id="turn-setup"></ul>
             <h3>Fonts <span class="muted small">(optional, from Google Fonts)</span></h3>
             <label>For the keys
-              <input id="key-font-setup" class="font-pick" list="font-families" placeholder="Built-in (Montserrat): type to search" autocomplete="off"></label>
+              <input id="key-font-setup" class="font-pick" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
             <label>For the name at start-up
-              <input id="start-font-setup" class="font-pick" list="font-families" placeholder="Built-in (Montserrat): type to search" autocomplete="off"></label>
+              <input id="start-font-setup" class="font-pick" placeholder="Built-in (Montserrat)" autocomplete="off"></label>
             <label>Size of the name at start-up, in pixels (the board shows it for 2 seconds as you change it)
               <input id="start-size-setup" type="number" min="24" max="96" step="1" class="size-pick"></label>
             <p id="start-preview-setup" class="start-preview">Kn°End</p>
@@ -499,7 +499,6 @@
       </div>
     </form>
   </dialog>
-  <datalist id="font-families"></datalist>
   <script src="/app.js" type="module"></script>
 </body>
 </html>

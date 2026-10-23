@@ -248,6 +248,18 @@ label.inline {
 label.inline > * { font-family: var(--sans); text-transform: none; letter-spacing: 0; }
 .start-preview { font-size: 40px; margin: 2px 0; line-height: 1.15; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .font-pick { min-width: 0; }
+.font-box { position: relative; display: grid; min-width: 0; }
+.font-menu {
+  position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0;
+  max-height: 280px; overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+  background: var(--raise); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / .18);
+  font: 14px/1.3 var(--sans); text-transform: none; letter-spacing: 0;
+}
+.font-menu li { padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.font-menu li:hover, .font-menu li.lit { background: var(--signal-soft); }
+.font-menu li.chosen { font-weight: 600; }
+.font-menu .muted { font-size: 12px; }
 .size-pick { width: 6em; }
 .note { color: var(--muted); margin: 14px 0 0; }
 .success { color: var(--ok); }

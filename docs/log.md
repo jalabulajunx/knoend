@@ -2133,23 +2133,26 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
 - Open:
   - None.
 
-## 2026-10-23 - Tom (Claude Code, Opus 5.5) - Font fields open their list every time; size and font shown at once (#50)
+## 2026-10-23 - Tom (Claude Code, Opus 5.5) - Font menus open every time; size and font shown at once (#50)
 
-- Changed (`web/app.js`):
-  - A font field empties while in use, so the whole Google Fonts list opens every time (a browser
-    lists only entries matching the field); the current choice is its placeholder, and leaving
-    without picking keeps it. "Built-in (Montserrat)" is the list's first entry.
-  - A font picked from the list goes to the board without leaving the field (after 0.8 s, so a
-    name typed in full can still grow: "Roboto" of "Roboto Mono"). The start-up size goes 1 s
-    after the last step.
+- Changed (`web/app.js`, `index.html`, `style.css`):
+  - The font fields get a menu of their own (`fontMenu`) instead of the browser's `<datalist>`,
+    which lists only entries matching the field and opens when the browser likes (emptying the
+    field on focus was tried first: Tom found the list still did not open). The whole list on every
+    click, narrowed as you type, arrow keys and Enter; "Built-in (Montserrat)" first; leaving
+    without picking keeps the font.
+  - A font picked goes to the board at once. The start-up size goes 1.5 s after the last click on
+    its arrows (each click is a `change` too, so the first try sent on the first click), or when
+    the field is left.
 - Tested (macOS 26.6, FNK0104B over Wi-Fi):
   - #50 point 2 (size alone not sent) no longer happens on main: `POST /api/display
     {"start_size": 95}` logs `Display: asking the board for {"startSize":95,...}` and the board
     reports 95 (put back to 96 after).
-  - `app.js` parses (JavaScriptCore, `new Function`); no new element ids.
-  - In the browser with the board: see below.
+  - `app.js` parses (JavaScriptCore, `new Function`); the `font-families` datalist and its `list`
+    attributes removed, no other ids changed.
+  - Tom, in the browser with the board: the full list opens again right after a pick; a picked
+    font shows on the board at once; several clicks on the size arrows show one start-up screen.
 - Decided:
-  - The browser's own list (`<datalist>`) stays, emptied on focus, rather than a drop-down written
-    for the web app: the smallest change before the demo.
+  - A menu written for the web app rather than `<datalist>`: browsers differ on when it opens.
 - Open:
   - None.
