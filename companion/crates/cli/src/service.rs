@@ -334,6 +334,9 @@ enum Event {
 
 /// The folders libraries are read from: KNOEND_BUILTIN (a recipes tree: apps/, sites/<host>/,
 /// agents/), the person's own folder (read flat) and its ai/ subfolder.
+/// The folders given with `serve --libraries`, as `run` was started with them.
+static EXTRA_LIBRARIES: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
+
 fn library_dirs(extra: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = builtin_override().map(|d| Catalog::folders(Path::new(&d))).unwrap_or_default();
     dirs.extend([config_dir().join("libraries"), ai_libraries()]);
@@ -341,14 +344,16 @@ fn library_dirs(extra: Vec<PathBuf>) -> Vec<PathBuf> {
     dirs
 }
 
-/// Every library as the service would load it now (the built-in recipes and the person's files).
+/// Every library as the service would load it now (the built-in recipes, the person's files and
+/// the service's `--libraries` folders).
 pub fn load_catalog() -> Catalog {
-    let (mut catalog, _) = Catalog::load(&library_dirs(Vec::new()));
+    let (mut catalog, _) = Catalog::load(&library_dirs(EXTRA_LIBRARIES.get().cloned().unwrap_or_default()));
     load_builtin(&mut catalog);
     catalog
 }
 
 pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
+    let _ = EXTRA_LIBRARIES.set(extra_libraries.clone());
     let dirs = library_dirs(extra_libraries);
     let (mut catalog, rejected) = Catalog::load(&dirs);
     for problem in load_builtin(&mut catalog) {
@@ -437,6 +442,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 Ok(Some(Event::Tab(t))) => tab = t,
                 Ok(Some(Event::Players(p))) => players = p,
                 Ok(Some(Event::Edit(command, answer))) => edit_while_away(command, answer, &shared),
+                Ok(Some(Event::Configured(target, result))) => configured_away(&target, result, &mut catalog, &shared).await,
                 _ => {}
             }
             if let Some(f) = effective(&focus, &tab) {
@@ -459,7 +465,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                          since.elapsed().as_secs() / 60);
                 missing_since = Some(tokio::time::Instant::now()); // again in two minutes if still missing
             }
-            drain_focus(&mut inbox, &mut focus, &mut tab, &mut players, &shared).await;
+            drain_focus(&mut inbox, &mut focus, &mut tab, &mut players, &mut catalog, &shared).await;
             continue;
         }
         missing_since = None;
@@ -1159,7 +1165,7 @@ fn effective(focus: &Option<Focus>, tab: &Option<WebPage>) -> Option<Focus> {
 
 /// While not connected, keep the latest focus without blocking the reconnect for long.
 async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus>, tab: &mut Option<WebPage>,
-                     players: &mut Vec<NowPlaying>, shared: &Shared) {
+                     players: &mut Vec<NowPlaying>, catalog: &mut Catalog, shared: &Shared) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     while let Ok(Some(event)) = tokio::time::timeout_at(deadline, inbox.recv()).await {
         match event {
@@ -1170,11 +1176,32 @@ async fn drain_focus(inbox: &mut mpsc::Receiver<Event>, focus: &mut Option<Focus
             Event::Tab(t) => *tab = t,
             Event::Players(p) => { *players = p; continue; }
             Event::Edit(command, answer) => { edit_while_away(command, answer, shared); continue; }
+            Event::Configured(target, result) => { configured_away(&target, result, catalog, shared).await; continue; }
             _ => continue,
         }
         if let Some(f) = effective(focus, tab) {
             let name = f.display_name().to_string();
             shared.update(|s| s.app = Some(name)).await;
+        }
+    }
+}
+
+/// Keys drafted (or redrafted) while no board is connected: kept for when one connects, and a
+/// failure said, as the connected loop does.
+async fn configured_away(target: &Focus, result: Result<(PathBuf, Library), String>, catalog: &mut Catalog, shared: &Shared) {
+    shared.update(|s| s.configuring = None).await;
+    match result {
+        Ok((path, library)) => {
+            shared.emit("configured", json!({"text": format!("  saved {} -> {}", library.pack.id, path.display()),
+                                             "app": target.display_name(), "library": library.pack.id}));
+            catalog.add(path, library);
+            let count = catalog.len();
+            shared.update(|s| s.libraries = count).await;
+        }
+        Err(error) => {
+            raise!("configure", "Drafting keys failed for {}: {error}", target.display_name());
+            shared.emit("configure-failed", json!({"text": format!("  configure failed for {}: {error}", target.display_name()),
+                                                   "app": target.display_name(), "error": error}));
         }
     }
 }

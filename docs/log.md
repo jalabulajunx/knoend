@@ -2238,6 +2238,12 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - `cargo test --locked` passes; `app.js` parses (JavaScriptCore).
 - Decided:
   - Only AI-drafted app libraries are redrafted (not built-in, the person's own, or websites).
+  - Codex review, all fixed: a redraft finishing with no board left the service "drafting" for
+    good (now cleared; drafts finished while no board is connected are kept and failures raised);
+    a draft adopted as the person's own (`source = "user"`) could be overwritten; website drafts and
+    drafts under the person's own keys or a recipe were offered (`Catalog::shadowed`); the new keys
+    were shown only on an exact app name match (now wherever they apply); the eligibility check
+    missed `serve --libraries` folders.
 - Open:
   - #84: a start-up font over the ONX's 115200-baud USB times out and the link loops; the
     launcher's icons once dropped the link the same way.
