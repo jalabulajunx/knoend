@@ -2214,3 +2214,36 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - None.
 - Open:
   - None.
+
+## 2026-10-24 - Tom (Claude Code, Opus 5.5) - The assistant redrafts an app's keys on request
+
+- Changed:
+  - Setup assistant fix field `redraft` (`{"library": "ai.<app>", "request": "<the person's words>"}`):
+    on Apply the web app posts `/api/redraft`; the configure agent drafts that AI library again
+    from its current TOML and the request (`knoend_agents::redraft_library`). Id, source, version
+    and match are copied from the current library (`keep_place`), the result passes the validator,
+    and the old file is kept as `<name>.toml.before-redraft`. Keys arrive like Configure's.
+  - Key order is the layout (the redraft prompt says so); a key labelled only with digits or
+    symbols gets no icon, so "7" shows on 4x4 keys (where an icon replaces the label).
+  - The snapshot lists `ai_drafted_libraries` (id, name, labels in order); the prompt says a
+    request for other keys must be a redraft, not app_setup, and not a key size change alone.
+  - A paired board's id put in the fix's install field `board` (seen today: "That board is not
+    one of the installable boards", nothing applied) is moved into `settings.board`.
+- Tested (macOS 26.6, ONX2432G028 over USB, firmware v0.2.2):
+  - Board erased and flashed from the v0.2.2 release, paired over USB (no Wi-Fi).
+  - Configure on Calculator (no keys): 14 keys drafted by claudecode/haiku in 13.6 s.
+  - Asking the assistant for "a real calculator with numbers": with Haiku 6 of 7 replies had the
+    redraft once the prompt said so (before: none); one named the other paired board for the key
+    size. Tom with Opus: Apply redrafted Calculator (24 keys, 17.3 s), numbers visible, works.
+  - `cargo test --locked` passes; `app.js` parses (JavaScriptCore).
+- Decided:
+  - Only AI-drafted app libraries are redrafted (not built-in, the person's own, or websites).
+  - Codex review, all fixed: a redraft finishing with no board left the service "drafting" for
+    good (now cleared; drafts finished while no board is connected are kept and failures raised);
+    a draft adopted as the person's own (`source = "user"`) could be overwritten; website drafts and
+    drafts under the person's own keys or a recipe were offered (`Catalog::shadowed`); the new keys
+    were shown only on an exact app name match (now wherever they apply); the eligibility check
+    missed `serve --libraries` folders.
+- Open:
+  - #84: a start-up font over the ONX's 115200-baud USB times out and the link loops; the
+    launcher's icons once dropped the link the same way.
