@@ -423,6 +423,9 @@ async fn redraft(State(app): State<App>, Json(request): Json<RedraftRequest>) ->
     let shared = app.shared.clone();
     tokio::spawn(async move {
         let result = crate::redraft(&path, &current, &request.request).await;
+        // Not busy any more even when no board is connected (the loop then drops the event; the
+        // saved file is read when a board connects).
+        shared.update(|s| s.configuring = None).await;
         shared.configured(target, result).await;
     });
     Ok(Json(json!({"started": true, "name": name})))

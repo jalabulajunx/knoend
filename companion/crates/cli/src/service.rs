@@ -1040,6 +1040,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     match result {
                         Ok((path, library)) => {
                             let keys = library.keys.len();
+                            let id = library.pack.id.clone();
                             let page = library.matches.web.iter().any(|p| p.contains('/'));
                             if let Some(web) = &target.web {
                                 drafted.add(&web.host, &web.page_kind());
@@ -1058,8 +1059,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                                                     if page { " (the rest of the site keeps its keys)" } else { "" })}));
                             }
                             let same_site = |f: &Focus| f.web.as_ref().map(|w| &w.host) == target.web.as_ref().map(|w| &w.host);
-                            // Shown for what is in front now (in a terminal, the tab may have changed).
-                            if let Some(f) = effective(&focus, &tab).filter(|f| f.app == target.app && f.instance == target.instance && same_site(f)) {
+                            // Shown for what is in front now (in a terminal, the tab may have changed),
+                            // or wherever the new library is the one that applies (a redraft).
+                            if let Some(f) = effective(&focus, &tab).filter(|f| (f.app == target.app && f.instance == target.instance && same_site(f))
+                                                                              || catalog.find(f).is_some_and(|l| l.pack.id == id)) {
                                 shown = None;
                                 show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
                             }

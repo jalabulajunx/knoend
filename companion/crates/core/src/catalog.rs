@@ -91,6 +91,14 @@ impl Catalog {
         wanted.iter().all(|w| covering(w).is_some()).then_some(first)
     }
 
+    /// True when a library of the person's own or a recipe shares an app or terminal pattern with
+    /// AI draft `draft` on `os`: `find` picks that one there, so changing the draft shows nothing.
+    pub fn shadowed(&self, draft: &Library, os: Os) -> bool {
+        let mine: Vec<&String> = patterns(draft, os).iter().chain(&draft.matches.terminal).collect();
+        self.all().map(|(_, l)| l).filter(|l| l.pack.source != Source::Ai)
+            .any(|l| patterns(l, os).iter().chain(&l.matches.terminal).any(|q| mine.iter().any(|p| p.eq_ignore_ascii_case(q))))
+    }
+
     pub fn remove(&mut self, id: &str) {
         self.libraries.retain(|(_, l)| l.pack.id != id);
     }
@@ -308,6 +316,24 @@ mod tests {
         assert_eq!(catalog.find(&focus("code", "")).unwrap().pack.id, "builtin.vscode");
         catalog.add("user.toml".into(), vscode("user.vscode", "user"));
         assert_eq!(catalog.find(&focus("code", "")).unwrap().pack.id, "user.vscode");
+    }
+
+    #[test]
+    fn a_draft_under_the_persons_own_library_is_shadowed() {
+        let lib = |id: &str, source: &str, matches: &str| Library::parse(&format!(
+            "[pack]\nid = \"{id}\"\nname = \"X\"\nversion = \"1.0.0\"\nsource = \"{source}\"\n[match]\n{matches}\n[[key]]\nlabel = \"Save\"\naction = {{ kind = \"shortcut\", keys = \"Primary+S\" }}\n"
+        )).unwrap();
+        let mut catalog = Catalog::default();
+        let calculator = lib("ai.calculator", "ai", "macos = [\"Calculator\", \"com.apple.calculator\"]");
+        let htop = lib("ai.terminal-htop", "ai", "terminal = [\"htop\"]");
+        catalog.add("ai/calculator.toml".into(), calculator.clone());
+        catalog.add("ai/htop.toml".into(), htop.clone());
+        assert!(!catalog.shadowed(&calculator, Os::Macos), "another draft does not shadow it");
+        catalog.add("user-calculator.toml".into(), lib("user.calculator", "user", "macos = [\"calculator\"]"));
+        assert!(catalog.shadowed(&calculator, Os::Macos), "the person's own keys, any case");
+        assert!(!catalog.shadowed(&calculator, Os::Linux), "per OS");
+        catalog.add("htop.toml".into(), lib("community.htop", "community", "terminal = [\"htop\"]"));
+        assert!(catalog.shadowed(&htop, Os::Linux), "a recipe for the terminal program");
     }
 
     #[test]

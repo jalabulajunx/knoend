@@ -351,26 +351,26 @@ pub fn ai_drafts() -> Vec<(PathBuf, String, Library)> {
     out
 }
 
-/// Checks a redraft can run (an AI-drafted app library, the AI set up) and returns its file, its
-/// TOML and the app it is for; the drafting itself is `redraft`.
+/// The AI drafts a redraft can change: still the AI's (not adopted as the person's own), for an
+/// app or a program in a terminal (a website's are made from its page), and the ones shown (no
+/// library of the person's own or recipe for the same app above them).
+pub fn redraftable() -> Vec<(PathBuf, String, Library)> {
+    let catalog = service::load_catalog();
+    ai_drafts().into_iter()
+        .filter(|(_, _, l)| l.pack.source == knoend_core::library::Source::Ai && l.matches.web.is_empty()
+                && !catalog.shadowed(l, Os::current()))
+        .collect()
+}
+
+/// Checks a redraft can run (see `redraftable`, and the AI set up) and returns its file, its TOML
+/// and the app it is for (by name, for messages); the drafting itself is `redraft`.
 pub fn redraft_target(id: &str) -> Result<(PathBuf, String, Focus), String> {
     agent_config().map_err(|e| format!("set up the AI first (AI page): {e}"))?;
-    let (path, text, library) = ai_drafts().into_iter().find(|(_, _, l)| l.pack.id == id)
-        .ok_or_else(|| format!("{id} is not one of the AI-drafted libraries"))?;
-    if !library.matches.web.is_empty() {
-        return Err("a website's keys are redrafted from the page: use Make keys in the KnoEnd extension".into());
-    }
-    // The app as the configure agent saw it (patterns are [instance, class]), so the service shows
-    // the new keys at once when that app is in front.
-    let os = knoend_core::focus::Os::current();
-    let patterns = match os {
-        knoend_core::focus::Os::Linux => &library.matches.linux,
-        knoend_core::focus::Os::Macos => &library.matches.macos,
-        knoend_core::focus::Os::Windows => &library.matches.windows,
-    };
-    let instance = patterns.first().cloned().unwrap_or_else(|| library.pack.name.clone());
-    let app = patterns.get(1).cloned().unwrap_or_else(|| instance.clone());
-    let focus = Focus { os, app, instance, title: String::new(), web: None, pid: None, terminal: None };
+    let (path, text, library) = redraftable().into_iter().find(|(_, _, l)| l.pack.id == id)
+        .ok_or_else(|| format!("{id} is not an AI draft that can be redrafted (an AI-drafted app's keys that are in use); \
+                                change other keys in Edit keys"))?;
+    let name = library.pack.name.clone();
+    let focus = Focus { os: Os::current(), app: name.clone(), instance: name, title: String::new(), web: None, pid: None, terminal: None };
     Ok((path, text, focus))
 }
 
@@ -379,7 +379,7 @@ pub fn redraft_target(id: &str) -> Result<(PathBuf, String, Focus), String> {
 pub async fn redraft(path: &std::path::Path, current: &str, request: &str) -> Result<(PathBuf, Library), String> {
     let config = agent_config()?;
     let started = std::time::Instant::now();
-    let draft = knoend_agents::redraft_library(&config, current, request, knoend_core::focus::Os::current()).await?;
+    let draft = knoend_agents::redraft_library(&config, current, request, Os::current()).await?;
     say!("  redrafted by {} in {:.1} s ({} attempt{}), {} keys",
          config.describe(), started.elapsed().as_secs_f32(), draft.attempts,
          if draft.attempts == 1 { "" } else { "s" }, draft.library.keys.len());
