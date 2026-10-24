@@ -6,6 +6,11 @@ An open-source, cross-OS shortcut keypad and pager built on inexpensive ESP32-S3
 names, and KnoEnd in plain text. It was called OpenPager until October 2026, and boards and
 computers from then still work with it.
 
+Said aloud, it is close to the Tamil **நோண்டு** (*nōṇḍu*). The word literally means "dig" or "poke
+at", and colloquially it means tinkering: poking at a thing to see how it works and make it do
+something new. That is the project: a cheap board, poked at until it does more, with no end to
+what it can be set up for.
+
 Kn°End turns an ESP32-S3 touchscreen board, from a 2.8" LCD to a 2.06" AMOLED watch, into keys that
 change with the app, website or terminal program you are using. Each board connects to your
 computer by USB, Bluetooth or home Wi-Fi, and several boards can follow one computer at once. Over

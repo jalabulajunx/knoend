@@ -2201,3 +2201,16 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - Turn on Pages: Settings > Pages > Source: GitHub Actions.
   - The demo video's YouTube ID, when it is up.
   - Confirm the Build Week dates match "everything in this repository" in the README's prior work.
+
+## 2026-10-24 - Sundar (Claude Code, Opus 5.5) - The name: நோண்டு
+
+- Changed:
+  - README and project page (`site/`): Kn°End said aloud is close to the Tamil நோண்டு (*nōṇḍu*),
+    literally "dig, poke at", colloquially "tinker". The page gets a "The name" section and a link
+    from the hero; Noto Sans Tamil is loaded from Google Fonts for the Tamil text.
+- Tested (Linux container): page in Chromium at 1280 px light and 390 px dark; the Tamil renders,
+  no console errors, no sideways scrolling.
+- Decided:
+  - None.
+- Open:
+  - None.
