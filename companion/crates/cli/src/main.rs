@@ -336,6 +336,61 @@ pub async fn configure(focus: &Focus, save: bool) -> Result<(PathBuf, Library), 
     Ok((path, draft.library))
 }
 
+/// The AI-drafted libraries on this computer: file, TOML and library, for redrafts and the lists.
+pub fn ai_drafts() -> Vec<(PathBuf, String, Library)> {
+    let Ok(entries) = std::fs::read_dir(service::ai_libraries()) else { return Vec::new() };
+    let mut out: Vec<_> = entries.flatten().map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+        .filter_map(|p| {
+            let text = std::fs::read_to_string(&p).ok()?;
+            let library = Library::parse(&text).ok()?;
+            Some((p, text, library))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Checks a redraft can run (an AI-drafted app library, the AI set up) and returns its file, its
+/// TOML and the app it is for; the drafting itself is `redraft`.
+pub fn redraft_target(id: &str) -> Result<(PathBuf, String, Focus), String> {
+    agent_config().map_err(|e| format!("set up the AI first (AI page): {e}"))?;
+    let (path, text, library) = ai_drafts().into_iter().find(|(_, _, l)| l.pack.id == id)
+        .ok_or_else(|| format!("{id} is not one of the AI-drafted libraries"))?;
+    if !library.matches.web.is_empty() {
+        return Err("a website's keys are redrafted from the page: use Make keys in the KnoEnd extension".into());
+    }
+    // The app as the configure agent saw it (patterns are [instance, class]), so the service shows
+    // the new keys at once when that app is in front.
+    let os = knoend_core::focus::Os::current();
+    let patterns = match os {
+        knoend_core::focus::Os::Linux => &library.matches.linux,
+        knoend_core::focus::Os::Macos => &library.matches.macos,
+        knoend_core::focus::Os::Windows => &library.matches.windows,
+    };
+    let instance = patterns.first().cloned().unwrap_or_else(|| library.pack.name.clone());
+    let app = patterns.get(1).cloned().unwrap_or_else(|| instance.clone());
+    let focus = Focus { os, app, instance, title: String::new(), web: None, pid: None, terminal: None };
+    Ok((path, text, focus))
+}
+
+/// Drafts an AI library again as the person asked and saves it over the old one, which is kept
+/// beside it as `<name>.toml.before-redraft`.
+pub async fn redraft(path: &std::path::Path, current: &str, request: &str) -> Result<(PathBuf, Library), String> {
+    let config = agent_config()?;
+    let started = std::time::Instant::now();
+    let draft = knoend_agents::redraft_library(&config, current, request, knoend_core::focus::Os::current()).await?;
+    say!("  redrafted by {} in {:.1} s ({} attempt{}), {} keys",
+         config.describe(), started.elapsed().as_secs_f32(), draft.attempts,
+         if draft.attempts == 1 { "" } else { "s" }, draft.library.keys.len());
+    std::fs::write(path.with_extension("toml.before-redraft"), current).map_err(|e| e.to_string())?;
+    let header = format!("# Redrafted by the KnoEnd configure agent ({}) as asked: {}\n\
+                          # Unreviewed: check the keys. The version before is in the .before-redraft file.\n\n",
+                         config.describe(), request.trim().replace(['\r', '\n'], " "));
+    std::fs::write(path, header + &draft.toml).map_err(|e| e.to_string())?;
+    Ok((path.to_path_buf(), draft.library))
+}
+
 /// Drafts keys for the website in `focus` from the page's controls (the extension lists them; the
 /// person must have turned board buttons on for the site), then saves them.
 pub async fn configure_site(shared: &service::Shared, focus: &Focus, scope: knoend_agents::site::Scope) -> Result<(PathBuf, Library), String> {

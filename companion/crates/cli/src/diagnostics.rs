@@ -158,6 +158,9 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
         "settings": crate::settings::all(shared).await,
         // Every paired board's own look (the settings above show one board's: see its "board").
         "board_looks": crate::display::load().boards,
+        // Keys the assistant can have redrafted (a fix's "redraft"): labels in grid order.
+        "ai_drafted_libraries": crate::ai_drafts().iter().map(|(_, _, l)| json!({"id": l.pack.id, "name": l.pack.name,
+            "labels": l.keys.iter().map(|k| k.label.clone()).collect::<Vec<_>>()})).collect::<Vec<_>>(),
         "checks_available": crate::checks::describe(),
         "from_the_web_app": ui_context,
     })

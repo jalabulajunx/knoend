@@ -59,6 +59,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/wifi/scan", post(wifi_scan))
         .route("/wifi/change", post(wifi_change))
         .route("/drafts", get(drafts))
+        .route("/redraft", post(redraft))
         .route("/ai", get(ai_settings).post(save_ai_settings))
         .route("/ai/models", post(ai_models))
         .route("/ai/tools", get(ai_tools))
@@ -395,19 +396,36 @@ async fn provision(State(app): State<App>, Json(request): Json<ProvisionRequest>
 
 /// AI-drafted libraries waiting for review.
 async fn drafts() -> ApiResult {
-    let dir = crate::service::ai_libraries();
-    let mut out = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for path in entries.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "toml")) {
-            if let Ok(library) = std::fs::read_to_string(&path).map_err(|e| e.to_string())
-                .and_then(|t| knoend_core::library::Library::parse(&t).map_err(|e| e.to_string())) {
-                out.push(json!({"id": library.pack.id, "name": library.pack.name, "keys": library.keys.len(),
-                                "labels": library.keys.iter().map(|k| k.label.clone()).collect::<Vec<_>>(),
-                                "file": path.file_name().map(|n| n.to_string_lossy().to_string())}));
-            }
-        }
-    }
+    let out: Vec<Value> = crate::ai_drafts().iter().map(|(path, _, library)| json!({
+        "id": library.pack.id, "name": library.pack.name, "keys": library.keys.len(),
+        "labels": library.keys.iter().map(|k| k.label.clone()).collect::<Vec<_>>(),
+        "file": path.file_name().map(|n| n.to_string_lossy().to_string())})).collect();
     Ok(Json(json!({"drafts": out})))
+}
+
+#[derive(Deserialize)]
+struct RedraftRequest {
+    library: String,
+    request: String,
+}
+
+/// Drafts an AI library's keys again as the person asked (a fix from the setup assistant they
+/// applied). Answers at once; the new keys arrive like Configure's ("configured" event).
+async fn redraft(State(app): State<App>, Json(request): Json<RedraftRequest>) -> ApiResult {
+    if app.shared.status.read().await.configuring.is_some() {
+        return Err(fail(StatusCode::CONFLICT, "the AI agent is drafting keys already; try again when it is done"));
+    }
+    let (path, current, target) = crate::redraft_target(&request.library).map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
+    let name = target.display_name().to_string();
+    say!("Redraft requested for {}: {}", request.library, request.request.trim());
+    app.shared.update(|s| s.configuring = Some(name.clone())).await;
+    app.shared.board_status(format!("Redrafting the keys for {}...", name));
+    let shared = app.shared.clone();
+    tokio::spawn(async move {
+        let result = crate::redraft(&path, &current, &request.request).await;
+        shared.configured(target, result).await;
+    });
+    Ok(Json(json!({"started": true, "name": name})))
 }
 
 // ---- AI settings and the setup assistant ----

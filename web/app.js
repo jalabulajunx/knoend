@@ -177,8 +177,12 @@ function redrawScreens() {
   drawScreen($("setup-preview"), renderStatus.layout, displayState);
 }
 
+/** The AI-drafted libraries as /drafts last listed them (a redraft fix names one by id). */
+let aiDrafts = [];
+
 async function loadDrafts() {
   const { drafts } = await api("/drafts");
+  aiDrafts = drafts;
   const list = $("drafts");
   list.replaceChildren();
   if (!drafts.length) {
@@ -1924,6 +1928,10 @@ function describeFix(fix, settings = []) {
     const c = (setup.identified?.candidates || []).find((c) => c.board === fix.board);
     lines.push(`Install for: ${c ? c.name : fix.board}`);
   }
+  if (fix.redraft) {
+    const d = aiDrafts.find((d) => d.id === fix.redraft.library);
+    lines.push(`Redraft the keys for ${d ? d.name : fix.redraft.library}: "${fix.redraft.request}"`);
+  }
   return lines;
 }
 
@@ -1978,6 +1986,16 @@ async function applyFix(fix) {
     } catch (e) {
       status.className = "note error";
       status.textContent = `Could not apply it: ${e.message}`;
+      return;
+    }
+  }
+  if (fix.redraft) {
+    try {
+      const r = await api("/redraft", fix.redraft);
+      done.push(`the AI agent is redrafting the keys for ${r.name}; the board shows them in about 15 seconds, with ${r.name} in front`);
+    } catch (e) {
+      status.className = "note error";
+      status.textContent = `Could not redraft the keys: ${e.message}`;
       return;
     }
   }
