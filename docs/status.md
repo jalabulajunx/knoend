@@ -33,6 +33,8 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | A board already set up: Set up a board offers apps, look, Wi-Fi, Bluetooth or installing again instead of starting over | `web/app.js` (`renderKnown`) | open Set up a board with a board connected |
 | The board listens (boards with a mic: ONX + Nextion Dual MIC): a Listen key, notes found on the board (only notes leave it), sent as MIDI from the "KnoEnd" device; on Linux also into Midi Through, so MuseScore takes them unset (Linux tested; macOS/Windows MIDI untested). Spec 3.6f awaits Tom's review | `firmware/main/listen.c`, `pitch.c`, `cli/src/midi.rs`, `recipes/apps/musescore.toml` | open MuseScore, Note input, Listen, sing |
 | CI: spec, companion on Linux + macOS + Windows, firmware build | `.github/workflows/ci.yml`, `.github/workflows/release.yml` | every push and PR |
+| PowerPoint notes test runs in CI on a made-up OpenPager deck | `companion/crates/cli/tests/fixtures/openpager-demo.pptx`, `tools/make_test_pptx.py` | `cargo test -p knoend powerpoint` |
+| Project page (GitHub Pages): what it is, boards, getting started, knowledge base links, video gallery | `site/`, `.github/workflows/pages.yml` | <https://jalabulajunx.github.io/knoend/> once Pages is on |
 
 ## Browser, desktop apps, coding agents (added 2026-10-18; Linux + Windows tested, macOS partly)
 

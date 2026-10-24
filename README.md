@@ -16,6 +16,10 @@ microphone it listens: sing or play a note and it reaches a music app as MIDI.
 > **Status: early development, released as v0.2.2.** Setting up, the keys, the Wi-Fi and
 > Bluetooth links, AI-drafted layouts and flashing work on Linux (X11), macOS and Windows. See
 > [What works today](#what-works-today). **To set one up, follow [docs/setup.md](docs/setup.md).**
+>
+> **Project page:** <https://jalabulajunx.github.io/knoend/> · **Demo video:** coming soon ·
+> Built for [Build North: Ship Something Real](https://build-north.devpost.com/), see
+> [Build North submission](#build-north-submission).
 
 ## Why
 
@@ -158,6 +162,49 @@ and what to do about the unsigned-download warnings.
 Problems:
 [docs/knowledge/setup.md](docs/knowledge/setup.md). What is on main: [docs/status.md](docs/status.md).
 
+## Build North submission
+
+Kn°End is our entry to [Build North: Ship Something Real](https://build-north.devpost.com/)
+(October 2026).
+
+- **The user:** someone who works across many apps on Linux, macOS or Windows, owns or can buy a
+  $20–40 ESP32-S3 touch board, and wants shortcut keys without vendor software: first of all the two
+  of us, who use it every day for VS Code, Claude Code, YouTube, PowerPoint and MuseScore.
+- **What is better because it exists:** keys follow the app, website or terminal program in front
+  of you on all three operating systems, including apps nobody has set up (an AI drafts the keys,
+  you review them); coding agents can be answered from another room; layouts are data, safe to
+  share.
+- **Path to production:** tagged releases with a Windows installer, Linux and macOS builds,
+  firmware for five boards and a browser extension; a web app and setup assistant so anyone can
+  set a board up without a developer; MIT licensed, with community layouts as TOML files.
+- **Live link:** the [project page](https://jalabulajunx.github.io/knoend/) and the
+  [latest release](https://github.com/jalabulajunx/knoend/releases/latest) (runs on your own
+  computer with a board).
+- **Demo video:** coming soon (on the project page).
+- **Tech stack:** firmware in C on ESP-IDF 5.4.4 with LVGL and Bluedroid (Bluetooth LE); companion service
+  in Rust (tokio, axum, tokio-tungstenite, btleplug, serialport); web app in plain HTML, CSS and JavaScript; browser extension
+  (Manifest V3); JSON Schema and TOML for the shared contracts.
+- **Partner platforms:** Anthropic's Claude is one of the AI providers for drafting keys and for the
+  setup assistant (by API key or a signed-in Claude Code), and Claude Code permission requests are
+  answered from the board. We did not use Expo, Clerk, Eon or SurrealDB.
+- **Team:** Sundararajan Mohan and Tom Grabowski. Enclosure designed by Skanda.
+
+### Prior work and what was built during the week
+
+- **Before:** a bench prototype (USB serial plus a Bluetooth keyboard on one ONX2432G028) existed
+  before this repository. None of its code is here: its board drivers were the vendor's example code,
+  so the board support was rewritten from the schematics and Espressif's components.
+- **During the week:** everything in this repository. The first log entry is 16 October 2026 and
+  the first commit 17 October; [docs/log.md](docs/log.md) records each day's work, who did it,
+  with which AI agent, and what was tested on which hardware.
+- **Templates and third-party code:** Espressif's `esp_hid_device` example (Unlicense / CC0),
+  Espressif's display and touch components, Waveshare's board support package for the AMOLED's
+  pins and start-up commands, and the AXP2101 register map from XPowersLib; see
+  [Pre-existing work and tools](#pre-existing-work-and-tools).
+- **AI tools:** Claude Code (planning, research, most of the code), OpenAI Codex (code review of
+  pull requests) and Google Antigravity (some features and a release). Each log entry names the
+  agent used.
+
 ## Repository layout
 
 ```
@@ -174,6 +221,7 @@ docs/                 setup guide, knowledge base, board research, log, decision
 installer/            Windows installer (Inno Setup) and release notes
 extension/            browser extension (Chrome, Edge, Brave, Firefox)
 tools/                spec validator, firmware release packager, extension builder, bench tools
+site/                 project page on GitHub Pages (published by .github/workflows/pages.yml)
 ```
 
 ## Prior art and credits
@@ -199,7 +247,9 @@ Kn°End is an integration of existing ideas, not a new invention. Projects that 
 - A bench prototype (USB serial + Bluetooth keyboard) was built before this repository started. It is
   not included; its board drivers were the board maker's example code, so the board profiles here are
   written from the schematics and Espressif's open-source components.
-- AI tools: built with help from Claude Code (planning, research and code).
+- AI tools: built with help from Claude Code (planning, research and code), OpenAI Codex (code
+  review) and Google Antigravity (code).
+- Enclosure: designed by Skanda.
 
 ## Trademarks
 
