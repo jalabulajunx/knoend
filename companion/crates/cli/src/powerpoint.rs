@@ -422,21 +422,22 @@ pub fn load_presentation_from_path(path: &Path, file_name: &str) -> Option<Activ
     for (idx, slide_num) in slide_nums.iter().enumerate() {
         let slide_index_1_based = (idx + 1) as u32;
         let rel_path = format!("ppt/slides/_rels/slide{slide_num}.xml.rels");
-        let mut note_entry_name = None;
-
-        if let Ok(mut rel_file) = archive.by_name(&rel_path) {
-            let mut rel_xml = String::new();
-            if rel_file.read_to_string(&mut rel_xml).is_ok() {
-                if let Some(target) = extract_rel_target(&rel_xml, "notesSlide") {
-                    let cleaned = target.trim_start_matches("../");
-                    note_entry_name = Some(format!("ppt/{cleaned}"));
+        // The slide's rels name its notes. When they name none, the slide has none: notes files are
+        // numbered in the order notes were added, so notesSlide{n}.xml can be another slide's.
+        // Only a slide with no rels at all falls back to the number.
+        let entry_to_read = match archive.by_name(&rel_path) {
+            Ok(mut rel_file) => {
+                let mut rel_xml = String::new();
+                if rel_file.read_to_string(&mut rel_xml).is_err() {
+                    continue;
+                }
+                match extract_rel_target(&rel_xml, "notesSlide") {
+                    Some(target) => format!("ppt/{}", target.trim_start_matches("../")),
+                    None => continue,
                 }
             }
-        }
-
-        let entry_to_read = note_entry_name.unwrap_or_else(|| {
-            format!("ppt/notesSlides/notesSlide{slide_num}.xml")
-        });
+            Err(_) => format!("ppt/notesSlides/notesSlide{slide_num}.xml"),
+        };
 
         if let Ok(mut note_file) = archive.by_name(&entry_to_read) {
             let mut xml = String::new();
@@ -629,17 +630,33 @@ mod tests {
         assert!(!is_presenting("PowerPoint"));
     }
 
+    /// A made-up OpenPager deck in the repository (built by `tools/make_test_pptx.py`).
     #[test]
-    #[ignore = "needs Sundar's own Copy of MindStudio Bootcamp.pptx, not in the repository"]
-    fn load_mindstudio_notes() {
-        let pres = load_presentation("Copy of MindStudio Bootcamp.pptx");
-        assert!(pres.is_some(), "Presentation file not found");
-        let pres = pres.unwrap();
-        assert_eq!(pres.total_slides, 7);
-        let note1 = pres.notes.get(&1).expect("Slide 1 should have notes");
-        assert!(note1[0].contains("Mind Studio intro"), "Note text was: {:?}", note1);
-        let note3 = pres.notes.get(&3).expect("Slide 3 should have notes");
-        assert!(note3.len() > 1, "Slide 3 notes should be paginated (was {} pages)", note3.len());
+    fn load_openpager_demo_notes() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/openpager-demo.pptx");
+        let pres = load_presentation_from_path(&path, "openpager-demo.pptx").expect("deck should load");
+        assert_eq!(pres.file_name, "openpager-demo.pptx");
+        assert_eq!(pres.total_slides, 5);
+
+        let note1 = pres.notes.get(&1).expect("slide 1 should have notes");
+        // Exactly the notes text: the slide image and slide number shapes are left out.
+        assert_eq!(
+            note1,
+            &vec!["OpenPager intro: hold up the board, say what it is in one line, then move on.".to_string()]
+        );
+
+        let note2 = pres.notes.get(&2).expect("slide 2 should have notes");
+        assert_eq!(note2[0], "Ask who owns a macro pad.\nAsk who set it up for more than one app.");
+
+        let note3 = pres.notes.get(&3).expect("slide 3 should have notes");
+        assert!(note3.len() > 1, "slide 3 notes should be paginated (were {} pages)", note3.len());
+        assert!(note3.iter().all(|p| p.len() <= 220), "a page is longer than the board takes: {note3:?}");
+        assert!(note3.join(" ").contains("approve a coding agent's command"));
+
+        // Slide 4 has no notes; slide 5's notes are stored as notesSlide4.xml, found through its rels.
+        assert!(pres.notes.get(&4).is_none());
+        let note5 = pres.notes.get(&5).expect("slide 5 should have notes");
+        assert_eq!(note5[0], "Point to the repository. Take questions.");
     }
 
     #[test]

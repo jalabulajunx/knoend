@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kn°End — keys that follow you</title>
+  <meta name="description" content="An open-source shortcut keypad and pager on inexpensive ESP32-S3 touch boards. The keys change with the app, website or terminal program you are using, on Linux, macOS and Windows.">
+  <meta property="og:title" content="Kn°End — keys that follow you">
+  <meta property="og:description" content="An open-source shortcut keypad and pager on inexpensive ESP32-S3 touch boards.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23171513'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23ff5a1f'/%3E%3C/svg%3E">
+  <script>
+    try { const t = localStorage.getItem("knoend-scheme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+  </script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#" aria-label="Kn°End, top of the page">
+      <span class="word">Kn<span class="degree" aria-hidden="true"></span>End</span>
+      <svg class="loop" viewBox="0 0 120 40" aria-hidden="true"><path d="M60 20 C 75 2, 108 2, 108 20 C 108 38, 75 38, 60 20 C 45 2, 12 2, 12 20 C 12 38, 45 38, 60 20 Z"/></svg>
+    </a>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#boards">Boards</a>
+      <a href="#start">Get started</a>
+      <a href="#kb">Knowledge base</a>
+      <a href="#videos">Videos</a>
+    </nav>
+    <div class="scheme" role="group" aria-label="Colours">
+      <button type="button" data-scheme="auto" title="Follow this browser's setting">Auto</button>
+      <button type="button" data-scheme="light">Light</button>
+      <button type="button" data-scheme="dark">Dark</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero: the board, drawn, cycling through the apps it follows. -->
+    <section class="hero">
+      <div class="hero-text">
+        <p class="kicker">Open-source · ESP32-S3 · Linux, macOS, Windows</p>
+        <h1>Keys that follow&nbsp;you.</h1>
+        <p class="lede">Kn°End turns an inexpensive touchscreen board into a shortcut keypad whose keys
+          change with the app, website or terminal program in front of you. Over Wi-Fi or Bluetooth it
+          becomes a pager: answer a coding agent from another room, or read your speaker notes while
+          you present.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/jalabulajunx/knoend/releases/latest">Download v0.2.2</a>
+          <a class="button secondary" href="https://github.com/jalabulajunx/knoend">Source on GitHub</a>
+        </div>
+        <p class="said">Said “no end”: silent K, as in <em>know</em>. Formerly OpenPager.</p>
+      </div>
+      <figure class="device-figure">
+        <div class="device">
+          <span class="port" aria-hidden="true"></span>
+          <div class="screen" id="screen" aria-live="polite">
+            <div class="keys" id="keys"></div>
+            <div class="bar" id="bar"></div>
+          </div>
+        </div>
+        <figcaption><span class="fig">Fig. 1</span> <span id="fig-app">VS Code</span> <span class="live">live layout</span></figcaption>
+      </figure>
+    </section>
+
+    <!-- Why -->
+    <section class="card" id="why">
+      <h2>Why it exists</h2>
+      <div class="cols4">
+        <div><h3>Keypads are closed</h3><p class="muted">Commercial keypads run through vendor software on Windows and macOS, and skip Linux.</p></div>
+        <div><h3>Every app needs setup</h3><p class="muted">A keypad is only useful where someone built a profile. Here an AI drafts the keys and you review them.</p></div>
+        <div><h3>Extensions are code</h3><p class="muted">Layouts are data, checked by one validator, so a shared layout is safe to accept from a stranger.</p></div>
+        <div><h3>The hardware is cheap</h3><p class="muted">A $20–40 ESP32-S3 touch board you may already own becomes the keypad.</p></div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="card" id="how">
+      <h2>How it works</h2>
+      <ol class="flow">
+        <li><span class="step-n">A</span><div><strong>The board works alone.</strong> Paired over Bluetooth it is an ordinary keyboard on any computer, with nothing installed.</div></li>
+        <li><span class="step-n">B</span><div><strong>The companion adds the smarts.</strong> A small Rust service watches the focused app, website or terminal program, picks the matching layout and pushes it to every connected board over Wi-Fi, USB or Bluetooth.</div></li>
+        <li><span class="step-n">C</span><div><strong>Layouts are data.</strong> A TOML file per app or site: built in, shared, your own, or drafted by AI for an app nobody has set up yet.</div></li>
+        <li><span class="step-n">D</span><div><strong>A web app sets it all up.</strong> Identify the board, install firmware, pair, add Wi-Fi, draft keys for your apps, with a setup assistant that sees what the service sees.</div></li>
+      </ol>
+<pre class="code"><span class="c"># a site recipe: keys for Amazon</span>
+[pack]
+name = "Amazon"
+source = "community"   <span class="c"># builtin | community | ai | user</span>
+
+[match]
+web = ["amazon.ca", "amazon.com", "amazon.*"]
+
+[[key]]
+label = "Orders"
+action = { kind = "open", url = "/gp/your-account/order-history" }</pre>
+    </section>
+
+    <!-- Features -->
+    <section class="card" id="features">
+      <h2>What it does today <span class="muted small">v0.2.2</span></h2>
+      <div class="grid3">
+        <article class="feat"><p class="tag">Follows you</p><h3>App, site and terminal aware</h3><p class="muted">Layouts follow the focused app (Linux X11, macOS, Windows), the website (Chrome, Edge, Firefox extension) and the program in a terminal tab.</p></article>
+        <article class="feat"><p class="tag">AI</p><h3>Keys drafted for your apps</h3><p class="muted">The service lists installed apps and an AI drafts keys, marked unreviewed until you check them. Gemini, OpenAI, Anthropic, OpenRouter, local Ollama, or a signed-in Claude Code / Codex CLI.</p></article>
+        <article class="feat"><p class="tag">Pager</p><h3>Answer coding agents</h3><p class="muted">Claude Code permission requests and questions appear on the board: Allow, Always, Deny, Stop, from across the house.</p></article>
+        <article class="feat"><p class="tag">Present</p><h3>Speaker notes on the board</h3><p class="muted">In a PowerPoint slide show the board shows the slide’s notes, paged to fit, with Prev, Next, First, End, Black and White.</p></article>
+        <article class="feat"><p class="tag">Setup</p><h3>A setup assistant</h3><p class="muted">Grounded in the project’s knowledge base, it runs checks, explains failures and offers one-click fixes. It speaks up on its own when the service notices a fault.</p></article>
+        <article class="feat"><p class="tag">Music</p><h3>It listens</h3><p class="muted">Boards with a microphone hear a sung or played note and send it to MuseScore or any music app as MIDI.</p></article>
+      </div>
+    </section>
+
+    <!-- Safety -->
+    <section class="card" id="safety">
+      <h2>Safe by design</h2>
+      <ul class="rules">
+        <li>Keys trigger only allowed actions: shortcuts, key sequences, same-site pages, page elements, media, or commands you named. Never raw command lines.</li>
+        <li>Buy, submit, send and delete need a second tap.</li>
+        <li>Board and computer pair once over USB; every Wi-Fi message is authenticated.</li>
+        <li>Only the app ID, domain and page structure go to a model; a local model works too.</li>
+      </ul>
+    </section>
+
+    <!-- Boards -->
+    <section class="card" id="boards">
+      <h2>Supported boards</h2>
+      <p class="muted">One universal firmware image. A small JSON definition per board describes its display, touch, pins and buttons, so a new board is usually a definition, not new code.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Board</th><th>Status</th><th>Display</th><th>Extras</th></tr></thead>
+          <tbody>
+            <tr><td>ONX2432G028</td><td><span class="st ok">tested</span></td><td>2.8" 320×240 ST7789</td><td>microphone</td></tr>
+            <tr><td>Freenove FNK0104B</td><td><span class="st ok">tested</span></td><td>2.8" 320×240 ILI9341</td><td>native USB</td></tr>
+            <tr><td>Waveshare ESP32-S3-Touch-AMOLED-2.06</td><td><span class="st">run on board</span></td><td>2.06" 410×502 AMOLED</td><td>burn-in care, buttons</td></tr>
+            <tr><td>Espressif ESP32-S3-BOX-3</td><td><span class="st">unverified</span></td><td>2.4" 320×240 ILI9342C</td><td></td></tr>
+            <tr><td>Waveshare ESP32-S3-Touch-LCD-2</td><td><span class="st">unverified</span></td><td>2" 240×320 ST7789T3</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Get started -->
+    <section class="card" id="start">
+      <h2>Get started <span class="muted small">about five minutes</span></h2>
+      <ol class="steps">
+        <li><strong>Download</strong> the service from the <a href="https://github.com/jalabulajunx/knoend/releases/latest">latest release</a>: the Windows installer, or <code>knoend</code> for Linux or macOS.</li>
+        <li><strong>Plug in the board</strong> by USB.</li>
+        <li><strong>Run</strong> <code>./knoend serve</code> (on Windows, KnoEnd from the Start menu). The web app opens at <code>http://127.0.0.1:7342</code>.</li>
+        <li><strong>Follow Set up a board</strong>: it identifies the board, backs it up, installs firmware, pairs, and drafts keys for your apps. Ask the assistant when something is unclear.</li>
+      </ol>
+    </section>
+
+    <!-- Knowledge base -->
+    <section class="card" id="kb">
+      <h2>Knowledge base</h2>
+      <p class="muted">The same documents the setup assistant reads. Every failure we have seen, with its cause and fix.</p>
+      <div class="grid3 kb">
+        <a class="kb-item" href="https://github.com/jalabulajunx/knoend/blob/main/docs/setup.md"><span class="tag">Guide</span><strong>Setting up</strong><span class="muted">A board, and working on the code.</span></a>
+        <a class="kb-item" href="https://github.com/jalabulajunx/knoend/blob/main/docs/knowledge/setup.md"><span class="tag">Troubleshooting</span><strong>Problems and fixes</strong><span class="muted">Drivers, permissions, Wi-Fi, Bluetooth, flashing.</span></a>
+        <a class="kb-item" href="https://github.com/jalabulajunx/knoend/blob/main/docs/status.md"><span class="tag">Status</span><strong>What works today</strong><span class="muted">Every piece, where it lives, how to try it.</span></a>
+        <a class="kb-item" href="https://github.com/jalabulajunx/knoend/blob/main/recipes/README.md"><span class="tag">Recipes</span><strong>Keys for apps and sites</strong><span class="muted">Write or share a layout as TOML.</span></a>
+        <a class="kb-item" href="https://github.com/jalabulajunx/knoend/blob/main/docs/boards/research.md"><span class="tag">Hardware</span><strong>Adding a board</strong><span class="muted">What a board needs and how to describe it.</span></a>
+        <a class="kb-item" href="https://github.com/jalabulajunx/knoend/blob/main/extension/README.md"><span class="tag">Browser</span><strong>The extension</strong><span class="muted">Site-aware keys in Chrome, Edge and Firefox.</span></a>
+      </div>
+      <h3 class="faq-title">Questions</h3>
+      <div class="faq">
+        <details><summary>Do I need the companion service at all?</summary><p>No. Paired over Bluetooth the board is a keyboard on any computer with nothing installed. The service adds keys that follow the app, the pager, AI drafting and setup.</p></details>
+        <details><summary>Does my data go to an AI?</summary><p>Only when you ask it to draft keys, and then only the app ID, domain and page structure (for a terminal program, its name and one-line manual description). You can use a local model or a CLI you are already signed in to.</p></details>
+        <details><summary>My board is not on the list.</summary><p>Plug it in anyway: the service identifies it from the firmware it carries and says plainly if it does not know it. Back the flash up before trying anything; most ESP32-S3 boards with a supported display and touch chip need only a JSON definition.</p></details>
+        <details><summary>Wayland?</summary><p>Not yet. On Linux the focus watcher uses X11; macOS and Windows are supported.</p></details>
+      </div>
+    </section>
+
+    <!-- Video gallery -->
+    <section class="card" id="videos">
+      <h2>Video gallery</h2>
+      <div class="gallery" id="gallery"></div>
+    </section>
+
+    <!-- Build North -->
+    <section class="card" id="build-north">
+      <h2>Built for Build North <span class="muted small">October 2026</span></h2>
+      <div class="cols2">
+        <p>Kn°End was built during <a href="https://build-north.devpost.com/">Build North: Ship Something Real</a> by
+          <strong>Sundararajan Mohan</strong> and <strong>Tom Grabowski</strong>, with help from AI coding
+          agents (Claude Code, Codex, Antigravity). The enclosure was designed by <strong>Skanda</strong>. Every change is in the
+          <a href="https://github.com/jalabulajunx/knoend/blob/main/docs/log.md">running log</a>, with what was tested and on which hardware.</p>
+        <p class="muted">What existed before the week, and what was built during it, is listed in the
+          <a href="https://github.com/jalabulajunx/knoend#build-north-submission">README</a>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Kn°End · <a href="https://github.com/jalabulajunx/knoend/blob/main/LICENSE">MIT licence</a></span>
+    <span class="muted">Not affiliated with Logitech, Elgato or any board maker.</span>
+  </footer>
+
+  <script src="site.js"></script>
+</body>
+</html>

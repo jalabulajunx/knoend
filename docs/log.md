@@ -2166,3 +2166,38 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
     picks; after a failure the field now takes the font the service holds.
 - Open:
   - None.
+
+## 2026-10-24 - Sundar (Claude Code, Opus 5.5) - PowerPoint test in CI, project page, Build North README
+
+- Changed:
+  - CI: `powerpoint::tests::load_mindstudio_notes` (ignored since #80: it read a deck only Sundar's
+    computer has) is replaced by `load_openpager_demo_notes`, which reads
+    `companion/crates/cli/tests/fixtures/openpager-demo.pptx`: a made-up five-slide OpenPager pitch
+    with a short note, a long note that pages, a slide with no notes, and a last slide whose notes
+    file is `notesSlide4.xml`. `tools/make_test_pptx.py` (python-pptx) rebuilds it.
+  - Bug found by that deck, fixed in `load_presentation_from_path`: a slide without notes showed the
+    notes of the slide whose notes file had its number (notes files are numbered in the order notes
+    were added, not by slide). A slide's rels now decide; the number is used only when a slide has
+    no rels at all.
+  - `site/` and `.github/workflows/pages.yml`: a project page on GitHub Pages in the web app's look
+    (the board drawn, cycling VS Code, YouTube, Claude Code and PowerPoint notes; why, how it works,
+    features, safety, boards, getting started, knowledge base links and questions, a video gallery,
+    Build North credits). Videos: put the YouTube ID in `VIDEOS` in `site/site.js`; until then each
+    slot says "Coming soon". Played from youtube-nocookie.com, only after a click.
+  - README: project page and demo video links, a "Build North submission" section from the
+    hackathon's rules (user, value, path to production, stack, partner platforms, team, prior work,
+    AI tools disclosed: Claude Code, Codex, Antigravity). Enclosure credited to Skanda (README,
+    `hardware/README.md`, project page).
+- Tested (Linux container, no board):
+  - Before the fix the new test failed on slide 4 (it had slide 5's notes); after, `cargo test
+    --locked` passes for the whole companion workspace (137 tests).
+  - Project page in Chromium (Playwright) at 1280 px light and 390 px dark: no console errors, no
+    sideways scrolling.
+  - Not tested: the Pages deployment itself (needs Pages turned on), the loader fix against a real
+    PowerPoint deck on Windows.
+- Decided:
+  - The site lives in `site/`, not `docs/`, so the Markdown docs are not turned into pages by Jekyll.
+- Open:
+  - Turn on Pages: Settings > Pages > Source: GitHub Actions.
+  - The demo video's YouTube ID, when it is up.
+  - Confirm the Build Week dates match "everything in this repository" in the README's prior work.
