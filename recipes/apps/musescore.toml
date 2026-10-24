@@ -8,7 +8,7 @@ name = "MuseScore"
 version = "0.1.0"
 source = "builtin"
 description = "Sing or play notes into the score, with note input, lengths, rest, undo and play."
-grid = "3x3"
+grid = "3x4"
 
 [match]
 linux = ["MuseScore4", "mscore"]
@@ -19,6 +19,12 @@ windows = ["MuseScore4.exe"]
 label = "Listen"
 icon = "mic"
 speak = "Listen for notes"
+action = { kind = "listen" }
+
+[[key]]
+label = "Stop"
+icon = "stop_circle"
+speak = "Stop listening"
 action = { kind = "listen" }
 
 [[key]]
