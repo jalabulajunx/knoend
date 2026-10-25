@@ -4,9 +4,10 @@
 // To publish a video, put its YouTube ID (the part after "v=" in the link) in `id`.
 // Until then the slot shows "Coming soon". Videos play from youtube-nocookie.com, and only after a click.
 const VIDEOS = [
-  { id: "", title: "Kn°End demo: keys that follow you", note: "Build North demo, under four minutes" },
-  { id: "", title: "Setting up a board with the setup assistant", note: "Coming soon" },
-  { id: "", title: "Speaker notes on the board in PowerPoint", note: "Coming soon" },
+  { id: "d6Set7CRCjE", title: "Kn°End demo: keys that follow you", note: "Build North demo" },
+  { id: "ENpDMOkb7OI", title: "Linux and MuseScore", note: "Sing a note, it lands in the score" },
+  { id: "iCj722lLwPk", title: "Terminal coding agents", note: "Answer Claude Code from the board" },
+  { id: "y1Sh5DLingc", title: "Contextual keys", note: "Keys that change with the app and site" },
 ];
 
 // ---- Colour scheme (Auto / Light / Dark), remembered by this browser ----

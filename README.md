@@ -3,8 +3,7 @@
 An open-source, cross-OS shortcut keypad and pager built on inexpensive ESP32-S3 touch boards.
 
 *Kn°End* is said "no end" (silent K, as in *know*); written `knoend` for the command and in network
-names, and KnoEnd in plain text. It was called OpenPager until October 2026, and boards and
-computers from then still work with it.
+names, and KnoEnd in plain text.
 
 Said aloud, it is close to the Tamil **நோண்டு** (*nōṇḍu*). The word literally means "dig" or "poke
 at", and colloquially it means tinkering: poking at a thing to see how it works and make it do
@@ -22,7 +21,7 @@ microphone it listens: sing or play a note and it reaches a music app as MIDI.
 > Bluetooth links, AI-drafted layouts and flashing work on Linux (X11), macOS and Windows. See
 > [What works today](#what-works-today). **To set one up, follow [docs/setup.md](docs/setup.md).**
 >
-> **Project page:** <https://jalabulajunx.github.io/knoend/> · **Demo video:** coming soon ·
+> **Project page:** <https://jalabulajunx.github.io/knoend/> · **Demo video:** <https://youtu.be/d6Set7CRCjE> ·
 > Built for [Build North: Ship Something Real](https://build-north.devpost.com/), see
 > [Build North submission](#build-north-submission).
 
@@ -185,7 +184,9 @@ Kn°End is our entry to [Build North: Ship Something Real](https://build-north.d
 - **Live link:** the [project page](https://jalabulajunx.github.io/knoend/) and the
   [latest release](https://github.com/jalabulajunx/knoend/releases/latest) (runs on your own
   computer with a board).
-- **Demo video:** coming soon (on the project page).
+- **Demo video:** <https://youtu.be/d6Set7CRCjE>. Shorter videos: [Linux and
+  MuseScore](https://youtu.be/ENpDMOkb7OI), [terminal coding agents](https://youtu.be/iCj722lLwPk),
+  [contextual keys](https://youtu.be/y1Sh5DLingc).
 - **Tech stack:** firmware in C on ESP-IDF 5.4.4 with LVGL and Bluedroid (Bluetooth LE); companion service
   in Rust (tokio, axum, tokio-tungstenite, btleplug, serialport); web app in plain HTML, CSS and JavaScript; browser extension
   (Manifest V3); JSON Schema and TOML for the shared contracts.
@@ -196,9 +197,13 @@ Kn°End is our entry to [Build North: Ship Something Real](https://build-north.d
 
 ### Prior work and what was built during the week
 
-- **Before:** a bench prototype (USB serial plus a Bluetooth keyboard on one ONX2432G028) existed
-  before this repository. None of its code is here: its board drivers were the vendor's example code,
-  so the board support was rewritten from the schematics and Espressif's components.
+- **Before:** in August 2026 Sundar built [sidebar](https://github.com/jalabulajunx/sidebar), a
+  private voice intercom for a few kids on the same ONX2432G028 board; seeing it work is what led to
+  trying a keypad on that board. On 13 October a bench prototype grew out of it (USB serial plus a
+  Bluetooth keyboard on one ONX2432G028). No code from sidebar or the prototype is here: the
+  prototype's board drivers were the vendor's example code, so the board support was rewritten from
+  the schematics and Espressif's components. What carried over was experience with the board and
+  ESP-IDF. Skanda designed the Kn°End enclosure from scratch.
 - **During the week:** everything in this repository. The first log entry is 16 October 2026 and
   the first commit 17 October; [docs/log.md](docs/log.md) records each day's work, who did it,
   with which AI agent, and what was tested on which hardware.
@@ -249,12 +254,14 @@ Kn°End is an integration of existing ideas, not a new invention. Projects that 
 - Display and touch drivers are Espressif's components (Apache-2.0); the AMOLED's pins and start-up
   commands come from Waveshare's board support package (Apache-2.0); the AXP2101 register map from
   XPowersLib (MIT). Bluetooth on the computer uses btleplug (MIT/Apache-2.0).
-- A bench prototype (USB serial + Bluetooth keyboard) was built before this repository started. It is
-  not included; its board drivers were the board maker's example code, so the board profiles here are
-  written from the schematics and Espressif's open-source components.
+- [sidebar](https://github.com/jalabulajunx/sidebar) (August 2026), Sundar's intercom on the same
+  board, came first and led to this project. None of its code is used here.
+- A bench prototype (USB serial + Bluetooth keyboard) was built from it before this repository
+  started. It is not included; its board drivers were the board maker's example code, so the board
+  profiles here are written from the schematics and Espressif's open-source components.
 - AI tools: built with help from Claude Code (planning, research and code), OpenAI Codex (code
   review) and Google Antigravity (code).
-- Enclosure: designed by Skanda.
+- Enclosure: designed from scratch and 3D-printed by Skanda.
 
 ## Trademarks
 
