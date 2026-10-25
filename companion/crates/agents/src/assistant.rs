@@ -26,7 +26,8 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("open_bluetooth_settings", "open this computer's Bluetooth settings to pair the board as the \"KnoEnd\" Bluetooth \
                                  Low Energy keyboard (optional; the companion also types shortcuts over USB or Wi-Fi)"),
     ("app_setup", "open the Your apps step: the apps installed on this computer, which already have keys, and the AI \
-                   drafting keys for the ones the person picks (up to 12 at once) before they open them"),
+                   drafting keys for the ones the person picks (up to 12 at once) before they open them; \
+                   it takes no request, so not for changing an app's keys (that is a fix's \"redraft\")"),
     ("dashboard", "go to the dashboard"),
     ("open_accessibility_settings", "macOS only: opens Privacy & Security > Accessibility, where the person switches on \
                                      the app named in system_checks.accessibility.app_to_allow"),
@@ -80,6 +81,21 @@ pub struct Fix {
     /// against that setting's choices before anything changes).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub settings: Option<serde_json::Map<String, Value>>,
+    /// Rework an AI-drafted library's keys as the person asked (the service checks the library).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redraft: Option<Redraft>,
+}
+
+/// An AI-drafted library to draft again, and what the person asked for, in their words.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Redraft {
+    pub library: String,
+    pub request: String,
+}
+
+/// A paired board's id (its MAC address in hex), not an identify candidate.
+fn paired_board_id(s: &str) -> bool {
+    s.len() == 12 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 fn plain_name(s: &str, max: usize) -> bool {
@@ -88,7 +104,7 @@ fn plain_name(s: &str, max: usize) -> bool {
 
 /// Keeps only well-formed fields; None if nothing usable is left.
 fn check_fix(value: &Value) -> Option<Fix> {
-    let fix = Fix {
+    let mut fix = Fix {
         model: value["model"].as_str().map(str::trim).filter(|m| plain_name(m, 120)).map(str::to_string),
         base_url: value["base_url"].as_str().map(str::trim)
             .filter(|u| u.is_empty() || (u.len() <= 200 && (u.starts_with("https://") || u.starts_with("http://"))
@@ -117,7 +133,19 @@ fn check_fix(value: &Value) -> Option<Fix> {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect::<serde_json::Map<_, _>>())
             .filter(|o| !o.is_empty()),
+        redraft: value["redraft"]["library"].as_str()
+            .filter(|l| l.starts_with("ai.") && plain_name(l, 60) && !l.contains(['/', ':', '@']))
+            .zip(value["redraft"]["request"].as_str().map(str::trim)
+                .filter(|r| !r.is_empty() && r.chars().count() <= crate::REDRAFT_REQUEST_MAX && !r.contains(char::is_control)))
+            .map(|(library, request)| Redraft { library: library.into(), request: request.into() }),
     };
+    // A paired board's id put where an install's board goes (seen 2026-10-24: a key size fix for
+    // one board was refused as "not installable"): it names the board whose settings change.
+    if let Some(board) = fix.board.take_if(|b| paired_board_id(b)) {
+        if let Some(settings) = fix.settings.as_mut() {
+            settings.entry("board").or_insert(board.into());
+        }
+    }
     (fix != Fix::default()).then_some(fix)
 }
 
@@ -165,7 +193,19 @@ changes until they press Apply. Include it only when the evidence points to that
   settings to add; null leaves a setting out, e.g. {{"temperature": null}}), "timeout_secs" (10 to
   3600, e.g. longer for a slow local model).
 - "board": a board id from identify_result.candidates, when the person has told you which board they
-  have.
+  have (for installing; a paired board's settings take "board" inside "settings" instead).
+- "redraft": {{"library": "<id>", "request": "<what the person asked, in their words>"}} when they
+  want an app's keys changed (other keys, rearranged, a layout like the real thing): the configure
+  agent drafts that app's keys again from the current ones and the request, in about 15 seconds,
+  and the board shows them when that app is in front. Only for a library in ai_drafted_libraries
+  (id, name and key labels in order); keys fill the grid row by row in that order. 10 to 16 keys
+  are a 4x4 grid, which a board shows only with key_size "small" (bigger keys split the library
+  into pages): check that board's key_size and add it to the same fix when needed. This is the
+  only way you change keys: whenever the person asks for other, more, fewer or rearranged keys for
+  an app in ai_drafted_libraries, the fix must have "redraft". Do not offer app_setup for that (it
+  drafts apps from scratch and cannot take their request), and never offer a key_size change alone
+  as a new layout: it only shows the same keys smaller. For keys not in that list (built-in or the
+  person's own) send them to the Edit keys tab, and never say you will change keys yourself.
 Never put keys or passwords in a fix.
 
 You have no tools and cannot call functions. The only way to run a check is the "checks" field of
@@ -342,6 +382,30 @@ mod tests {
     fn a_look_fix_names_its_board() {
         let prompt = system_prompt();
         assert!(prompt.contains("\"per_board\"") && prompt.contains("board_looks") && prompt.contains("\"board\": \"<board id>\""));
+    }
+
+    #[test]
+    fn keys_are_changed_by_a_redraft_of_an_ai_library_only() {
+        let prompt = system_prompt();
+        assert!(prompt.contains("\"redraft\": {\"library\": \"<id>\"") && prompt.contains("ai_drafted_libraries"));
+        assert!(prompt.contains("key_size \"small\"") && prompt.contains("Edit keys tab"));
+        assert!(prompt.contains("the fix must have \"redraft\"") && prompt.contains("Do not offer app_setup for that"));
+        let fix = parse(r#"{"answer": "a", "fix": {"redraft": {"library": "ai.calculator", "request": " numbers like a real calculator "}}}"#).fix;
+        assert_eq!(fix.and_then(|f| f.redraft), Some(Redraft { library: "ai.calculator".into(), request: "numbers like a real calculator".into() }));
+        for bad in [r#"{"library": "builtin.vscode", "request": "x"}"#, r#"{"library": "ai.calculator", "request": ""}"#,
+                    r#"{"library": "ai.calculator", "request": "a\nb"}"#, r#"{"library": "ai.calculator"}"#] {
+            assert!(parse(&format!(r#"{{"answer": "a", "fix": {{"redraft": {bad}}}}}"#)).fix.is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_paired_board_in_the_install_field_names_the_settings_board() {
+        // The reply seen on 2026-10-24: key size for board 80b54edbcdb8, its id in "board".
+        let fix = parse(r#"{"answer": "a", "fix": {"settings": {"key_size": "small"}, "board": "80b54edbcdb8"}}"#).fix.expect("fix");
+        assert_eq!(fix.board, None);
+        assert_eq!(fix.settings.expect("settings")["board"], "80b54edbcdb8");
+        assert_eq!(parse(r#"{"answer": "a", "fix": {"board": "onx2432g028"}}"#).fix.and_then(|f| f.board).as_deref(), Some("onx2432g028"));
+        assert!(parse(r#"{"answer": "a", "fix": {"board": "80b54edbcdb8"}}"#).fix.is_none(), "nothing left to apply");
     }
 
     #[test]
