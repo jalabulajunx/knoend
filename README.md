@@ -25,6 +25,24 @@ microphone it listens: sing or play a note and it reaches a music app as MIDI.
 > Built for [Build North: Ship Something Real](https://build-north.devpost.com/), see
 > [Build North submission](#build-north-submission).
 
+<p align="center">
+  <img src="site/knoend-desk.jpg" width="420" alt="The Kn°End board in its black 3D-printed case on a desk, showing a slide's speaker notes with Prev, End, Next, First, Black and White keys.">
+  <br><sub>Presenting: the slide's speaker notes on the board. Enclosure designed and 3D-printed by Skanda.</sub>
+</p>
+
+## Videos
+
+<table>
+  <tr>
+    <td colspan="3" align="center"><a href="https://youtu.be/d6Set7CRCjE"><img src="https://i.ytimg.com/vi/d6Set7CRCjE/hqdefault.jpg" width="560" alt="Kn°End demo video"></a><br><b>Kn°End demo: keys that follow you</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><a href="https://youtu.be/ENpDMOkb7OI"><img src="https://i.ytimg.com/vi/ENpDMOkb7OI/hqdefault.jpg" width="240" alt="Linux and MuseScore video"></a><br>Linux and MuseScore</td>
+    <td align="center" width="33%"><a href="https://youtu.be/iCj722lLwPk"><img src="https://i.ytimg.com/vi/iCj722lLwPk/hqdefault.jpg" width="240" alt="Terminal coding agents video"></a><br>Terminal coding agents</td>
+    <td align="center" width="33%"><a href="https://youtu.be/y1Sh5DLingc"><img src="https://i.ytimg.com/vi/y1Sh5DLingc/hqdefault.jpg" width="240" alt="Contextual keys video"></a><br>Contextual keys</td>
+  </tr>
+</table>
+
 ## Why
 
 - **Shortcut keypads are closed and skip Linux.** Commercial keypads such as the Logitech MX Keypad
