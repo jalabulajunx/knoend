@@ -2271,3 +2271,14 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - MuseScore: decide between a Listen key that shows Stop while listening (live label) and a
     separate stop action; then rebuild and try it on the ONX.
   - Turn on Pages (Settings > Pages > Source: GitHub Actions) if not done.
+
+## 2026-10-25 - Sundar (Claude Code, Opus 5.5) - Prior work: sidebar disclosed
+
+- Changed: README "Prior work" and "Pre-existing work and tools" name
+  [sidebar](https://github.com/jalabulajunx/sidebar) (August 2026, Sundar's intercom on the same
+  ONX2432G028), which led to this project and to the 13 October bench prototype. No sidebar code is
+  in this repository (checked with `git grep`; only two notes say the intercom saw the same microphone
+  error). Skanda designed the Kn°End enclosure from scratch (Sundar confirmed); README says so.
+- Tested: text only.
+- Decided: the same wording goes in the Devpost submission's prior work.
+- Open: none.
