@@ -2292,3 +2292,26 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
 - Tested: rendered on GitHub from the branch (see the PR).
 - Decided: none.
 - Open: none.
+
+## 2026-10-25 - Sundar (Claude Code, Opus 5.5) - Release v0.2.3; issues #78 and #51 closed
+
+- Changed: version 0.2.3 in `companion/Cargo.toml` (and `Cargo.lock`), `extension/manifest.json`,
+  `installer/windows/knoend.iss`, README, `docs/status.md` and the project page. What v0.2.3 brings
+  over v0.2.2: the setup assistant redrafts an AI draft's keys when asked (Tom, #85); font menus that
+  open every time and a start-up size sent once (Tom, #81, #50); macOS app lists with Apple's own
+  apps and no background programs on the home screen (Tom, #73, #74); the PowerPoint notes test on a
+  made-up deck in CI and the loader fix it found; the MuseScore Stop key.
+- Known in this release: the MuseScore Stop key uses the toggling `listen` action, so pressing it
+  while the board is not listening starts listening. Sundar chose to ship it as is; a stop-only
+  action needs a `spec/` change reviewed by both.
+- Issues: closed #78 (PowerPoint notes, done in #79, CI test in #82) and #51 (portrait edit preview,
+  fixed by #69: Edit keys now says why and what to do). Checked and left open: #84 (font over
+  115200-baud USB still sent in 2 KB chunks with no pacing), #72 (Bluetooth still opens every
+  candidate and `subscribe` has no timeout), #75 (Configure still on the last page; the status line
+  says so; waiting on Sundar's answer), #38 (replaced drafts marked and grouped in Edit keys since
+  a220975; same-named page kinds and drafts that can no longer match remain), #39 (no Edit button on
+  draft rows), #40 (Tom's redraft covers part: a request through the assistant, not a chat beside the
+  layout), #34, #17 (on-board Wi-Fi screen remains), #16, #13, #76.
+- Tested (Arch Linux): `cargo test --locked` (142 passed), spec validator 0 problems, `knoend
+  --version` reports 0.2.3. Release check results in the next entry or the PR.
+- Open: none beyond the issues above.
