@@ -2285,7 +2285,8 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
 
 ## 2026-10-25 - Sundar (Claude Code, Opus 5.5) - README: photo and video thumbnails
 
-- Changed: README shows the desk photo (`site/knoend-desk.jpg`) under the status box and a Videos
+- Changed: README shows the desk photo (`site/knoend-desk-wide.jpg`, a 3:2 crop, 1500 px, no camera
+  metadata) under the status box and a Videos
   section: the demo large, the three short videos under it, each a YouTube thumbnail linking to the
   video (GitHub does not embed players in a README).
 - Tested: rendered on GitHub from the branch (see the PR).

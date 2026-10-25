@@ -26,7 +26,7 @@ microphone it listens: sing or play a note and it reaches a music app as MIDI.
 > [Build North submission](#build-north-submission).
 
 <p align="center">
-  <img src="site/knoend-desk.jpg" width="420" alt="The Kn°End board in its black 3D-printed case on a desk, showing a slide's speaker notes with Prev, End, Next, First, Black and White keys.">
+  <img src="site/knoend-desk-wide.jpg" width="640" alt="The Kn°End board in its black 3D-printed case on a desk, showing a slide's speaker notes with Prev, End, Next, First, Black and White keys.">
   <br><sub>Presenting: the slide's speaker notes on the board. Enclosure designed and 3D-printed by Skanda.</sub>
 </p>
 
