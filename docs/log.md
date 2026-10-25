@@ -2315,3 +2315,12 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
 - Tested (Arch Linux): `cargo test --locked` (142 passed), spec validator 0 problems, `knoend
   --version` reports 0.2.3. Release check results in the next entry or the PR.
 - Open: none beyond the issues above.
+
+## 2026-10-25 - Sundar (Claude Code, Opus 5.5) - v0.2.3 published and checked
+
+- Release workflow for `v0.2.3` passed (firmware, extension, Linux x86_64, macOS arm64 and x86_64,
+  Windows, publish).
+- Checked from the published release: `releases/latest` is v0.2.3, not a draft or pre-release, 16
+  assets; manifest version 0.2.3; bootloader, partition table, app image and the five board
+  definitions each match their SHA-256; the Linux binary reports `knoend 0.2.3`.
+- Not done: installing a board from v0.2.3 end to end, running the macOS and Windows builds.
