@@ -2214,3 +2214,27 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - None.
 - Open:
   - None.
+
+## 2026-10-25 - Sundar (Claude Code, Opus 5.5) - Videos and desk photo on the project page; MuseScore Stop key note
+
+- Changed:
+  - `site/site.js`: the four videos (main demo, Linux and MuseScore, terminal coding agents,
+    contextual keys). `site/style.css`: the demo full width, the other three in a row under it (one
+    column on a phone).
+  - `site/knoend-desk.jpg`: Sundar's photo of the board showing PowerPoint speaker notes, cut to
+    1200 px with the camera metadata removed (131 KB; the 3.5 MB original stays out of git). New
+    "On the desk" section after the hero; also the page's `og:image`.
+  - README: demo video link and the three shorter videos; Sundar removed the "called OpenPager until
+    October 2026" sentence.
+- Tested (Arch Linux, Chromium pane, page served locally): four thumbnails load from YouTube (IDs
+  valid); gallery 3 columns at desktop width, 1 at 375 px; no sideways scrolling; photo loads. The
+  videos were not played through.
+- Correction to commit a978792 (MuseScore Stop key, pushed to main with no log entry): Sundar did not
+  see the key on the board. Built-in recipes are compiled into `knoend` (`load_builtin`), so a recipe
+  change needs a rebuilt service (or `KNOEND_BUILTIN` pointing at `recipes/`); a restart of the old
+  binary does not pick it up. The key also uses `kind = "listen"`, which toggles, so pressing Stop
+  while not listening starts listening. Not tested on the board.
+- Open:
+  - MuseScore: decide between a Listen key that shows Stop while listening (live label) and a
+    separate stop action; then rebuild and try it on the ONX.
+  - Turn on Pages (Settings > Pages > Source: GitHub Actions) if not done.

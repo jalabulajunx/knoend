@@ -3,8 +3,7 @@
 An open-source, cross-OS shortcut keypad and pager built on inexpensive ESP32-S3 touch boards.
 
 *Kn°End* is said "no end" (silent K, as in *know*); written `knoend` for the command and in network
-names, and KnoEnd in plain text. It was called OpenPager until October 2026, and boards and
-computers from then still work with it.
+names, and KnoEnd in plain text.
 
 Said aloud, it is close to the Tamil **நோண்டு** (*nōṇḍu*). The word literally means "dig" or "poke
 at", and colloquially it means tinkering: poking at a thing to see how it works and make it do
@@ -22,7 +21,7 @@ microphone it listens: sing or play a note and it reaches a music app as MIDI.
 > Bluetooth links, AI-drafted layouts and flashing work on Linux (X11), macOS and Windows. See
 > [What works today](#what-works-today). **To set one up, follow [docs/setup.md](docs/setup.md).**
 >
-> **Project page:** <https://jalabulajunx.github.io/knoend/> · **Demo video:** coming soon ·
+> **Project page:** <https://jalabulajunx.github.io/knoend/> · **Demo video:** <https://youtu.be/d6Set7CRCjE> ·
 > Built for [Build North: Ship Something Real](https://build-north.devpost.com/), see
 > [Build North submission](#build-north-submission).
 
@@ -185,7 +184,9 @@ Kn°End is our entry to [Build North: Ship Something Real](https://build-north.d
 - **Live link:** the [project page](https://jalabulajunx.github.io/knoend/) and the
   [latest release](https://github.com/jalabulajunx/knoend/releases/latest) (runs on your own
   computer with a board).
-- **Demo video:** coming soon (on the project page).
+- **Demo video:** <https://youtu.be/d6Set7CRCjE>. Shorter videos: [Linux and
+  MuseScore](https://youtu.be/ENpDMOkb7OI), [terminal coding agents](https://youtu.be/iCj722lLwPk),
+  [contextual keys](https://youtu.be/y1Sh5DLingc).
 - **Tech stack:** firmware in C on ESP-IDF 5.4.4 with LVGL and Bluedroid (Bluetooth LE); companion service
   in Rust (tokio, axum, tokio-tungstenite, btleplug, serialport); web app in plain HTML, CSS and JavaScript; browser extension
   (Manifest V3); JSON Schema and TOML for the shared contracts.
