@@ -110,6 +110,9 @@ impl Default for Grid {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LayoutBody {
+    /// A relative touch surface above the bottom row; send knoend.pointer deltas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub touchpad: Option<bool>,
     /// Text the board shows in place of the middle rows (e.g. what a permission request is for).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,

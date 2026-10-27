@@ -326,6 +326,22 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knoend.pointer"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/pointer"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -697,6 +713,10 @@
           "description": "Text shown in place of the middle rows of keys (all but the top and bottom), e.g. what a permission request is for. Needs 3 rows or more.",
           "type": "string",
           "maxLength": 240
+        },
+        "touchpad": {
+          "type": "boolean",
+          "description": "Relative touch surface above the bottom row; supported when features.touchpad is true."
         }
       }
     },
@@ -1194,6 +1214,38 @@
         },
         "error": {
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pointer": {
+      "type": "object",
+      "required": [
+        "layout",
+        "dx",
+        "dy",
+        "seq"
+      ],
+      "properties": {
+        "layout": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "dx": {
+          "type": "integer",
+          "minimum": -127,
+          "maximum": 127
+        },
+        "dy": {
+          "type": "integer",
+          "minimum": -127,
+          "maximum": 127
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
         }
       },
       "additionalProperties": false

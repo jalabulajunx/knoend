@@ -12,6 +12,8 @@ use crate::service::Shared;
 
 /// Every check: id and what it finds out.
 pub const ALL: &[(&str, &str)] = &[
+    ("powerpoint_context", "Checks the presentation panel and pointer capability without reading slide text or moving the pointer."),
+    ("windows_pager", "Checks pager enablement, visible-notification watcher and recorder launcher availability without opening Steno or exposing notification text."),
     ("find_boards_on_network",
      "Looks for KnoEnd boards on the local network now (mDNS, 6 s): each board's id, address and whether it is \
       paired with this computer. Tells a board that is on Wi-Fi but not reachable from one that is not on the network."),
@@ -53,6 +55,13 @@ pub fn describe() -> Value {
 /// Runs the check `id`; an unknown id says so.
 pub async fn run(id: &str, shared: &Shared) -> Value {
     match id {
+        "powerpoint_context" => {
+            let mut result = crate::powerpoint::diagnostics();
+            let state = shared.status.read().await;
+            result["board_touchpad_supported"] = json!(!state.boards.is_empty() && state.boards.iter().all(|b|b.touchpad));
+            result
+        },
+        "windows_pager" => crate::pager::diagnostics(),
         "find_boards_on_network" => {
             let paired: Vec<String> = knoend_transport::pairing::Pairings::load().boards.keys().cloned().collect();
             match tokio::task::spawn_blocking(|| knoend_transport::discover::discover(Duration::from_secs(6), None)).await {
@@ -65,9 +74,9 @@ pub async fn run(id: &str, shared: &Shared) -> Value {
                 Err(e) => json!({"error": e.to_string()}),
             }
         }
-        "service_log" => json!({"lines": crate::journal::recent(300)}),
+        "service_log" => json!({"lines": crate::journal::recent(300).iter().map(|l|crate::diagnostics::redact(l)).collect::<Vec<_>>()}),
         "usb_now" => json!({"ports": tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default()}),
-        "settings" => json!({"settings": crate::settings::all(shared).await, "board_looks": crate::display::load().boards}),
+        "settings" => json!({"settings": crate::settings::for_assistant(shared).await, "board_looks": crate::display::load().boards}),
         "board_serial_log" => board_serial_log(shared).await,
         "identify_board" => identify_board(shared).await,
         "installed_apps" => {

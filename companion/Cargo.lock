@@ -2053,12 +2053,14 @@ dependencies = [
  "knoend-transport",
  "midir",
  "reqwest",
+ "roxmltree",
  "rpassword",
  "serde",
  "serde_json",
  "tokio",
  "tokio-stream",
  "toml",
+ "windows",
  "zip",
 ]
 

@@ -526,3 +526,15 @@ library with the same `match.agent` replaces the built-in screen. An `agent` key
 - What desktop `match` patterns are compared against on each OS (Linux: `.desktop` id or WM_CLASS;
   macOS: bundle id; Windows: executable name) and whether `*` wildcards are allowed.
 - Whether the board speaks KDE Connect directly (roadmap).
+
+### Draft extension: relative touch surface (local prototype)
+
+A board with `features.touchpad: true` accepts optional `touchpad: true` on a layout. The area above its bottom control row becomes a relative touch surface; bottom-row keys keep their usual events. An absent/false field keeps the existing grid. Companions must check board capability first; older firmware ignores unknown fields.
+
+`knoend.pointer` is a board-to-companion report:
+
+```json
+{"id":19,"type":"knoend.pointer","body":{"layout":"system.presentation.touchpad","dx":12,"dy":-4,"seq":82}}
+```
+
+`dx` and `dy` are integer screen-oriented device-pixel deltas, each -127..127. Positive values move right/down. `seq` is a monotonically increasing unsigned 32-bit report counter seeded per boot; a report sent on multiple links retains its sequence. Limit reports to about 30 per second, accumulating intermediate movement. Press anchors a relative stroke, lift ends it, and neither action clicks or turns pages. A companion deduplicates sequences per board, ignores reports for an inactive surface, and applies its own bounded pointer gain. Gesture state is cleared when a layout is replaced. This draft requires joint repository review before publication.

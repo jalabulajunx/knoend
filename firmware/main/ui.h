@@ -31,6 +31,7 @@ typedef struct {
     char id[65];
     char name[129];
     bool reviewed;
+    bool touchpad; // relative pointer surface above the bottom row
     uint8_t cols, rows;  // this layout's grid, within ui_max_grid
     uint8_t page, pages; // page `page` of `pages` (1 of 1 for most layouts); the companion turns pages
     // Text shown in place of the middle rows (all but the top and bottom), e.g. what a permission

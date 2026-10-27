@@ -15,6 +15,10 @@ const KNOWLEDGE: &str = include_str!("../../../../docs/knowledge/setup.md");
 /// Buttons the web app can offer, and what each does: the prompt is written from this list, so a
 /// button added here (and in the web app's ACTIONS) is one the assistant knows.
 pub const ACTIONS: &[(&str, &str)] = &[
+    ("presentation_settings","open recipe notes-source and exact saved PPTX binding settings"),
+    ("recipes_reload","validate and reload recipes from disk without a rebuild; invalid recipes leave the current catalog unchanged"),
+    ("pager_settings", "open Windows pager settings: enable interruptions or set the existing local recorder .vbs shortcut"),
+    ("pager_test", "put a synthetic incoming Teams call on the board; never makes a real call or starts recording"),
     ("rescan", "look for USB ports again"),
     ("identify", "ask the board on the chosen port what it is; restarts it briefly"),
     ("install", "install the firmware, keeping the board's Wi-Fi, pairing and settings"),
@@ -166,6 +170,9 @@ How to work:
   needed, and say that erasing removes Wi-Fi and pairing.
 - Never ask for, repeat or store passwords or API keys. They are typed only into the web app's own
   fields.
+- Local file settings marked private expose configured/existing status, never the path. Do not
+  infer or request those paths in chat or replace a configured value because current is null.
+  Offer presentation_settings or pager_settings so the person can edit paths in the local UI.
 - Plain text only: no Markdown (no asterisks, no backticks, no headings); the reply is shown as is.
 - Plain language, short sentences, numbered steps when there are several. No more than about 150
   words unless the person asks for detail. Commands go in their own line, exactly as typed.
@@ -358,6 +365,8 @@ mod tests {
         assert!(prompt.contains("Never tell the person to edit source code"));
         assert!(prompt.contains("never write that you changed or selected anything"));
         assert!(prompt.contains("1a86:7522"));
+        assert!(prompt.contains("Local file settings marked private"));
+        assert!(prompt.contains("replace a configured value because current is null"));
     }
 
     #[test]
@@ -400,12 +409,12 @@ mod tests {
 
     #[test]
     fn a_paired_board_in_the_install_field_names_the_settings_board() {
-        // The reply seen on 2026-10-24: key size for board 80b54edbcdb8, its id in "board".
-        let fix = parse(r#"{"answer": "a", "fix": {"settings": {"key_size": "small"}, "board": "80b54edbcdb8"}}"#).fix.expect("fix");
+        // Synthetic reply: a board-specific key-size fix keeps its target board.
+        let fix = parse(r#"{"answer": "a", "fix": {"settings": {"key_size": "small"}, "board": "a1b2c3d4e5f6"}}"#).fix.expect("fix");
         assert_eq!(fix.board, None);
-        assert_eq!(fix.settings.expect("settings")["board"], "80b54edbcdb8");
+        assert_eq!(fix.settings.expect("settings")["board"], "a1b2c3d4e5f6");
         assert_eq!(parse(r#"{"answer": "a", "fix": {"board": "onx2432g028"}}"#).fix.and_then(|f| f.board).as_deref(), Some("onx2432g028"));
-        assert!(parse(r#"{"answer": "a", "fix": {"board": "80b54edbcdb8"}}"#).fix.is_none(), "nothing left to apply");
+        assert!(parse(r#"{"answer": "a", "fix": {"board": "a1b2c3d4e5f6"}}"#).fix.is_none(), "nothing left to apply");
     }
 
     #[test]

@@ -4,6 +4,40 @@
 const TOKEN = document.querySelector('meta[name="knoend-token"]').content;
 const $ = (id) => document.getElementById(id);
 
+async function loadPager() {
+  try {
+    const data = await api("/settings");
+    const settings = data.settings || [];
+    $("pager-enabled").checked = settings.find((s) => s.id === "pager_enabled")?.current === true;
+    $("pager-recorder").value = settings.find((s) => s.id === "recorder_launcher")?.current || "";
+    await refreshPagerHealth();
+  } catch (err) { $("pager-status").textContent = err.message; }
+}
+$("pager-save").addEventListener("click", async () => {
+  try {
+    await api("/settings", {changes: {pager_enabled: $("pager-enabled").checked, recorder_launcher: $("pager-recorder").value.trim()}});
+    await loadPager();
+  } catch (err) { $("pager-status").textContent = err.message; }
+});
+$("pager-test").addEventListener("click", async () => {
+  try {
+    if (!$("pager-enabled").checked) throw new Error("Enable and save pager interruptions first.");
+    await api("/pager/test", {});
+    $("pager-status").textContent = "Synthetic call queued. Check the board; no call was made and no recording started.";
+  } catch (err) { $("pager-status").textContent = err.message; }
+});
+loadPager();
+
+async function refreshPagerHealth() {
+  try {
+    const status = await api("/pager");
+    $("pager-status").textContent = status.enabled
+      ? `Pager on; ${status.watcher_ready ? "capture active" : "capture not ready or stalled"}; ${status.pending} pending. ${status.recorder_exists ? "Recorder available." : "Choose a recorder launcher."}`
+      : "Pager interruptions are off.";
+  } catch (err) { $("pager-status").textContent = err.message; }
+}
+setInterval(refreshPagerHealth, 5000);
+
 async function api(path, body) {
   const options = { headers: { "x-knoend-token": TOKEN } };
   if (body !== undefined) {
@@ -1861,6 +1895,10 @@ $("ai-form").addEventListener("submit", async (e) => {
 // ---- setup assistant ----
 
 const ACTIONS = {
+  presentation_settings: ["Presentation settings",()=>{show("dashboard");$("presentation-source").closest("details").open=true;$("presentation-source").focus();}],
+  recipes_reload: ["Reload recipes",()=>$("recipes-reload").click()],
+  pager_settings: ["Pager settings", () => { show("dashboard"); $("pager-enabled").focus(); }],
+  pager_test: ["Test pager", () => $("pager-test").click()],
   rescan: ["Look again", () => { step(1); scanPorts(); }],
   identify: ["Identify the board", () => { step(1); $("identify").click(); }],
   install: ["Install", () => { if (setup.board) { $("erase").checked = false; $("install").click(); } else step(1); }],
@@ -2498,3 +2536,8 @@ setScheme(document.documentElement.dataset.theme || "auto");
   setMode(storeGet("knoend.mode") || "ai"); // guided is the recommended default
   loadApps().catch(() => {});
 })();
+
+async function loadPresentationSettings(){try{const d=await api("/presentation");$("presentation-source").value=d.settings.source;$("presentation-file").value=d.settings.file;}catch(e){$("presentation-status").textContent=e.message;}}
+$("presentation-save").addEventListener("click",async()=>{try{await api("/settings",{changes:{presentation_notes_source:$("presentation-source").value,presentation_pptx_file:$("presentation-file").value.trim()}});$("presentation-status").textContent="Notes settings saved.";}catch(e){$("presentation-status").textContent=e.message;}});
+$("recipes-reload").addEventListener("click",async()=>{try{const d=await api("/recipes/reload",{});$("presentation-status").textContent=`Reloaded ${d.libraries} recipes.`;}catch(e){$("presentation-status").textContent=e.message;}});
+loadPresentationSettings();

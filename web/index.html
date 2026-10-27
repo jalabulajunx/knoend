@@ -115,6 +115,21 @@
           <ul id="drafts" class="list"><li class="muted">None yet. Tap Configure on the board for an app with no layout.</li></ul>
         </article>
         <article class="card">
+          <h2>Windows pager</h2>
+          <p class="muted">Visible Teams, ChatGPT and Codex notifications interrupt the keys. Calls offer Start Steno. Notifications suppressed by Windows or the app cannot be captured.</p>
+          <details><summary>Presentation recipes and notes</summary>
+            <p>Presentation buttons and modes come from the TOML recipe. Reload after editing a recipe; no rebuild or board update is needed.</p>
+            <label>Notes source <select id="presentation-source"><option value="recipe">Use recipe policy</option><option value="live">Live PowerPoint</option><option value="pptx">Saved PPTX extraction</option><option value="live_or_pptx">Live, then exact saved PPTX</option></select></label>
+            <label>Exact saved PPTX (optional) <input id="presentation-file" type="text" autocomplete="off" placeholder="Full path to an existing .pptx"></label>
+            <p class="muted">Saved-file extraction reads saved text. A file belonging to a different active deck is rejected.</p>
+            <div class="actions left"><button type="button" id="presentation-save" class="secondary">Save notes settings</button><button type="button" id="recipes-reload" class="secondary">Reload recipes</button></div>
+            <p id="presentation-status" class="muted"></p>
+          </details>
+          <label class="inline"><input type="checkbox" id="pager-enabled"> Interrupt for notifications</label>
+          <label>Recorder launcher (.vbs)<input id="pager-recorder" type="text" placeholder="Choose an existing local .vbs shortcut"></label>
+          <p class="muted">Start Steno opens the recorder. Start recording through its existing controls.</p>
+          <div class="actions left"><button type="button" id="pager-save" class="secondary">Save pager</button><button type="button" id="pager-test" class="secondary">Test pager</button></div>
+          <p id="pager-status" class="note" role="status"></p>
           <h2>Activity</h2>
           <ol id="activity" class="log"></ol>
         </article>

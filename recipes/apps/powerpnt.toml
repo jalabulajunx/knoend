@@ -61,7 +61,175 @@ speak = "Start presentation from current slide"
 action = { kind = "shortcut", keys = "Shift+F5" }
 
 [[key]]
-label = "Laser / Pen"
-icon = "edit"
-speak = "Toggle laser pointer or pen"
-action = { kind = "shortcut", keys = "Primary+L" }
+label = "Save As"
+icon = "save"
+speak = "Save presentation as"
+action = { kind = "shortcut", keys = "F12" }
+
+[presentation]
+provider = "powerpoint"
+initial_mode = "controls"
+notes_source = "live_or_pptx"
+pointer_gain = 2.0
+
+[presentation.commands]
+next = "Right"
+previous = "Left"
+first = "Home"
+end = "Escape"
+black = "B"
+white = "W"
+arrow = "Ctrl+A"
+
+[presentation.modes.controls]
+grid = "3x3"
+enter = ["Ctrl+A"]
+
+[[presentation.modes.controls.key]]
+slot = 1
+label = "Prev"
+action = { kind = "presentation", command = "previous" }
+
+[[presentation.modes.controls.key]]
+slot = 2
+label = "Black"
+action = { kind = "presentation", command = "black" }
+
+[[presentation.modes.controls.key]]
+slot = 3
+label = "Next"
+action = { kind = "presentation", command = "next" }
+
+[[presentation.modes.controls.key]]
+slot = 4
+label = "Laser"
+action = { kind = "presentation", command = "mode", mode = "pointer" }
+
+[[presentation.modes.controls.key]]
+slot = 5
+label = "Notes"
+action = { kind = "presentation", command = "mode", mode = "notes" }
+
+[[presentation.modes.controls.key]]
+slot = 6
+label = "End show"
+action = { kind = "presentation", command = "end" }
+
+[[presentation.modes.controls.key]]
+slot = 7
+label = "First"
+action = { kind = "presentation", command = "first" }
+
+[[presentation.modes.controls.key]]
+slot = 8
+label = "White"
+action = { kind = "presentation", command = "white" }
+
+[[presentation.modes.controls.key]]
+slot = 9
+label = "Arrow"
+action = { kind = "presentation", command = "arrow" }
+
+[presentation.modes.pointer]
+grid = "3x3"
+touchpad = true
+center_pointer = true
+fallback = "pointer-keys"
+enter = ["Ctrl+L"]
+
+[[presentation.modes.pointer.key]]
+slot = 7
+label = "Prev"
+action = { kind = "presentation", command = "previous" }
+
+[[presentation.modes.pointer.key]]
+slot = 8
+label = "Controls"
+action = { kind = "presentation", command = "mode", mode = "controls" }
+
+[[presentation.modes.pointer.key]]
+slot = 9
+label = "Next"
+action = { kind = "presentation", command = "next" }
+
+[presentation.modes.notes]
+grid = "3x3"
+notes = true
+
+[[presentation.modes.notes.key]]
+slot = 1
+label = "Prev"
+action = { kind = "presentation", command = "previous" }
+
+[[presentation.modes.notes.key]]
+slot = 2
+label = "Controls"
+action = { kind = "presentation", command = "mode", mode = "controls" }
+
+[[presentation.modes.notes.key]]
+slot = 3
+label = "Next"
+action = { kind = "presentation", command = "next" }
+
+[[presentation.modes.notes.key]]
+slot = 7
+label = "Prev notes"
+action = { kind = "presentation", command = "notes_previous" }
+
+[[presentation.modes.notes.key]]
+slot = 8
+label = "More notes"
+action = { kind = "presentation", command = "notes_next" }
+
+[[presentation.modes.notes.key]]
+slot = 9
+label = "Controls"
+action = { kind = "presentation", command = "mode", mode = "controls" }
+
+[presentation.modes.pointer-keys]
+grid = "3x3"
+
+[[presentation.modes.pointer-keys.key]]
+slot = 1
+label = "Up left"
+action = { kind = "presentation", command = "move", dx = -40, dy = -40 }
+
+[[presentation.modes.pointer-keys.key]]
+slot = 2
+label = "Up"
+action = { kind = "presentation", command = "move", dx = 0, dy = -40 }
+
+[[presentation.modes.pointer-keys.key]]
+slot = 3
+label = "Up right"
+action = { kind = "presentation", command = "move", dx = 40, dy = -40 }
+
+[[presentation.modes.pointer-keys.key]]
+slot = 4
+label = "Left"
+action = { kind = "presentation", command = "move", dx = -40, dy = 0 }
+
+[[presentation.modes.pointer-keys.key]]
+slot = 5
+label = "Controls"
+action = { kind = "presentation", command = "mode", mode = "controls" }
+
+[[presentation.modes.pointer-keys.key]]
+slot = 6
+label = "Right"
+action = { kind = "presentation", command = "move", dx = 40, dy = 0 }
+
+[[presentation.modes.pointer-keys.key]]
+slot = 7
+label = "Down left"
+action = { kind = "presentation", command = "move", dx = -40, dy = 40 }
+
+[[presentation.modes.pointer-keys.key]]
+slot = 8
+label = "Down"
+action = { kind = "presentation", command = "move", dx = 0, dy = 40 }
+
+[[presentation.modes.pointer-keys.key]]
+slot = 9
+label = "Down right"
+action = { kind = "presentation", command = "move", dx = 40, dy = 40 }

@@ -34,6 +34,23 @@ pub async fn all(shared: &Shared) -> Vec<Value> {
     all_for(shared, None).await
 }
 
+/// Local path settings remain editable in the local UI, but never enter AI context.
+pub async fn for_assistant(shared: &Shared) -> Vec<Value> {
+    let mut settings=all(shared).await;
+    for setting in &mut settings { redact_local_path(setting); }
+    settings
+}
+
+fn redact_local_path(setting:&mut Value) {
+    if setting["kind"]=="local_vbs" || setting["kind"]=="local_pptx" {
+        let path=setting["current"].as_str().unwrap_or_default();
+        let configured=!path.is_empty();let exists=configured&&std::path::Path::new(path).is_file();
+        setting["current"]=Value::Null;
+        setting["configured"]=json!(configured);setting["exists"]=json!(exists);
+        setting["private"]=json!(true);
+    }
+}
+
 /// Every setting, with its current value; the look settings (`per_board`) for board `wanted`.
 pub async fn all_for(shared: &Shared, wanted: Option<&str>) -> Vec<Value> {
     let target = target_board(shared, wanted).await;
@@ -54,6 +71,10 @@ pub async fn all_for(shared: &Shared, wanted: Option<&str>) -> Vec<Value> {
         json!({"value": id, "label": label})
     }).collect();
     let mut settings = vec![
+        describe("pager_enabled", "Windows pager interruptions",
+                 "Show visible Teams, ChatGPT and Codex notifications on the board, with Open app, Dismiss and Start Steno for Teams. Suppressed notifications are unavailable.",
+                 json!([{"value": true, "label": "On"}, {"value": false, "label": "Off"}]),
+                 json!(crate::pager::config().enabled), "at once"),
         describe("board", "Board",
                  "Which board the look settings (those with per_board) apply to: each board keeps its own key size, look, \
                   way round, fonts and start-up size, and a newly paired board starts from the defaults. To change another \
@@ -115,6 +136,15 @@ pub async fn all_for(shared: &Shared, wanted: Option<&str>) -> Vec<Value> {
                  json!([{"value": true, "label": "On"}, {"value": false, "label": "Off"}]),
                  json!(d.assistant_watches), "at once"),
     ];
+    let mut recorder = describe("recorder_launcher", "Recorder launcher",
+        "An existing local .vbs shortcut opened only when Start Steno is tapped. Opening the recorder does not automatically start capture.",
+        Value::Null, json!(crate::pager::config().recorder_launcher), "the next Start Steno tap");
+    recorder["kind"] = json!("local_vbs");
+    settings.push(recorder);
+    let notes=crate::powerpoint::notes_settings();
+    settings.push(describe("presentation_notes_source","Presentation notes source","Use the recipe policy, live unsaved PowerPoint notes, saved PPTX extraction, or guarded live-to-PPTX fallback.",
+        json!([{"value":"recipe","label":"Recipe"},{"value":"live","label":"Live PowerPoint"},{"value":"pptx","label":"Saved PPTX"},{"value":"live_or_pptx","label":"Live, then exact PPTX"}]),json!(notes.source),"next presentation refresh"));
+    let mut file=describe("presentation_pptx_file","Exact saved PPTX","Optional local file binding. Empty uses the exact path reported by PowerPoint; a different active deck is rejected.",Value::Null,json!(notes.file),"next presentation refresh");file["kind"]=json!("local_pptx");settings.push(file);
     for setting in settings.iter_mut().filter(|s| s["id"].as_str().is_some_and(|id| PER_BOARD.contains(&id))) {
         setting["per_board"] = json!(true);
         setting["board"] = json!(target);
@@ -176,6 +206,9 @@ pub fn change_label(setting: &Value, value: &Value) -> Option<String> {
     if !allowed(setting, value) {
         return None;
     }
+    if setting["kind"]=="local_vbs" || setting["kind"]=="local_pptx" {
+        return Some(if value.as_str().unwrap_or_default().is_empty(){"cleared"}else{"configured"}.into());
+    }
     let label = setting["choices"].as_array().into_iter().flatten().find(|c| &c["value"] == value)
         .and_then(|c| c["label"].as_str()).map(str::to_string)
         .unwrap_or_else(|| match value {
@@ -190,6 +223,11 @@ pub fn change_label(setting: &Value, value: &Value) -> Option<String> {
 
 /// Whether `value` is one of the setting's choices (for a font: a family name, or empty).
 fn allowed(setting: &Value, value: &Value) -> bool {
+    if setting["kind"] == "local_pptx" { return value.as_str().is_some_and(|p|p.is_empty()||(std::path::Path::new(p).is_absolute()&&std::path::Path::new(p).is_file()&&p.to_ascii_lowercase().ends_with(".pptx"))); }
+    if setting["kind"] == "local_vbs" {
+        return value.as_str().is_some_and(|p| p.is_empty() ||
+            (std::path::Path::new(p).is_absolute() && std::path::Path::new(p).is_file() && p.to_ascii_lowercase().ends_with(".vbs") && !p.contains('"')));
+    }
     if setting["kind"] == "google_font" {
         return value.as_str().is_some_and(|f| f.is_empty() || crate::fonts::valid_family(f));
     }
@@ -216,8 +254,16 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
     for (id, value) in changes.iter().filter(|(id, _)| id.as_str() != "board") {
         let setting = settings.iter().find(|s| s["id"] == id.as_str()).ok_or_else(|| format!("there is no setting called {id}"))?;
         let label = change_label(setting, value)
-            .ok_or_else(|| format!("{} cannot be {value}", setting["title"].as_str().unwrap_or(id)))?;
+            .ok_or_else(|| if setting["kind"]=="local_vbs" || setting["kind"]=="local_pptx" {
+                format!("{} needs an existing absolute file of the required type, or an empty value",setting["title"].as_str().unwrap_or(id))
+            } else {format!("{} cannot be {value}", setting["title"].as_str().unwrap_or(id))})?;
         done.push(format!("{}: {label}", setting["title"].as_str().unwrap_or(id)));
+    }
+    if changes.contains_key("presentation_notes_source")||changes.contains_key("presentation_pptx_file"){crate::powerpoint::configure_notes(changes.get("presentation_notes_source").and_then(Value::as_str),changes.get("presentation_pptx_file").and_then(Value::as_str))?;}
+    let pager_enabled = changes.get("pager_enabled").and_then(Value::as_bool);
+    let recorder_launcher = changes.get("recorder_launcher").and_then(Value::as_str);
+    if pager_enabled.is_some() || recorder_launcher.is_some() {
+        crate::pager::configure(pager_enabled, recorder_launcher)?;
     }
     let mut saved = display::load();
     let mut d = target.as_deref().map(|id| saved.for_board(id)).unwrap_or_else(|| saved.clone());
@@ -270,6 +316,22 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_paths_are_omitted_from_assistant_settings() {
+        for kind in ["local_vbs","local_pptx"] {
+            let mut setting=json!({"kind":kind,"current":"example-private-file"});
+            redact_local_path(&mut setting);
+            assert!(setting["current"].is_null());assert_eq!(setting["configured"],true);
+            assert_eq!(setting["private"],true);assert_eq!(setting["exists"],false);
+            assert!(!setting.to_string().contains("example-private-file"));
+            let mut empty=json!({"kind":kind,"current":""});redact_local_path(&mut empty);
+            assert_eq!(empty["configured"],false);
+            assert_eq!(change_label(&empty,&json!("")).as_deref(),Some("cleared"));
+        }
+        let mut ordinary=json!({"kind":"number","current":2});redact_local_path(&mut ordinary);
+        assert_eq!(ordinary["current"],2);
+    }
 
     #[test]
     fn turns_are_named_for_how_the_board_usually_sits() {

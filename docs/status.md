@@ -104,3 +104,17 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | Codex / other agent CLIs' hooks (Claude Code done) | `cli/src/agent_hooks.rs` |
 | Now playing on macOS / Windows (no MPRIS) | `companion/crates/media` |
 | RGB-panel boards (4.3-7"), Hynitron CST3xx touch, quad-PSRAM image | see `boards/research.md` |
+
+## Pending branch work: Windows pager and recipe-based presentations
+
+This section describes the task branch, not a published release. Windows COM and notification
+UI Automation run as supervised native Rust workers. Teams and ChatGPT/Codex recipes provide
+desktop keys; PowerPoint's recipe configures show controls, notes and touchpad modes with live
+reload. Firmware 0.2.3-touchpad1 adds generic relative pointer reports and a drag surface.
+
+On an ONX2432G028, the user confirmed PowerPoint controls, notes and finger dragging over
+Bluetooth, plus Teams-generated Test notification interruptions after the native migration.
+Real incoming-call detection and the recorder device tap remain unverified; Google Slides
+still needs a browser presentation adapter. Shared schema/protocol changes need both
+maintainers' review before merge. See docs/windows-powerpoint.md, docs/windows-pager.md and
+[the architecture decision](decisions/2026-10-27-native-recipe-presentations.md).

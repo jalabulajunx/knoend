@@ -1,0 +1,138 @@
+# Windows desktop shortcuts. Reference: docs/windows-pager.md.
+# No tested entry until physical key presses have been checked.
+[pack]
+id = "builtin.chatgpt-codex"
+name = "ChatGPT / Codex"
+version = "0.1.0"
+source = "builtin"
+description = "Windows desktop navigation. Codex-only keys are on page 2; shortcuts act on the focused view."
+grid = "3x3"
+
+[match]
+windows = ["ChatGPT.exe","ChatGPT","Codex.exe","Codex"]
+
+[[key]]
+page = 1
+slot = 1
+label = "New chat"
+icon = "chat"
+action = { kind = "shortcut", keys = "Ctrl+N" }
+
+[[key]]
+page = 1
+slot = 2
+label = "Commands"
+icon = "menu"
+action = { kind = "shortcut", keys = "Ctrl+Shift+P" }
+
+[[key]]
+page = 1
+slot = 3
+label = "Find"
+icon = "search"
+action = { kind = "shortcut", keys = "Ctrl+F" }
+
+[[key]]
+page = 1
+slot = 4
+label = "Prev chat"
+icon = "chevron_left"
+action = { kind = "shortcut", keys = "Ctrl+Shift+Tab" }
+
+[[key]]
+page = 1
+slot = 5
+label = "Next chat"
+icon = "chevron_right"
+action = { kind = "shortcut", keys = "Ctrl+Tab" }
+
+[[key]]
+page = 1
+slot = 6
+label = "Sidebar"
+icon = "view_list"
+action = { kind = "shortcut", keys = "Ctrl+B" }
+
+[[key]]
+page = 1
+slot = 7
+label = "Model"
+icon = "smart_toy"
+action = { kind = "shortcut", keys = "Ctrl+Shift+M" }
+
+[[key]]
+page = 1
+slot = 8
+label = "Settings"
+icon = "settings"
+action = { kind = "shortcut", keys = "Ctrl+Comma" }
+
+[[key]]
+page = 1
+slot = 9
+label = "Shortcuts"
+icon = "keyboard"
+action = { kind = "shortcut", keys = "Ctrl+Slash" }
+
+[[key]]
+page = 2
+slot = 1
+label = "Needs me"
+icon = "notifications"
+action = { kind = "shortcut", keys = "Ctrl+Alt+A" }
+
+[[key]]
+page = 2
+slot = 2
+label = "Terminal"
+icon = "terminal"
+action = { kind = "shortcut", keys = "Ctrl+Backquote" }
+
+[[key]]
+page = 2
+slot = 3
+label = "Panel"
+icon = "dashboard"
+action = { kind = "shortcut", keys = "Ctrl+J" }
+
+[[key]]
+page = 2
+slot = 4
+label = "Projects"
+icon = "folder_open"
+action = { kind = "shortcut", keys = "Ctrl+Alt+Shift+O" }
+
+[[key]]
+page = 2
+slot = 5
+label = "Review"
+icon = "code"
+action = { kind = "shortcut", keys = "Ctrl+Shift+G" }
+
+[[key]]
+page = 2
+slot = 6
+label = "Files"
+icon = "folder"
+action = { kind = "shortcut", keys = "Ctrl+P" }
+
+[[key]]
+page = 2
+slot = 7
+label = "Zoom in"
+icon = "zoom_in"
+action = { kind = "shortcut", keys = "Ctrl+Equal" }
+
+[[key]]
+page = 2
+slot = 8
+label = "Zoom out"
+icon = "zoom_out"
+action = { kind = "shortcut", keys = "Ctrl+Minus" }
+
+[[key]]
+page = 2
+slot = 9
+label = "Reset zoom"
+icon = "fullscreen_exit"
+action = { kind = "shortcut", keys = "Ctrl+0" }

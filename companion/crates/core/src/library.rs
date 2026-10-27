@@ -80,6 +80,7 @@ pub struct Match {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Action {
+    Presentation { #[serde(flatten)] action: PresentationAction },
     Shortcut { keys: String },
     /// Several shortcuts typed one after the other ("N", "Enter": answer a terminal program's
     /// question). Typed by the companion on this computer.
@@ -101,6 +102,36 @@ pub enum Action {
     /// Starts or stops the board listening for notes; they go to the music app as MIDI.
     Listen,
 }
+
+/// Shared controller actions; application shortcuts and layouts live in the recipe.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag="command",rename_all="snake_case")]
+pub enum PresentationAction {
+    Mode { mode: String }, Move { dx: i32, dy: i32 },
+    Next, Previous, First, End, Black, White, Arrow, NotesNext, NotesPrevious,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresentationSpec {
+    pub provider: String,
+    pub initial_mode: String,
+    pub notes_source: String,
+    pub pointer_gain: f64,
+    #[serde(default)] pub commands: std::collections::BTreeMap<String,String>,
+    pub modes: std::collections::BTreeMap<String,PresentationMode>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresentationMode {
+    pub grid: String,
+    #[serde(default)] pub touchpad: bool,
+    #[serde(default)] pub notes: bool,
+    #[serde(default)] pub center_pointer: bool,
+    #[serde(default)] pub fallback: Option<String>,
+    #[serde(default)] pub enter: Vec<String>,
+    #[serde(rename="key")] pub keys: Vec<LibraryKey>,
+}
+
 
 /// What a key on a coding agent's screen answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -175,6 +206,8 @@ pub fn icon_names() -> Vec<&'static str> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Library {
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub presentation: Option<PresentationSpec>,
     pub pack: Pack,
     #[serde(rename = "match")]
     pub matches: Match,
@@ -306,6 +339,32 @@ impl Library {
             if looks_risky(&text) && !key.confirm {
                 problems.push(format!("key '{}' looks risky but has no confirm", key.label));
             }
+        }
+        if let Some(spec)=&self.presentation {
+            if !spec.modes.contains_key(&spec.initial_mode) { problems.push("presentation.initial_mode does not exist".into()); }
+            for (name,mode) in &spec.modes {
+                let mut library=self.clone();library.presentation=None;library.keys=mode.keys.clone();library.pages.clear();library.pack.grid=Some(mode.grid.clone());
+                problems.extend(library.semantic_problems().into_iter().map(|p|format!("mode {name}: {p}")));
+                let grid=Grid::parse(&mode.grid).unwrap_or_default();
+                if (mode.touchpad||mode.notes)&&grid.rows<3 {problems.push(format!("mode {name}: notes/touchpad need at least three rows"));}
+                if mode.touchpad && library.placed().iter().any(|(page,slot)|*page!=1||*slot<=grid.cols*(grid.rows-1)) {problems.push(format!("mode {name}: touchpad keys must be on the bottom row"));}
+                if library.placed().iter().any(|(page,_)|*page!=1) {problems.push(format!("mode {name}: modes are single-page layouts"));}
+                if mode.notes && library.placed().iter().any(|(_,slot)| {let row=(*slot-1)/grid.cols;row>0&&row<grid.rows-1}) {problems.push(format!("mode {name}: note text occupies the middle rows"));}
+                if mode.fallback.as_ref().is_some_and(|f|!spec.modes.contains_key(f)) {problems.push(format!("mode {name}: fallback does not exist"));}
+                let mut visited=std::collections::HashSet::new();let mut at=Some(name.as_str());
+                while let Some(id)=at {if !visited.insert(id){problems.push(format!("mode {name}: fallback cycle"));break}at=spec.modes.get(id).and_then(|m|m.fallback.as_deref());}
+                for chord in &mode.enter {if crate::keys::parse_shortcut(chord,crate::focus::Os::Windows).is_err(){problems.push(format!("mode {name}: invalid entry shortcut"));}}
+                for key in &mode.keys {
+                    if let Action::Presentation{action:PresentationAction::Mode{mode}}=&key.action {if !spec.modes.contains_key(mode){problems.push(format!("mode {name}: target {mode} does not exist"));}}
+                    if let Action::Presentation{action:PresentationAction::Move{dx,dy}}=&key.action {if !(-127..=127).contains(dx)||!(-127..=127).contains(dy){problems.push(format!("mode {name}: movement out of range"));}}
+                    if let Action::Presentation{action}=&key.action {
+                        let command=match action {PresentationAction::Next=>Some("next"),PresentationAction::Previous=>Some("previous"),PresentationAction::First=>Some("first"),PresentationAction::End=>Some("end"),PresentationAction::Black=>Some("black"),PresentationAction::White=>Some("white"),PresentationAction::Arrow=>Some("arrow"),_=>None};
+                        if let Some(command)=command {if !spec.commands.contains_key(command){problems.push(format!("mode {name}: missing command shortcut {command}"));}}
+                    }
+                    if !matches!(key.action,Action::Presentation{..}|Action::Shortcut{..}|Action::Sequence{..}){problems.push(format!("mode {name}: unsupported presentation action"));}
+                }
+            }
+            for shortcut in spec.commands.values(){if crate::keys::parse_shortcut(shortcut,crate::focus::Os::Windows).is_err(){problems.push("presentation command has invalid shortcut".into());}}
         }
         problems
     }

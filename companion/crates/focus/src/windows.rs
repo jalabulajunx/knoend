@@ -127,12 +127,17 @@ extern "system" {
 /// non-interactive desktop where `GetForegroundWindow()` is 0 and `EnumWindows` is empty.
 /// Attaching the calling thread to the active input desktop lets it see the user's real windows.
 fn attach_input_desktop() {
-    unsafe {
-        let desk = OpenInputDesktop(0, 0, GENERIC_ALL);
-        if !desk.is_null() && SetThreadDesktop(desk) == 0 {
-            CloseDesktop(desk);
+    thread_local! { static ATTACHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+    ATTACHED.with(|attached| {
+        if attached.get() { return; }
+        unsafe {
+            let desk = OpenInputDesktop(0, 0, GENERIC_ALL);
+            if !desk.is_null() {
+                if SetThreadDesktop(desk) != 0 { attached.set(true); }
+                else { CloseDesktop(desk); }
+            }
         }
-    }
+    });
 }
 
 pub struct Watcher;
@@ -347,10 +352,13 @@ fn find_process_title(target_pid: u32) -> String {
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, &mut pid);
         if pid == search.pid && IsWindowVisible(hwnd) != 0 {
-            let t = raw_window_title(hwnd);
+            let mut t = raw_window_title(hwnd);
+            if window_class(hwnd).eq_ignore_ascii_case("screenClass") && !presentation_window("", &t) {
+                t = format!("PowerPoint Slide Show - [{t}]");
+            }
             if !t.is_empty() {
                 let lower = t.to_ascii_lowercase();
-                if lower.contains("slide show") || lower.contains("diaporama") {
+                if lower.contains("slide show") || lower.contains("diaporama") || lower.contains("presenter view") {
                     search.title = t;
                     return 0; // slide show window has highest priority
                 }
@@ -368,6 +376,12 @@ fn find_process_title(target_pid: u32) -> String {
 
 fn window_title(hwnd: Hwnd, pid: Option<u32>) -> String {
     let title = raw_window_title(hwnd);
+    // Presenter View can leave the editor foregrounded. Check the same PowerPoint
+    // process for its show window even when the editor already has a title.
+    if let Some(pid) = pid.filter(|p| process_exe(*p).and_then(|e| e.file_stem().map(|s| s.to_string_lossy().eq_ignore_ascii_case("powerpnt"))).unwrap_or(false)) {
+        let show = find_process_title(pid);
+        if presentation_window("", &show) { return show; }
+    }
     if !title.is_empty() {
         return title;
     }
@@ -378,6 +392,73 @@ fn window_title(hwnd: Hwnd, pid: Option<u32>) -> String {
         }
     }
     String::new()
+}
+
+fn presentation_window(class: &str, title: &str) -> bool {
+    let lower = title.to_ascii_lowercase();
+    class.eq_ignore_ascii_case("screenClass") || lower.contains("slide show")
+        || lower.contains("diaporama") || lower.contains("presenter view")
+}
+
+fn powerpoint_show_window() -> Result<Hwnd, String> {
+    attach_input_desktop();
+    let foreground = unsafe { GetForegroundWindow() };
+    let Some((pid, exe)) = effective_pid_and_exe(foreground) else { return Err("PowerPoint is not focused".into()) };
+    if !exe.file_stem().is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case("powerpnt")) { return Err("PowerPoint is not focused".into()); }
+    struct Search { pid: u32, hwnd: Hwnd }
+    unsafe extern "system" fn visit(hwnd: Hwnd, data: isize) -> Bool {
+        let search = &mut *(data as *mut Search);
+        if raw_window_pid(hwnd) == Some(search.pid) && IsWindowVisible(hwnd) != 0
+            && window_class(hwnd).eq_ignore_ascii_case("screenClass") {
+            search.hwnd = hwnd; return 0;
+        }
+        1
+    }
+    let mut search = Search { pid, hwnd: 0 };
+    unsafe { EnumWindows(visit, &mut search as *mut _ as isize); }
+    if search.hwnd == 0 { return Err("No PowerPoint slide-show window is visible".into()); }
+    Ok(search.hwnd)
+}
+
+/// Route show commands to the audience window even if Presenter View/editor owns focus.
+pub fn focus_powerpoint_show() -> Result<(), String> {
+    let hwnd = powerpoint_show_window()?;
+    unsafe {
+        if GetForegroundWindow() != hwnd {
+            unlock_foreground();
+            SetForegroundWindow(hwnd);
+            if GetForegroundWindow() != hwnd { return Err("Windows refused to focus the slide-show window".into()); }
+        }
+    }
+    Ok(())
+}
+
+/// Move the pointer inside the active PowerPoint slide-show monitor. Never move
+/// it for another foreground application; center it if it is on another monitor.
+pub fn powerpoint_pointer(dx: i32, dy: i32, center: bool) -> Result<(), String> {
+    #[repr(C)] struct Rect { left: i32, top: i32, right: i32, bottom: i32 }
+    #[repr(C)] struct Point { x: i32, y: i32 }
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
+        fn GetCursorPos(point: *mut Point) -> Bool;
+        fn SetCursorPos(x: i32, y: i32) -> Bool;
+    }
+    let hwnd = powerpoint_show_window()?;
+    let mut rect = Rect { left: 0, top: 0, right: 0, bottom: 0 };
+    let mut point = Point { x: 0, y: 0 };
+    unsafe {
+        if GetWindowRect(hwnd, &mut rect) == 0 || GetCursorPos(&mut point) == 0
+            || rect.right <= rect.left || rect.bottom <= rect.top { return Err("Could not locate the slide-show pointer".into()); }
+        if center || point.x < rect.left || point.x >= rect.right || point.y < rect.top || point.y >= rect.bottom {
+            point.x = rect.left + (rect.right - rect.left) / 2;
+            point.y = rect.top + (rect.bottom - rect.top) / 2;
+        }
+        let x = (point.x + dx.clamp(-512, 512)).clamp(rect.left, rect.right - 1);
+        let y = (point.y + dy.clamp(-512, 512)).clamp(rect.top, rect.bottom - 1);
+        if SetCursorPos(x, y) == 0 { return Err("Windows could not move the pointer".into()); }
+    }
+    Ok(())
 }
 
 unsafe fn is_main_window(hwnd: Hwnd) -> bool {
@@ -537,6 +618,14 @@ pub fn window_pid(names: &[&str]) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detects_show_windows_without_confusing_editor_titles() {
+        assert!(presentation_window("screenClass", "Quarterly review"));
+        assert!(presentation_window("", "PowerPoint Presenter View"));
+        assert!(presentation_window("", "PowerPoint Slide Show - [Deck]"));
+        assert!(!presentation_window("PPTFrameClass", "Deck - PowerPoint"));
+    }
 
     #[test]
     fn executables_split_into_app_and_stem() {

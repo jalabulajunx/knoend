@@ -13,6 +13,7 @@
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include "lvgl.h"
 #include "protocol.h"
 
@@ -77,6 +78,14 @@ static lv_obj_t *key_icons[UI_KEYS];
 static lv_obj_t *status_bar;
 static lv_obj_t *detail_box;   // over the middle rows when the layout has a detail
 static lv_obj_t *detail_label;
+static lv_obj_t *touchpad;
+static lv_obj_t *touchpad_label;
+static bool pointer_down;
+static lv_point_t pointer_last;
+static int pointer_dx, pointer_dy;
+static int64_t pointer_sent_at;
+static uint32_t pointer_seq;
+
 static lv_obj_t *pager;        // "2/3 >" at the right end of the status bar; a tap turns the page
 static lv_obj_t *pager_label;
 
@@ -245,6 +254,39 @@ static void pager_event(lv_event_t *event)
     turn_page(true);
 }
 
+// A finger drag is relative movement. Lifting and touching again only anchors
+// a new stroke; it never jumps the PC pointer or clicks/advances a slide.
+static void touchpad_event(lv_event_t *event)
+{
+    if (!layout.touchpad) return;
+    lv_indev_t *indev = lv_indev_get_act();
+    if (!indev) return;
+    const lv_event_code_t code = lv_event_get_code(event);
+    lv_point_t point;
+    lv_indev_get_point(indev, &point);
+    if (code == LV_EVENT_PRESSED) {
+        pointer_down = true;
+        pointer_last = point;
+        pointer_dx = pointer_dy = 0;
+        pointer_sent_at = esp_timer_get_time();
+    } else if ((code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) && pointer_down) {
+        pointer_dx += point.x - pointer_last.x;
+        pointer_dy += point.y - pointer_last.y;
+        pointer_last = point;
+        const int64_t now = esp_timer_get_time();
+        const bool released = code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST;
+        if (released || now - pointer_sent_at >= 33000) {
+            // Bound each report; retain the remainder so fast strokes are not lost.
+            int dx = pointer_dx < -127 ? -127 : pointer_dx > 127 ? 127 : pointer_dx;
+            int dy = pointer_dy < -127 ? -127 : pointer_dy > 127 ? 127 : pointer_dy;
+            if (dx || dy) protocol_send_pointer(layout.id, dx, dy, ++pointer_seq);
+            pointer_dx -= dx; pointer_dy -= dy;
+            pointer_sent_at = now;
+        }
+        if (released) pointer_down = false;
+    }
+}
+
 // LVGL callback, so the LVGL lock is already held. One tap per press: CLICKED fires once on
 // release, however long the key was held.
 static void key_event(lv_event_t *event)
@@ -374,9 +416,18 @@ static void cut_long_words(const char *text, const lv_font_t *font, lv_coord_t w
 static void draw_keys_locked(void)
 {
     const int cols = layout.cols, rows = layout.rows;
-    const bool detail = layout.detail[0] != '\0' && rows >= 3;
+    const bool detail = !layout.touchpad && layout.detail[0] != '\0' && rows >= 3;
     const int key_w = (grid_w - GRID_GAP * (cols + 1)) / cols;
     const int key_h = (grid_h - GRID_GAP * (rows + 1)) / rows;
+    pointer_down = false; pointer_dx = pointer_dy = 0;
+    if (layout.touchpad) {
+        lv_obj_set_pos(touchpad, GRID_GAP, GRID_GAP);
+        lv_obj_set_size(touchpad, grid_w - 2 * GRID_GAP, grid_h - key_h - 3 * GRID_GAP);
+        lv_obj_set_style_bg_color(touchpad, lv_color_hex(theme->key_blank), 0);
+        lv_obj_set_style_text_color(touchpad_label, lv_color_hex(theme->key_text), 0);
+        lv_obj_clear_flag(touchpad, LV_OBJ_FLAG_HIDDEN);
+    } else { lv_obj_add_flag(touchpad, LV_OBJ_FLAG_HIDDEN); }
+
     // With a detail, the top and bottom rows get shorter (label only, two thirds of a 3x3 row) and
     // the text takes the rows between them, scrollable by swiping.
     const int compact_h = (grid_h - GRID_GAP * 4) / 3 * 2 / 3;
@@ -399,7 +450,7 @@ static void draw_keys_locked(void)
         const int row = i / cols;
         // Keys past the grid, the middle rows under a detail, and empty slots beside a detail are
         // hidden (they read as blank tiles around the text).
-        if (i >= cols * rows || (detail && row > 0 && row < rows - 1)
+        if (i >= cols * rows || (layout.touchpad && row < rows - 1) || (detail && row > 0 && row < rows - 1)
             || (detail && layout.keys[i].send == UI_SEND_NONE)) {
             lv_obj_add_flag(key_buttons[i], LV_OBJ_FLAG_HIDDEN);
             continue;
@@ -826,6 +877,21 @@ void ui_start(void)
         key_labels[i] = label;
         key_icons[i] = icon;
     }
+
+    pointer_seq = esp_random();
+    touchpad = lv_obj_create(screen);
+    lv_obj_clear_flag(touchpad, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_style_border_width(touchpad, 0, 0);
+    lv_obj_set_style_radius(touchpad, 8, 0);
+    lv_obj_add_event_cb(touchpad, touchpad_event, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(touchpad, touchpad_event, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(touchpad, touchpad_event, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(touchpad, touchpad_event, LV_EVENT_PRESS_LOST, NULL);
+    touchpad_label = lv_label_create(touchpad);
+    lv_label_set_text(touchpad_label, "Drag to move laser");
+    lv_obj_set_style_text_font(touchpad_label, &lv_font_montserrat_14, 0);
+    lv_obj_center(touchpad_label);
+    lv_obj_add_flag(touchpad, LV_OBJ_FLAG_HIDDEN);
 
     detail_box = lv_obj_create(screen);
     lv_obj_remove_style_all(detail_box);

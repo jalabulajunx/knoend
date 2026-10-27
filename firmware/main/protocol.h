@@ -22,3 +22,6 @@ void protocol_send_page(const char *layout_id, bool next);
 // A new Wi-Fi session starts: answer it in the current message prefix until its companion shows
 // which one it uses ("knoend." or the older "openpager.").
 void protocol_wifi_session_started(void);
+
+// Relative movement from an explicitly enabled touch surface; no mouse button actions.
+void protocol_send_pointer(const char *layout_id, int dx, int dy, uint32_t seq);

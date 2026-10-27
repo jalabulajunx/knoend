@@ -4,38 +4,132 @@
   "title": "KnoEnd layout library (v0, draft)",
   "description": "A TOML layout library, parsed to JSON. Data only: actions are limited to the kinds below. See spec/protocol.md section 5.",
   "type": "object",
-  "required": ["pack", "match", "key"],
+  "required": [
+    "pack",
+    "match",
+    "key"
+  ],
   "additionalProperties": false,
-  "if": { "properties": { "match": { "not": { "required": ["agent"] } } } },
+  "if": {
+    "properties": {
+      "match": {
+        "not": {
+          "required": [
+            "agent"
+          ]
+        }
+      }
+    }
+  },
   "then": {
     "description": "Agent answers (action kind agent) only on a coding agent's screen (match.agent); elsewhere the key would do nothing.",
-    "properties": { "key": { "items": { "properties": { "action": { "properties": { "kind": { "not": { "const": "agent" } } } } } } } }
+    "properties": {
+      "key": {
+        "items": {
+          "properties": {
+            "action": {
+              "properties": {
+                "kind": {
+                  "not": {
+                    "const": "agent"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   },
   "properties": {
     "pack": {
       "type": "object",
-      "required": ["id", "name", "version", "source"],
+      "required": [
+        "id",
+        "name",
+        "version",
+        "source"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "pattern": "^(builtin|community|ai|user)\\.[a-z0-9-]+(\\.[a-z0-9-]+)*$" },
-        "name": { "type": "string", "minLength": 1, "maxLength": 32 },
-        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-        "source": { "enum": ["builtin", "community", "ai", "user"] },
-        "description": { "type": "string", "maxLength": 200 },
-        "license": { "type": "string", "maxLength": 64 },
-        "authors": { "type": "array", "items": { "type": "string", "maxLength": 64 } },
-        "overrides": { "type": "string", "description": "For source = user: id of the library this file layers on." },
-        "grid": { "$ref": "#/$defs/grid", "description": "Columns x rows of every page (default 3x3); a [[page]] entry overrides it for one page." },
+        "id": {
+          "type": "string",
+          "pattern": "^(builtin|community|ai|user)\\.[a-z0-9-]+(\\.[a-z0-9-]+)*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "source": {
+          "enum": [
+            "builtin",
+            "community",
+            "ai",
+            "user"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "overrides": {
+          "type": "string",
+          "description": "For source = user: id of the library this file layers on."
+        },
+        "grid": {
+          "$ref": "#/$defs/grid",
+          "description": "Columns x rows of every page (default 3x3); a [[page]] entry overrides it for one page."
+        },
         "tested": {
-          "type": "array", "maxItems": 16,
+          "type": "array",
+          "maxItems": 16,
           "description": "Who saw this recipe work, on which OS and when. An OS not listed is untested there.",
           "items": {
-            "type": "object", "additionalProperties": false, "required": ["os", "by", "date"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "os",
+              "by",
+              "date"
+            ],
             "properties": {
-              "os": { "enum": ["linux", "macos", "windows"] },
-              "by": { "type": "string", "minLength": 1, "maxLength": 40 },
-              "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
-              "note": { "type": "string", "maxLength": 80, "description": "Desktop, browser or app, e.g. \"Arch Linux, i3 (X11), Firefox\"." }
+              "os": {
+                "enum": [
+                  "linux",
+                  "macos",
+                  "windows"
+                ]
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "date": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 80,
+                "description": "Desktop, browser or app, e.g. \"Arch Linux, i3 (X11), Firefox\"."
+              }
             }
           }
         }
@@ -46,12 +140,25 @@
       "minProperties": 1,
       "additionalProperties": false,
       "properties": {
-        "web": { "$ref": "#/$defs/patterns" },
-        "linux": { "$ref": "#/$defs/patterns" },
-        "macos": { "$ref": "#/$defs/patterns" },
-        "windows": { "$ref": "#/$defs/patterns" },
-        "agent": { "$ref": "#/$defs/patterns" },
-        "terminal": { "$ref": "#/$defs/patterns", "description": "Programs in the active tab of a terminal app (claude, less), on any OS." }
+        "web": {
+          "$ref": "#/$defs/patterns"
+        },
+        "linux": {
+          "$ref": "#/$defs/patterns"
+        },
+        "macos": {
+          "$ref": "#/$defs/patterns"
+        },
+        "windows": {
+          "$ref": "#/$defs/patterns"
+        },
+        "agent": {
+          "$ref": "#/$defs/patterns"
+        },
+        "terminal": {
+          "$ref": "#/$defs/patterns",
+          "description": "Programs in the active tab of a terminal app (claude, less), on any OS."
+        }
       }
     },
     "page": {
@@ -59,10 +166,19 @@
       "maxItems": 8,
       "description": "Settings for one page; pages not listed use pack.grid.",
       "items": {
-        "type": "object", "additionalProperties": false, "required": ["number", "grid"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "number",
+          "grid"
+        ],
         "properties": {
-          "number": { "$ref": "#/$defs/page" },
-          "grid": { "$ref": "#/$defs/grid" }
+          "number": {
+            "$ref": "#/$defs/page"
+          },
+          "grid": {
+            "$ref": "#/$defs/grid"
+          }
         }
       }
     },
@@ -72,21 +188,50 @@
       "maxItems": 64,
       "items": {
         "type": "object",
-        "required": ["label", "action"],
+        "required": [
+          "label",
+          "action"
+        ],
         "additionalProperties": false,
         "properties": {
-          "page": { "$ref": "#/$defs/page" },
-          "slot": { "type": "integer", "minimum": 1, "maximum": 16, "description": "1 to cols x rows of the key's page, left to right, top to bottom." },
-          "label": { "type": "string", "minLength": 1, "maxLength": 24 },
-          "speak": { "type": "string", "maxLength": 80 },
-          "icon": { "type": "string", "pattern": "^[a-z0-9_]{1,40}$" },
-          "confirm": { "type": "boolean" },
+          "page": {
+            "$ref": "#/$defs/page"
+          },
+          "slot": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16,
+            "description": "1 to cols x rows of the key's page, left to right, top to bottom."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24
+          },
+          "speak": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "icon": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,40}$"
+          },
+          "confirm": {
+            "type": "boolean"
+          },
           "action": {
             "oneOf": [
               {
-                "type": "object", "additionalProperties": false, "required": ["kind", "keys"],
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "keys"
+                ],
                 "properties": {
-                  "kind": { "const": "shortcut" },
+                  "kind": {
+                    "const": "shortcut"
+                  },
                   "keys": {
                     "type": "string",
                     "pattern": "^((Primary|Ctrl|Shift|Alt|Meta)\\+)*([A-Z0-9]|F([1-9]|1[0-9]|2[0-4])|Enter|Escape|Tab|Space|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right|Backquote|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash)$"
@@ -94,78 +239,647 @@
                 }
               },
               {
-                "type": "object", "additionalProperties": false, "required": ["kind", "keys"],
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "keys"
+                ],
                 "description": "Shortcuts typed one after the other, e.g. [\"N\", \"Enter\"]; each as in kind shortcut.",
                 "properties": {
-                  "kind": { "const": "sequence" },
-                  "keys": { "type": "array", "minItems": 2, "maxItems": 8, "items": { "type": "string", "minLength": 1, "maxLength": 40 } }
+                  "kind": {
+                    "const": "sequence"
+                  },
+                  "keys": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 8,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  }
                 }
               },
               {
-                "type": "object", "additionalProperties": false, "required": ["kind", "url"],
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "url"
+                ],
                 "properties": {
-                  "kind": { "const": "open" },
-                  "url": { "type": "string", "pattern": "^/([^/]|$)", "maxLength": 512 }
+                  "kind": {
+                    "const": "open"
+                  },
+                  "url": {
+                    "type": "string",
+                    "pattern": "^/([^/]|$)",
+                    "maxLength": 512
+                  }
                 }
               },
               {
-                "type": "object", "additionalProperties": false, "required": ["kind", "selector"],
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "selector"
+                ],
                 "properties": {
-                  "kind": { "const": "element" },
-                  "selector": { "type": "string", "minLength": 1, "maxLength": 256 }
+                  "kind": {
+                    "const": "element"
+                  },
+                  "selector": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
                 }
               },
               {
-                "type": "object", "additionalProperties": false, "required": ["kind", "selector"],
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "selector"
+                ],
                 "properties": {
-                  "kind": { "const": "focus" },
-                  "selector": { "type": "string", "minLength": 1, "maxLength": 256 }
+                  "kind": {
+                    "const": "focus"
+                  },
+                  "selector": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
                 }
               },
               {
-                "type": "object", "additionalProperties": false, "required": ["kind", "command"],
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "command"
+                ],
                 "properties": {
-                  "kind": { "const": "media" },
-                  "command": { "enum": ["toggle", "play", "pause", "next", "previous", "mute", "forward", "back"] },
-                  "selector": { "type": "string", "minLength": 1, "maxLength": 256 }
+                  "kind": {
+                    "const": "media"
+                  },
+                  "command": {
+                    "enum": [
+                      "toggle",
+                      "play",
+                      "pause",
+                      "next",
+                      "previous",
+                      "mute",
+                      "forward",
+                      "back"
+                    ]
+                  },
+                  "selector": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
                 }
               },
               {
-                "type": "object", "additionalProperties": false, "required": ["kind", "name"],
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "name"
+                ],
                 "properties": {
-                  "kind": { "const": "command" },
-                  "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,47}$" }
+                  "kind": {
+                    "const": "command"
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,47}$"
+                  }
                 }
               },
               {
-                "type": "object", "additionalProperties": false, "required": ["kind", "reply"],
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "reply"
+                ],
                 "description": "A key on a coding agent's screen (match.agent): the answer it gives. Keys with reply = option take the agent's options in order.",
                 "properties": {
-                  "kind": { "const": "agent" },
-                  "reply": { "enum": ["allow", "always", "deny", "stop", "option", "done", "decline", "go_to"] }
+                  "kind": {
+                    "const": "agent"
+                  },
+                  "reply": {
+                    "enum": [
+                      "allow",
+                      "always",
+                      "deny",
+                      "stop",
+                      "option",
+                      "done",
+                      "decline",
+                      "go_to"
+                    ]
+                  }
                 }
               },
               {
-                "type": "object", "additionalProperties": false, "required": ["kind"],
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind"
+                ],
                 "description": "Starts or stops the board listening through its microphone (boards with features.mic); the notes it hears go to the music app as MIDI (spec/protocol.md 3.6f).",
                 "properties": {
-                  "kind": { "const": "listen" }
+                  "kind": {
+                    "const": "listen"
+                  }
                 }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "command"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "presentation"
+                  },
+                  "command": {
+                    "enum": [
+                      "mode",
+                      "move",
+                      "next",
+                      "previous",
+                      "first",
+                      "end",
+                      "black",
+                      "white",
+                      "arrow",
+                      "notes_next",
+                      "notes_previous"
+                    ]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,19}$"
+                  },
+                  "dx": {
+                    "type": "integer",
+                    "minimum": -127,
+                    "maximum": 127
+                  },
+                  "dy": {
+                    "type": "integer",
+                    "minimum": -127,
+                    "maximum": 127
+                  }
+                },
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "command": {
+                          "const": "mode"
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": [
+                        "mode"
+                      ]
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "command": {
+                          "const": "move"
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": [
+                        "dx",
+                        "dy"
+                      ]
+                    }
+                  }
+                ]
               }
             ]
+          }
+        }
+      }
+    },
+    "presentation": {
+      "type": "object",
+      "required": [
+        "provider",
+        "initial_mode",
+        "notes_source",
+        "pointer_gain",
+        "modes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "powerpoint"
+          ]
+        },
+        "initial_mode": {
+          "type": "string"
+        },
+        "notes_source": {
+          "enum": [
+            "live",
+            "pptx",
+            "live_or_pptx"
+          ]
+        },
+        "pointer_gain": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 8
+        },
+        "commands": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "modes": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 12,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]{0,19}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "grid",
+              "key"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "grid": {
+                "$ref": "#/$defs/grid"
+              },
+              "touchpad": {
+                "type": "boolean"
+              },
+              "notes": {
+                "type": "boolean"
+              },
+              "center_pointer": {
+                "type": "boolean"
+              },
+              "fallback": {
+                "type": "string"
+              },
+              "enter": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "key": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "$ref": "#/$defs/presentationKey"
+                }
+              }
+            }
           }
         }
       }
     }
   },
   "$defs": {
-    "grid": { "type": "string", "pattern": "^[1-4]x[1-4]$" },
-    "page": { "type": "integer", "minimum": 1, "maximum": 8 },
+    "grid": {
+      "type": "string",
+      "pattern": "^[1-4]x[1-4]$"
+    },
+    "page": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
     "patterns": {
       "type": "array",
       "minItems": 1,
-      "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
       "uniqueItems": true
+    },
+    "presentationKey": {
+      "type": "object",
+      "required": [
+        "label",
+        "action"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "page": {
+          "$ref": "#/$defs/page"
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16,
+          "description": "1 to cols x rows of the key's page, left to right, top to bottom."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "speak": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "icon": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{1,40}$"
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "action": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "keys"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "shortcut"
+                },
+                "keys": {
+                  "type": "string",
+                  "pattern": "^((Primary|Ctrl|Shift|Alt|Meta)\\+)*([A-Z0-9]|F([1-9]|1[0-9]|2[0-4])|Enter|Escape|Tab|Space|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right|Backquote|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash)$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "keys"
+              ],
+              "description": "Shortcuts typed one after the other, e.g. [\"N\", \"Enter\"]; each as in kind shortcut.",
+              "properties": {
+                "kind": {
+                  "const": "sequence"
+                },
+                "keys": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 8,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "url"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "open"
+                },
+                "url": {
+                  "type": "string",
+                  "pattern": "^/([^/]|$)",
+                  "maxLength": 512
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "selector"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "element"
+                },
+                "selector": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "selector"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "focus"
+                },
+                "selector": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "command"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "media"
+                },
+                "command": {
+                  "enum": [
+                    "toggle",
+                    "play",
+                    "pause",
+                    "next",
+                    "previous",
+                    "mute",
+                    "forward",
+                    "back"
+                  ]
+                },
+                "selector": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "name"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "command"
+                },
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,47}$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "reply"
+              ],
+              "description": "A key on a coding agent's screen (match.agent): the answer it gives. Keys with reply = option take the agent's options in order.",
+              "properties": {
+                "kind": {
+                  "const": "agent"
+                },
+                "reply": {
+                  "enum": [
+                    "allow",
+                    "always",
+                    "deny",
+                    "stop",
+                    "option",
+                    "done",
+                    "decline",
+                    "go_to"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "description": "Starts or stops the board listening through its microphone (boards with features.mic); the notes it hears go to the music app as MIDI (spec/protocol.md 3.6f).",
+              "properties": {
+                "kind": {
+                  "const": "listen"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "kind",
+                "command"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "presentation"
+                },
+                "command": {
+                  "enum": [
+                    "mode",
+                    "move",
+                    "next",
+                    "previous",
+                    "first",
+                    "end",
+                    "black",
+                    "white",
+                    "arrow",
+                    "notes_next",
+                    "notes_previous"
+                  ]
+                },
+                "mode": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,19}$"
+                },
+                "dx": {
+                  "type": "integer",
+                  "minimum": -127,
+                  "maximum": 127
+                },
+                "dy": {
+                  "type": "integer",
+                  "minimum": -127,
+                  "maximum": 127
+                }
+              },
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "command": {
+                        "const": "mode"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "mode"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "command": {
+                        "const": "move"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "dx",
+                      "dy"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
     }
   }
 }

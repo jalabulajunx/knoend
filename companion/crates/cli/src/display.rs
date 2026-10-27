@@ -282,8 +282,8 @@ mod tests {
     fn each_board_has_its_own_look_and_a_new_one_starts_from_the_defaults() {
         // Saved before looks were per board, for the ONX.
         let mut d: Display = serde_json::from_str(r#"{"theme": "sepia", "turn": 1, "key_font": "Silkscreen", "home_fill": false}"#).unwrap();
-        assert!(migrate(&mut d, &["80b54edbcdb8".to_string()]));
-        let onx = d.for_board("80b54edbcdb8");
+        assert!(migrate(&mut d, &["a1b2c3d4e5f6".to_string()]));
+        let onx = d.for_board("a1b2c3d4e5f6");
         assert_eq!((onx.theme, onx.turn, onx.key_font.as_str()), (Theme::Sepia, 1, "Silkscreen"));
         let amoled = d.for_board("28848590beb8");
         assert_eq!((amoled.theme, amoled.turn, amoled.key_font.as_str(), amoled.start_size), (Theme::Dark, 0, "", 64), "a new board: defaults");
@@ -292,7 +292,7 @@ mod tests {
         changed.key_size = KeySize::Big;
         d.set_board("28848590beb8", &changed);
         assert_eq!(d.for_board("28848590beb8").key_size, KeySize::Big);
-        assert_eq!(d.for_board("80b54edbcdb8").key_size, KeySize::Medium, "the other board keeps its own");
+        assert_eq!(d.for_board("a1b2c3d4e5f6").key_size, KeySize::Medium, "the other board keeps its own");
     }
 
     #[test]
