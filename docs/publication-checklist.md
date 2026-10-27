@@ -21,3 +21,9 @@
 
 Privacy redactions do not remove data from earlier published Git history. If a real credential
 is discovered, revoke it through its provider; deleting a current-file line is insufficient.
+
+If personal login succeeds but Git still cannot obtain credentials, inspect host-specific helper
+configuration for an obsolete portable CLI. Override the helper and username only in this
+repository's local Git configuration, then verify the authenticated GitHub identity and repository
+write permission. Keep credential values out of command output, source and reports; do not change
+other projects' authentication to repair this one.
