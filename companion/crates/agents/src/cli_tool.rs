@@ -487,7 +487,7 @@ pub async fn complete_agy(model: Option<&str>, timeout_secs: u64, system: &str, 
 /// read-only sandbox in an empty folder, reads prompt from stdin (`-`), writes last message to `reply_file`.
 pub fn codex_args(dir: &Path, reply_file: &Path, model: Option<&str>) -> Vec<String> {
     let mut args: Vec<String> = [
-        "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check",
+        "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check", "-c", "features.hooks=false",
         "-s", "read-only", "-C",
     ].iter().map(|s| s.to_string()).collect();
     args.push(dir.display().to_string());
@@ -603,7 +603,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(TOOLS.iter().any(|t| t.command == "codex" && t.supported), "Codex is supported");
         let c_args = codex_args(Path::new("/tmp/c"), Path::new("/tmp/c/reply.txt"), Some("o4-mini"));
-        for flag in ["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check", "read-only"] {
+        for flag in ["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check", "-c", "features.hooks=false", "read-only"] {
             assert!(c_args.iter().any(|a| a == flag), "{flag} missing from {c_args:?}");
         }
         assert!(!c_args.iter().any(|a| a.contains("danger")), "{c_args:?}");

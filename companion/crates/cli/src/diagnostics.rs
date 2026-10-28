@@ -150,6 +150,7 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
     if status["layout"]["id"].as_str().is_some_and(|id|id.starts_with("system.presentation")) {
         status["layout"]["name"]=json!("Presentation");
     }
+    if status["layout"]["id"].as_str().is_some_and(|id|id.starts_with("system.approve")) || status["layout"]["id"]=="system.answering" {status["layout"]=json!({"id":status["layout"]["id"],"name":"Agent request pending"});}
     let ports = tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default();
     let agent = crate::agent_config().ok();
     json!({
@@ -160,6 +161,7 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
         "usb_serial_ports": ports,
         "system_checks": system_checks(&ports),
         "windows_pager": crate::pager::diagnostics(),
+        "codex_agent":crate::codex_hooks::diagnostics(),
         "recent_log": shared.recent().iter().map(|l| redact(l)).collect::<Vec<_>>(),
         "firmware_source": shared.firmware_source,
         // The last board identified by USB: known or not, and the evidence (chip, flash, the

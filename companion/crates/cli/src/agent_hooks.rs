@@ -43,6 +43,18 @@ pub enum AgentEvent {
     Notification(Value),
 }
 
+pub fn is_codex(request:&Value)->bool{request["knoend_agent"]=="codex"}
+pub fn agent(request:&Value)->&'static str{if is_codex(request){"codex"}else{"claude-code"}}
+pub fn label(request:&Value)->&'static str{if is_codex(request){"Codex"}else{"Claude"}}
+fn codex_decision(event:&Value,reply:&Value)->Option<Value>{
+    let decision=match reply["decision"].as_str(){
+        Some("allow") if event["knoend_allow"]!=false=>json!({"behavior":"allow"}),
+        Some("deny")=>json!({"behavior":"deny","message":"Denied on the KnoEnd board."}),
+        _=>return None,
+    };
+    Some(json!({"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":decision}}))
+}
+
 // ---- the hook, run by the agent ----
 
 /// The terminal the agent runs in ("ttys003", "pts/4"): the first of this hook's ancestors on
@@ -76,8 +88,17 @@ fn agent_tty() -> Option<String> {
 pub fn run_hook(kind: &str) -> Result<(), String> {
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input).map_err(|e| e.to_string())?;
-    let Ok(mut event) = serde_json::from_str::<Value>(&input) else { return Ok(()) };
-    let Ok(mut stream) = crate::browser::connect_private(&socket_path()) else { return Ok(()) };
+    let Ok(event) = serde_json::from_str::<Value>(&input) else { return Ok(()) };
+    relay(kind,event)
+}
+
+#[cfg(any(unix,windows))]
+pub fn relay(kind:&str,event:Value)->Result<(),String>{relay_at(kind,event,&socket_path())}
+
+#[cfg(any(unix,windows))]
+pub fn relay_at(kind:&str,mut event:Value,path:&std::path::Path)->Result<(),String>{
+    if kind=="permission" {event["knoend_request_nonce"]=json!(knoend_transport::auth::nonce());}
+    let Ok(mut stream) = crate::browser::connect_private(path) else { return Ok(()) };
     // Which terminal tab the session runs in, so the board knows when the person is there.
     if let (Some(tty), Some(fields)) = (agent_tty(), event.as_object_mut()) {
         fields.insert("knoend_tty".into(), json!(tty));
@@ -92,6 +113,10 @@ pub fn run_hook(kind: &str) -> Result<(), String> {
         return Ok(());
     }
     let Ok(reply) = serde_json::from_str::<Value>(&reply) else { return Ok(()) };
+    if is_codex(&event) {
+        if let Some(output)=codex_decision(&event,&reply) {println!("{output}");}
+        return Ok(());
+    }
     let decision = match reply["decision"].as_str() {
         Some("allow") => json!({"behavior": "allow"}),
         Some("always") => {
@@ -125,7 +150,7 @@ pub async fn serve(events: mpsc::Sender<AgentEvent>) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
     let path = socket_path();
     let Ok(listener) = crate::browser::bind_private(&path) else {
-        problem!("agent-hooks", "Claude Code questions cannot reach the board: cannot listen on {}", path.display());
+        problem!("agent-hooks", "Coding agent requests cannot reach the board: private endpoint could not be opened");
         return;
     };
     let old = crate::browser::bind_private(&old_socket_path()).ok();
@@ -188,12 +213,12 @@ fn asked(input: &Value) -> Value {
 /// agent's own window: the same session finished that tool, stopped, took a new prompt, or went
 /// idle. (A session cannot move on while one of its permission questions is open.)
 pub fn settles(event: &Value, request: &Value) -> bool {
-    if event["session_id"].is_null() || event["session_id"] != request["session_id"] {
+    if agent(event)!=agent(request) || event["session_id"].is_null() || event["session_id"] != request["session_id"] {
         return false;
     }
     match event["hook_event_name"].as_str() {
-        Some("PostToolUse") => event["tool_name"] == request["tool_name"] && asked(&event["tool_input"]) == asked(&request["tool_input"]),
-        Some("Stop") | Some("UserPromptSubmit") => true,
+        Some("PostToolUse") => (!is_codex(request)||event["turn_id"]==request["turn_id"]) && event["tool_name"] == request["tool_name"] && if is_codex(request)&&event["knoend_tool_fingerprint"].is_string(){event["knoend_tool_fingerprint"]==request["knoend_tool_fingerprint"]}else{asked(&event["tool_input"])==asked(&request["tool_input"])},
+        Some("Stop") | Some("UserPromptSubmit") | Some("Interrupt") | Some("SessionEnd") => true,
         Some("Notification") => event["notification_type"] == "idle_prompt",
         _ => false,
     }
@@ -207,7 +232,7 @@ pub fn summary(request: &Value) -> String {
         .find_map(|k| input[*k].as_str())
         .unwrap_or("");
     let detail = detail.rsplit('/').next().filter(|_| input["file_path"].is_string()).unwrap_or(detail);
-    format!("Claude: {tool} {detail}").trim().to_string()
+    format!("{}: {tool} {detail}",label(request)).trim().to_string()
 }
 
 /// What the board explains under a request: the tool and its full input, what Allow does, and
@@ -220,6 +245,7 @@ pub fn detail(request: &Value) -> String {
     if let Some(why) = input["description"].as_str().filter(|d| !d.is_empty() && *d != what) {
         text += &format!("\n({why})");
     }
+    if is_codex(request) {return format!("{tool}: {}\nAllow = this request only. Deny = reject request.",serde_json::to_string(input).unwrap_or_default());}
     text += "\nAllow = this time only.";
     if let Some(s) = request["permission_suggestions"].as_array().and_then(|s| s.first()) {
         let place = match s["destination"].as_str() {
@@ -261,7 +287,7 @@ pub struct Question {
 
 /// The questions in an AskUserQuestion request (empty for any other tool).
 pub fn questions(request: &Value) -> Vec<Question> {
-    if request["tool_name"] != "AskUserQuestion" {
+    if is_codex(request) || request["tool_name"] != "AskUserQuestion" {
         return Vec::new();
     }
     request["tool_input"]["questions"].as_array().into_iter().flatten().filter_map(|q| {
@@ -389,6 +415,19 @@ pub fn uninstall() -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_only_returns_supported_one_request_decisions(){
+        let request=json!({"knoend_agent":"codex","session_id":"s","turn_id":"t","tool_name":"Bash","tool_input":{"command":"echo synthetic"}});
+        for unsupported in ["always","stop","answer"]{assert!(codex_decision(&request,&json!({"decision":unsupported,"input":{}})).is_none());}
+        assert_eq!(codex_decision(&request,&json!({"decision":"allow"})).unwrap()["hookSpecificOutput"]["decision"],json!({"behavior":"allow"}));
+        let mut unsafe_request=request.clone();unsafe_request["knoend_allow"]=json!(false);
+        assert!(codex_decision(&unsafe_request,&json!({"decision":"allow"})).is_none());
+        assert!(codex_decision(&unsafe_request,&json!({"decision":"deny"})).is_some());
+        let mut settled=request.clone();settled["hook_event_name"]=json!("PostToolUse");assert!(settles(&settled,&request));
+        settled["turn_id"]=json!("other");assert!(!settles(&settled,&request));
+        settled["turn_id"]=json!("t");settled["knoend_agent"]=json!("claude-code");assert!(!settles(&settled,&request));
+    }
 
     #[test]
     fn a_question_answered_in_the_app_settles_although_its_input_now_has_answers() {

@@ -1,0 +1,22 @@
+[pack]
+id = "builtin.agent-codex-completion"
+name = "Codex finished"
+version = "0.1.0"
+source = "builtin"
+grid = "3x3"
+description = "A local Codex turn ended. Read the result in Codex or dismiss the alert."
+
+[match]
+agent = ["codex/completion"]
+
+[[key]]
+slot = 1
+label = "Open Codex"
+icon = "open_in_new"
+action = { kind = "agent", reply = "go_to" }
+
+[[key]]
+slot = 3
+label = "Dismiss"
+icon = "close"
+action = { kind = "agent", reply = "decline" }

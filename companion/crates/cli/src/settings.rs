@@ -71,6 +71,7 @@ pub async fn all_for(shared: &Shared, wanted: Option<&str>) -> Vec<Value> {
         json!({"value": id, "label": label})
     }).collect();
     let mut settings = vec![
+        describe("codex_interruptions_enabled","Codex interruptions","Allow supported local Codex hooks to show approval requests and completion alerts. Completion alerts also need pager enabled; approval policy and hook trust remain controlled by Codex.",json!([{"value":true,"label":"On"},{"value":false,"label":"Off"}]),json!(crate::codex_hooks::enabled()),"next hook event"),
         describe("pager_enabled", "Windows pager interruptions",
                  "Show visible Teams, ChatGPT and Codex notifications on the board, with Open app, Dismiss and Start Steno for Teams. Suppressed notifications are unavailable.",
                  json!([{"value": true, "label": "On"}, {"value": false, "label": "Off"}]),
@@ -259,6 +260,7 @@ pub async fn apply(shared: &Shared, changes: &serde_json::Map<String, Value>) ->
             } else {format!("{} cannot be {value}", setting["title"].as_str().unwrap_or(id))})?;
         done.push(format!("{}: {label}", setting["title"].as_str().unwrap_or(id)));
     }
+    if let Some(enabled)=changes.get("codex_interruptions_enabled").and_then(Value::as_bool){crate::codex_hooks::configure(enabled)?;}
     if changes.contains_key("presentation_notes_source")||changes.contains_key("presentation_pptx_file"){crate::powerpoint::configure_notes(changes.get("presentation_notes_source").and_then(Value::as_str),changes.get("presentation_pptx_file").and_then(Value::as_str))?;}
     let pager_enabled = changes.get("pager_enabled").and_then(Value::as_bool);
     let recorder_launcher = changes.get("recorder_launcher").and_then(Value::as_str);

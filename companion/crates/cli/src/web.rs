@@ -72,6 +72,7 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/open", post(open_help))
         .route("/typing", get(typing))
         .route("/edit", post(edit))
+        .route("/codex-hooks",get(codex_hooks_status).post(codex_hooks_action))
         .route("/presentation", get(presentation_settings))
         .route("/recipes/reload", post(reload_recipes))
         .route("/pager", get(pager_status).post(pager_notice))
@@ -189,6 +190,16 @@ async fn state(State(app): State<App>) -> ApiResult {
     let status = app.shared.status.read().await.clone();
     Ok(Json(json!({"status": status, "version": env!("CARGO_PKG_VERSION"), "firmwareSource": app.shared.firmware_source,
                    "os": std::env::consts::OS})))
+}
+
+async fn codex_hooks_status()->ApiResult{Ok(Json(crate::codex_hooks::diagnostics()))}
+async fn codex_hooks_action(State(app):State<App>,Json(request):Json<Value>)->ApiResult{
+ let message=match request["action"].as_str(){
+  Some("install")=>crate::codex_hooks::install(),Some("uninstall")=>crate::codex_hooks::uninstall(),
+  Some("test_completion")=>{let event=json!({"knoend_agent":"codex","session_id":"synthetic-device-test","turn_id":knoend_transport::auth::nonce(),"hook_event_name":"Stop"});app.shared.pager_notice(crate::codex_hooks::completion(&event).ok_or_else(||fail(StatusCode::BAD_REQUEST,"Enable Codex interruptions first"))?).await.map_err(|e|fail(StatusCode::SERVICE_UNAVAILABLE,e))?;Ok("Synthetic completion queued; this does not establish Codex hook delivery.".into())},
+  _=>Err("Unknown Codex hooks action".into()),
+ }.map_err(|e|fail(StatusCode::BAD_REQUEST,e))?;
+ Ok(Json(json!({"message":message,"diagnostics":crate::codex_hooks::diagnostics()})))
 }
 
 async fn presentation_settings()->ApiResult{Ok(Json(json!({"settings":crate::powerpoint::notes_settings(),"diagnostics":crate::powerpoint::diagnostics()})))}

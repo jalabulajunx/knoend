@@ -1,5 +1,5 @@
 //! Local Windows pager interruptions. Notification text stays in memory and on paired boards.
-use std::collections::VecDeque;
+use std::collections::{VecDeque,HashMap};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use knoend_core::protocol::{Grid, LayoutBody, LayoutKey, Send};
@@ -24,7 +24,7 @@ impl Notice {
         if !matches!(self.app.as_str(), "teams" | "chatgpt" | "codex") {
             return Err("pager app must be teams, chatgpt or codex".into());
         }
-        if !matches!(self.kind.as_str(), "message" | "call" | "clear") || (self.kind == "call" && self.app != "teams") {
+        if !matches!(self.kind.as_str(), "message" | "call" | "clear" | "completion") || (self.kind == "call" && self.app != "teams") || (self.kind=="completion"&&self.app!="codex") {
             return Err("pager kind must be message, clear, or a Teams call".into());
         }
         if self.id.is_empty() || self.id.len() > 160 || self.summary.len() > 1024 || self.body.len() > 8192 {
@@ -36,7 +36,7 @@ impl Notice {
 
 struct Alert { notice: Notice, until: Instant, page: usize }
 #[derive(Default)]
-struct State { queue: VecDeque<Alert>, revision: u64 }
+struct State { queue: VecDeque<Alert>, revision: u64, completion_keys:HashMap<u64,u64>, completion_seen:VecDeque<String> }
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
 static WATCHER_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static WATCHER_ERROR: OnceLock<Mutex<String>> = OnceLock::new();
@@ -74,6 +74,7 @@ pub fn configure(enabled: Option<bool>, launcher: Option<&str>) -> Result<(), St
 }
 pub fn diagnostics() -> Value {
     let c = config();
+    let (pending,front_kind,remaining)={let s=state().lock().unwrap();(s.queue.len(),s.queue.front().map(|a|a.notice.kind.clone()),s.queue.front().map(|a|a.until.saturating_duration_since(Instant::now()).as_secs()))};
     let last = WATCHER_LAST_SCAN.load(std::sync::atomic::Ordering::Relaxed);
     json!({"enabled": c.enabled, "windows": cfg!(windows), "watcher_ready": WATCHER_READY.load(std::sync::atomic::Ordering::Relaxed) && fresh_scan(last, now_ms()),
         "last_scan_age_ms": if last == 0 { None } else { Some(now_ms().saturating_sub(last)) },
@@ -81,7 +82,7 @@ pub fn diagnostics() -> Value {
         "watcher_last_error": WATCHER_ERROR.get_or_init(|| Mutex::new(String::new())).lock().unwrap().clone(),
         "recorder_configured": !c.recorder_launcher.is_empty(),
         "recorder_exists": std::path::Path::new(&c.recorder_launcher).is_file(),
-        "pending": state().lock().unwrap().queue.len(),
+        "pending":pending,"front_kind":front_kind,"front_remaining_seconds":remaining,
         "capture": "visible Windows toast notifications and Teams incoming-call windows; suppressed toasts are unavailable"})
 }
 
@@ -92,9 +93,10 @@ pub fn receive(n: Notice) {
 }
 impl State {
     fn receive(&mut self, n: Notice) {
+        if n.kind=="completion" {if self.completion_seen.contains(&n.id){return}self.completion_seen.push_back(n.id.clone());if self.completion_seen.len()>128{self.completion_seen.pop_front();}}
         self.queue.retain(|a| !(a.notice.app == n.app && a.notice.id == n.id));
         if n.kind != "clear" {
-            let seconds = if n.kind == "call" { 90 } else { 45 };
+            let seconds = if n.kind=="completion" {300}else if n.kind == "call" { 90 } else { 45 };
             let a = Alert { notice: n, until: Instant::now() + Duration::from_secs(seconds), page: 0 };
             if a.notice.kind == "call" { self.queue.push_front(a); } else { self.queue.push_back(a); }
             while self.queue.len() > 8 { self.queue.pop_back(); }
@@ -102,6 +104,11 @@ impl State {
         self.revision += 1;
     }
 }
+pub fn clear_codex_session(session:&str){
+    use std::hash::{Hash,Hasher};let mut h=std::collections::hash_map::DefaultHasher::new();session.hash(&mut h);let marker=format!("-complete-{:x}-",h.finish());
+    let mut s=state().lock().unwrap();let before=s.queue.len();s.queue.retain(|a|!(a.notice.app=="codex"&&a.notice.kind=="completion"&&a.notice.id.contains(&marker)));if before!=s.queue.len(){s.revision+=1;}
+}
+
 pub fn expire() -> bool {
     let mut s = state().lock().unwrap();
     let before = s.queue.len();
@@ -131,7 +138,7 @@ fn pages(text: &str) -> Vec<String> {
 fn key(slot: u8, label: &str, icon: &str, confirm: bool) -> LayoutKey {
     LayoutKey { key: slot, label: label.into(), speak: None, icon: Some(icon.into()), confirm, send: Send::Event(true) }
 }
-pub async fn show(sender: &mut BoardSender, shown: &mut Option<String>, shared: &Shared) -> bool {
+pub async fn show(sender: &mut BoardSender, shown: &mut Option<String>, shared: &Shared,catalog:&knoend_core::catalog::Catalog) -> bool {
     let data = {
         let s = state().lock().unwrap();
         s.queue.front().map(|a| (a.notice.clone(), a.page, s.revision))
@@ -146,8 +153,20 @@ pub async fn show(sender: &mut BoardSender, shown: &mut Option<String>, shared: 
         key(3, "Dismiss", "close", false), key(7, "Prev text", "chevron_left", false), key(9, "Next text", "chevron_right", false)];
     if is_teams { keys.push(key(2, "Start Steno", "description", false)); }
     let title = format!("{} {}", n.app, if n.kind == "call" { "incoming call" } else { "notification" });
-    let body = LayoutBody { layout: format!("{LAYOUT}.{revision}"), name: title.clone(), source: "builtin".into(), reviewed: true,
+    let mut body = LayoutBody { layout: format!("{LAYOUT}.{revision}"), name: title.clone(), source: "builtin".into(), reviewed: true,
         grid: Some(Grid::DEFAULT), keys, detail: Some(format!("{}/{} {}", page+1, details.len(), details[page])), ..LayoutBody::default() };
+    if n.kind=="completion" {
+        let library=crate::service::agent_screen_for(catalog,"codex","completion");
+        let pages=knoend_core::layout::pages(&library,Grid::DEFAULT);
+        if let Ok(mut configured)=knoend_core::layout::build(&library,knoend_core::focus::Os::current(),&pages,0){
+            let mut mappings=HashMap::new();
+            for (index,slot) in &pages[0].keys {use knoend_core::library::{Action,AgentReply};let action=match library.keys[*index].action {Action::Agent{reply:AgentReply::GoTo}=>1,Action::Agent{reply:AgentReply::Decline}=>3,_=>continue};mappings.insert(u64::from(*slot),action);}
+            configured.keys.retain(|k|mappings.contains_key(&u64::from(k.key)));
+            for key in &mut configured.keys{key.send=Send::Event(true);}
+            configured.layout=body.layout.clone();configured.detail=body.detail.clone();body=configured;
+            state().lock().unwrap().completion_keys=mappings;
+        }
+    }
     match sender.send("knoend.layout", serde_json::to_value(&body).unwrap()).await {
         Ok(_) => {
             let _ = sender.send("knoend.status", json!({"text": title, "level": "alert", "ttl": 45})).await;
@@ -162,10 +181,14 @@ pub async fn show(sender: &mut BoardSender, shown: &mut Option<String>, shared: 
 
 pub fn tap(layout: &str, slot: u64) {
     if !config().enabled { return; }
-    let app = {
+    let (app,slot,terminal) = {
         let mut s = state().lock().unwrap();
         if layout != format!("{LAYOUT}.{}", s.revision) { return; }
         let Some(a) = s.queue.front_mut() else { return };
+        let completion=a.notice.kind=="completion";
+        let slot=if completion {let Some(mapped)=s.completion_keys.get(&slot).copied() else{return};mapped}else{slot};
+        let a=s.queue.front_mut().unwrap();
+        let terminal=a.notice.id.starts_with("codex-terminal-complete-");
         let app = a.notice.app.clone();
         match slot {
             3 => { s.queue.pop_front(); s.revision += 1; return; },
@@ -173,11 +196,11 @@ pub fn tap(layout: &str, slot: u64) {
             9 => { a.page = (a.page + 1).min(pages(&format!("{} {}", a.notice.summary, a.notice.body)).len()-1); return; },
             _ => {}
         }
-        app
+        (app,slot,terminal)
     };
     match slot {
         1 => {
-            let names: &[&str] = if app == "teams" { &["ms-teams", "Teams"] } else { &["ChatGPT", "Codex"] };
+            let names: &[&str] = if terminal { &["WindowsTerminal","Code","Terminal","konsole","kitty","alacritty","wezterm","iTerm","ghostty"] }else if app == "teams" { &["ms-teams", "Teams"] } else if app=="codex" { &["Codex", "ChatGPT"] } else { &["ChatGPT", "Codex"] };
             match knoend_focus::bring_to_front(names) {
                 Ok(_) => { let mut s = state().lock().unwrap(); s.queue.pop_front(); s.revision += 1; },
                 Err(e) => problem!("pager", "Could not open pager app: {e}"),
@@ -270,6 +293,10 @@ pub fn watch(mut each: impl FnMut(Notice) -> bool + std::marker::Send + 'static)
 
 #[cfg(test)] mod tests {
     use super::*;
+    #[test]fn repeated_completion_is_not_requeued_after_dismissal(){
+        let mut state=State::default();let notice=Notice{id:"synthetic-codex-completion".into(),app:"codex".into(),kind:"completion".into(),summary:String::new(),body:String::new()};
+        assert!(notice.validate().is_ok());state.receive(notice.clone());state.receive(notice.clone());assert_eq!(state.queue.len(),1);state.queue.clear();state.receive(notice);assert!(state.queue.is_empty());
+    }
     #[test] fn readiness_requires_a_recent_completed_scan() {
         assert!(!fresh_scan(0, 1000));
         assert!(fresh_scan(1000, 2000));

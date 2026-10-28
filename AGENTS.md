@@ -150,6 +150,10 @@ and say in the error which setting. A rebuild is only for our own bugs.
   settings remain editable in the local web UI; AI diagnostics receive only configured/existing
   status. Notification text stays in memory/on paired boards. Google Slides still needs a browser
   adapter. A native-worker migration needs real producer-side notification and device validation.
+- **Codex interruptions:** read `docs/codex-interruptions.md` and the matching decision. Preserve
+  existing hooks/notify configuration; trust is reviewed by the user in Codex, never bypassed.
+  CLI and desktop producer-side delivery are separate checks. A synthetic permission response is
+  not a real approval-policy request. Normal session exit must not erase a completion alert.
 - **Branches:** one per task, `sundar/...` or `tom/...`. Changes under `spec/` need review by both people.
 - **AI tools are disclosed.** Name the agent in each log entry.
 

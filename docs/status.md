@@ -118,3 +118,18 @@ Real incoming-call detection and the recorder device tap remain unverified; Goog
 still needs a browser presentation adapter. Shared schema/protocol changes need both
 maintainers' review before merge. See docs/windows-powerpoint.md, docs/windows-pager.md and
 [the architecture decision](decisions/2026-10-27-native-recipe-presentations.md).
+
+## Pending local branch: Codex interruptions
+
+On sundar/codex-interruptions, native hooks and provider-specific permission/completion recipes
+are implemented for local Codex desktop/terminal sessions. The companion exposes preparation,
+removal, enablement, a synthetic completion test and content-free codex_agent diagnostics.
+The user must review/trust exact hooks in Codex /hooks; real desktop/terminal delivery remains
+unverified until that step and producer-side tests. Ordinary questions and cloud orchestration
+remain outside this local contract. See [Codex setup](codex-interruptions.md) and
+[the decision](decisions/2026-10-27-codex-interruptions.md). No changes to draft PR #90's branch.
+
+CLI validation follow-up: actual Codex CLI turn completion, persistence after normal process exit,
+and physical Dismiss were confirmed on Windows/ONX. Desktop completion remains awaiting a
+separate producer-side check; ordinary question replies and real approval-policy prompts have
+not been validated by the synthetic Deny test.

@@ -12,6 +12,7 @@ use crate::service::Shared;
 
 /// Every check: id and what it finds out.
 pub const ALL: &[(&str, &str)] = &[
+    ("codex_agent","Checks installed native hooks and content-free event counts; file presence does not prove Codex trust or actual delivery."),
     ("powerpoint_context", "Checks the presentation panel and pointer capability without reading slide text or moving the pointer."),
     ("windows_pager", "Checks pager enablement, visible-notification watcher and recorder launcher availability without opening Steno or exposing notification text."),
     ("find_boards_on_network",
@@ -55,6 +56,7 @@ pub fn describe() -> Value {
 /// Runs the check `id`; an unknown id says so.
 pub async fn run(id: &str, shared: &Shared) -> Value {
     match id {
+        "codex_agent"=>crate::codex_hooks::diagnostics(),
         "powerpoint_context" => {
             let mut result = crate::powerpoint::diagnostics();
             let state = shared.status.read().await;
