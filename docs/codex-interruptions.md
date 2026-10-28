@@ -15,8 +15,8 @@ The generated commands include the private endpoint file so custom runtime folde
 Windows native hook paths currently need no spaces or shell metacharacters; choose a local
 runtime accordingly. No PowerShell script is generated.
 
-Review and trust these exact hook definitions using Codex's /hooks UI, then use a new local
-session or restart the relevant session. File presence alone does not prove trust, host support
+Review and trust these exact definitions in the Codex app's hook controls or the CLI's /hooks
+UI, then use a new local session or restart the relevant session. File presence alone does not prove trust, host support
 or delivery. Codex may restrict hooks through managed policy. KnoEnd never changes approval
 policy or bypasses hook trust. Full-access/never-ask sessions may have no approval events.
 
@@ -45,6 +45,28 @@ and pager alerts. Hook callbacks discard prompt, response text, cwd and transcri
 only approval tool input travels to the private local bridge and paired board. It is not logged
 or put in assistant diagnostics. Completion text is generic. KnoEnd's own helper Codex calls
 explicitly disable hooks so setup-assistant turns do not create completion interruptions.
+
+## Validated setup and troubleshooting
+
+On Windows with an ONX2432G028, the user trusted the hooks through the Codex app. A real CLI
+turn returned OK without tools; its completion callback reached the companion, remained visible
+after normal process exit, and Dismiss restored the normal layout. A fresh local desktop chat
+also produced a physically confirmed completion alert. A synthetic permission request returned
+Deny without executing a tool; a real policy-driven approval request remains unverified.
+
+The initial native installer failed when no hooks file existed; an inserting mutable JSON lookup
+created null before an object lookup. This was fixed and covered by a first-install regression.
+The actual install/remove round-trip then passed with existing config/notify bytes unchanged.
+
+Two completion issues were corrected: the ordinary 45-second message expiry was too short for
+the check, and clearing on SessionEnd erased alerts when CLI processes exited. Completion now
+has a five-minute window, remaining-lifetime diagnostics, and persists after normal session exit.
+
+If a normal terminal reports that codex is not recognized, its PATH does not include the CLI.
+The app-bundled executable can still work when launched directly. No particular project folder
+is needed for user-level hooks; do not copy a machine-specific executable path into a recipe.
+An old notify helper can fail independently of the new lifecycle hooks; inspect it separately
+rather than overwriting an existing callback to install KnoEnd.
 
 ## Verify
 

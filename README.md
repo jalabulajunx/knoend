@@ -184,6 +184,19 @@ and what to do about the unsigned-download warnings.
 Problems:
 [docs/knowledge/setup.md](docs/knowledge/setup.md). What is on main: [docs/status.md](docs/status.md).
 
+### Codex interruptions (branch preview)
+
+The Codex integration in this branch adds native lifecycle hooks for **local desktop and CLI
+sessions**. Start the companion, open **Dashboard > Codex interruptions > Prepare hooks**, then
+review/trust the exact hooks in Codex. No firmware update or PowerShell script is needed for hooks.
+Completion alerts and Dismiss were physically confirmed on Windows with an ONX2432G028; desktop
+and CLI were tested separately. The permission bridge supports Allow once/Deny, with a synthetic
+Deny round-trip confirmed. Real policy-driven approvals remain unverified; ordinary question
+answers stay in Codex. This work is not yet in a published release.
+
+Follow [the Codex setup steps](docs/setup.md#codex-interruptions-local-desktop-and-cli) and
+[the detailed behaviour, recipes and troubleshooting](docs/codex-interruptions.md).
+
 ## Build North submission
 
 Kn°End is our entry to [Build North: Ship Something Real](https://build-north.devpost.com/)

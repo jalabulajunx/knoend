@@ -167,6 +167,52 @@ produce `dist/extension/chrome` and `dist/extension/firefox`), add the extension
 Firefox (see `extension/README.md`), and turn board buttons on per site from the extension's popup.
 YouTube, Google Drive and Google Slides have built-in layouts.
 
+### Codex interruptions (local desktop and CLI)
+
+This is a branch-preview feature, not yet included in a published release. Use a companion build
+that includes the Codex integration. The board needs its existing data connection (USB, Wi-Fi or
+supported Bluetooth data); hooks do not require reflashing. Bluetooth keyboard pairing alone is
+not a companion data connection.
+
+1. Start KnoEnd and check the dashboard reports the board connected. If using a custom runtime,
+   start it with `knoend local --runtime <absolute-local-runtime> --recipes <absolute-recipe-folder>`.
+   Keep runtime/config/logs outside a synced source tree. Windows hook executable and endpoint
+   paths currently must contain no spaces or shell metacharacters.
+2. Open **Dashboard > Codex interruptions**, leave **Enable Codex interruptions** on, and click
+   **Prepare hooks**. Turn on **Interrupt for notifications** for completion alerts. Preparation
+   adds six native handlers to the active user-level Codex `hooks.json`, preserves other hooks,
+   makes a first backup, and leaves `config.toml` and its existing `notify` callback unchanged.
+   The generated command includes the companion's exact private endpoint file, so a custom
+   runtime does not need to match Codex's environment. Advanced CLI equivalent:
+   `knoend codex-hooks install`, run in the companion's runtime environment.
+3. In Codex, review/trust the exact KnoEnd hook definitions. This setup used the Codex app's
+   hook controls; the CLI also exposes `/hooks`. Start a fresh local session afterwards. A
+   prepared file is not proof of trust, and neither installation nor a synthetic screen proves
+   a real Codex callback. Keep Codex's approval policy and managed restrictions as configured.
+4. Test the **CLI** with a small prompt: `Reply only OK, without using tools or changing files.`
+   A Codex app may bundle a CLI that is absent from the normal terminal's PATH. If `codex` is
+   not recognized, use the installed executable directly or install a supported standalone CLI;
+   changing folders does not fix a missing PATH entry. No global PATH change was made in this setup.
+5. Check **Codex finished** appears on the board and tap **Dismiss** to restore normal keys.
+   Then repeat the same prompt in a **new local Codex desktop chat**. Verify desktop delivery
+   independently from the CLI. Both actual completion paths were physically confirmed here.
+
+The recipes are `recipes/agents/codex-permission.toml` and
+`recipes/agents/codex-completion.toml`. Use **Reload recipes** after editing them. A `Stop`
+callback means the turn ended, not that the task succeeded. Completion alerts last five minutes
+or until dismissed; a new prompt or interrupt clears that session's alerts. A normal
+`SessionEnd` withdraws pending approvals but must not erase a completed-turn alert.
+
+The **codex_agent** assistant check shows preparation and content-free callback counts. Actual
+approval requests happen only when Codex's policy would ask: full-access sessions may produce
+none. Supported board replies are **Allow once** and **Deny**; long/unreadable requests stay for
+review in Codex, and ordinary question-card replies still require Codex's own UI. The synthetic
+Deny check verified bridge response only, not a real policy-driven approval request. Cloud
+orchestration is outside this local command-hook integration. No transcript scraping is used.
+
+For uninstall, use **Remove hooks** or `knoend codex-hooks uninstall`; only KnoEnd's handlers are
+removed. See [the detailed guide](codex-interruptions.md) for diagnostics and the tested scope.
+
 ### Where things are kept
 
 Everything is in `~/.config/knoend/` (or `$XDG_CONFIG_HOME/knoend/`):
@@ -176,7 +222,12 @@ Everything is in `~/.config/knoend/` (or `$XDG_CONFIG_HOME/knoend/`):
 | `companion.json` | pairing key for each board (mode 600) |
 | `secrets.json` | API keys entered in the web app (mode 600) |
 | `agent.toml` | AI provider and model |
+| `codex-agent.json` | local Codex interruption enablement |
 | `libraries/` | your layouts; `libraries/ai/` holds AI drafts |
+
+Codex hook definitions live separately in the active Codex user home (`$CODEX_HOME/hooks.json`,
+or `~/.codex/hooks.json` by default), with a first `hooks.json.before-knoend-codex` backup.
+These machine-specific files and private endpoint paths do not belong in the repository.
 
 ## Boards
 
