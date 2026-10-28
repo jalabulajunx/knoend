@@ -28,7 +28,7 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | Release downloads: Windows installer (per user, unsigned; `installer/windows/knoend.iss`, built by Inno Setup in CI and the release), browser extension zips (unsigned), install notes (`installer/release-notes.md`) | `.github/workflows/release.yml`, `tools/build_extension.py` | CI artifact `windows-installer`; next tag |
 | PowerPoint presentation notes & controls: in slide show mode, active slide notes appear in the detail panel (scrollable by swiping) with advance/prev/stop controls on Windows | `recipes/apps/powerpnt.toml`, `companion/crates/cli/src/powerpoint.rs`, `service.rs` | start a presentation in PowerPoint |
 | Web app board removal: options to either forget/unpair completely or remove from display settings | `web/index.html`, `web/app.js`, `companion/crates/cli/src/web.rs`, `display.rs`, `pairing.rs` | "Remove board" on Board card in web app |
-| Installing from the published release (v0.2.3, 2026-10-25: the setup assistant redrafts an AI draft's keys on request, font menus that open every time, macOS app lists with Apple's apps and no background programs, MuseScore Stop key; v0.2.2 before) through the web app | `companion/crates/cli/src/firmware.rs` | default firmware source |
+| Installing from the published release (v0.3.0, 2026-10-27: Windows pager for Teams/notification interruptions, recipe-driven PowerPoint controls with a touchpad drag surface (new `knoend.pointer` firmware report), Teams and ChatGPT/Codex keys, native Codex completion/permission hooks; v0.2.3 before) through the web app | `companion/crates/cli/src/firmware.rs` | default firmware source |
 | Keys for your apps: set-up step 7 (and Set up apps on the dashboard) lists installed apps, marks which have keys, and the AI drafts keys for up to 12 picked apps, two at a time (Linux and macOS tested, Apple's own apps and Finder included; Windows listing untested) | `desktop/src/installed.rs`, `cli/src/app_setup.rs`, `web/` | Set up a board, Your apps |
 | A board already set up: Set up a board offers apps, look, Wi-Fi, Bluetooth or installing again instead of starting over | `web/app.js` (`renderKnown`) | open Set up a board with a board connected |
 | The board listens (boards with a mic: ONX + Nextion Dual MIC): a Listen key, notes found on the board (only notes leave it), sent as MIDI from the "KnoEnd" device; on Linux also into Midi Through, so MuseScore takes them unset (Linux tested; macOS/Windows MIDI untested). Spec 3.6f awaits Tom's review | `firmware/main/listen.c`, `pitch.c`, `cli/src/midi.rs`, `recipes/apps/musescore.toml` | open MuseScore, Note input, Listen, sing |
@@ -105,23 +105,23 @@ for the setup assistant, settings, fonts and the board's look, the 2026-10-20 ha
 | Now playing on macOS / Windows (no MPRIS) | `companion/crates/media` |
 | RGB-panel boards (4.3-7"), Hynitron CST3xx touch, quad-PSRAM image | see `boards/research.md` |
 
-## Pending branch work: Windows pager and recipe-based presentations
+## Windows pager and recipe-based presentations (v0.3.0)
 
-This section describes the task branch, not a published release. Windows COM and notification
+Merged in #90 and released in v0.3.0. Windows COM and notification
 UI Automation run as supervised native Rust workers. Teams and ChatGPT/Codex recipes provide
 desktop keys; PowerPoint's recipe configures show controls, notes and touchpad modes with live
-reload. Firmware 0.2.3-touchpad1 adds generic relative pointer reports and a drag surface.
+reload. Firmware 0.3.0 adds generic relative pointer reports and a drag surface (tested on the ONX as local build 0.2.3-touchpad1).
 
 On an ONX2432G028, the user confirmed PowerPoint controls, notes and finger dragging over
 Bluetooth, plus Teams-generated Test notification interruptions after the native migration.
 Real incoming-call detection and the recorder device tap remain unverified; Google Slides
-still needs a browser presentation adapter. Shared schema/protocol changes need both
-maintainers' review before merge. See docs/windows-powerpoint.md, docs/windows-pager.md and
+still needs a browser presentation adapter. The `knoend.pointer` protocol draft was released
+before Tom's review, on Sundar's call; it still needs joint review. See docs/windows-powerpoint.md, docs/windows-pager.md and
 [the architecture decision](decisions/2026-10-27-native-recipe-presentations.md).
 
-## Branch preview: Codex interruptions
+## Codex interruptions (v0.3.0)
 
-On `sundar/codex-interruptions`, native lifecycle hooks and provider-specific permission/completion
+Merged in #91 and released in v0.3.0. Native lifecycle hooks and provider-specific permission/completion
 recipes support local Codex desktop and CLI sessions. The dashboard prepares/removes hooks,
 controls enablement, offers a synthetic screen and exposes content-free `codex_agent` checks.
 Prepare hooks, review/trust them in Codex, then test a fresh session in each interface. The
@@ -133,7 +133,7 @@ new work or an interrupt clears only that session's alert. The synthetic approva
 Deny without tool execution. Real policy-driven approvals, ordinary question-card replies and
 cloud orchestration are not established by these tests; ordinary questions stay in Codex.
 
-The Codex branch depends on draft PR #90 and is reviewed separately from it. See the
+See the
 [main setup steps](setup.md#codex-interruptions-local-desktop-and-cli),
 [detailed guide](codex-interruptions.md) and
 [implementation decision](decisions/2026-10-27-codex-interruptions.md).
