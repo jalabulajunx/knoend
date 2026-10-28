@@ -2485,3 +2485,14 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   check results in the next entry or the PR.
 - Open: real Teams incoming-call detection, the recorder device tap and policy-driven Codex approvals
   remain unverified (see #90 and #91 entries).
+
+## 2026-10-27 - Sundar (Claude Code, Opus 5.5) - v0.3.0 published and checked; honourable mention
+
+- Release workflow and Pages deploy succeeded on c960f87 (tag v0.3.0). The release is marked Latest
+  and carries all 16 assets: firmware `manifest.json` (version 0.3.0, universal ESP32-S3 image,
+  5 board definitions), bootloader/partition table/app image, Linux, macOS (both) and Windows
+  (zip and installer) service builds, and the Chrome and Firefox extension zips.
+- Checked: the downloaded Linux build reports `knoend 0.3.0`; the live project page shows v0.3.0 and
+  the new feature text. Not checked: the release firmware image on a board (the ONX tests used the
+  local build 0.2.3-touchpad1), and the macOS and Windows downloads.
+- Build North judging is done: KnoEnd received an honourable mention.
