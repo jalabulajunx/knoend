@@ -14,6 +14,7 @@
 
 #[macro_use]
 mod journal;
+mod pager;
 mod agent_hooks;
 mod app_facts;
 mod app_setup;
@@ -33,11 +34,15 @@ mod firmware;
 mod macos_help;
 mod midi;
 mod powerpoint;
+mod presentation;
 mod provision;
 mod service;
 mod web;
 
 use std::path::PathBuf;
+
+#[cfg(windows)]
+mod windows_native;
 
 use clap::{Parser, Subcommand};
 use knoend_agents::AgentConfig;
@@ -54,6 +59,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Start the companion using local runtime storage and editable recipes.
+    Local {
+        #[arg(long)] runtime: PathBuf,
+        #[arg(long)] recipes: PathBuf,
+        #[arg(long)] no_open: bool,
+    },
     /// Start the web app (set up and flash boards) and the service (layouts follow the focused app).
     Serve {
         #[arg(long, default_value_t = 7342)]
@@ -160,6 +171,13 @@ enum BrowserAction {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(windows)]
+    if args.get(1).is_some_and(|s| s == "__native-worker") {
+        if let Err(e) = windows_native::run(args.get(2).map(String::as_str).unwrap_or(""), args.iter().any(|s| s == "--once")) {
+            eprintln!("native worker: {e}"); std::process::exit(1);
+        }
+        return;
+    }
     if browser::started_by_browser(&args) {
         if let Err(message) = browser::run_host() {
             eprintln!("knoend: {message}");
@@ -172,6 +190,7 @@ fn main() {
         println!("{moved}");
     }
     let result = match cli.command {
+        Command::Local { runtime, recipes, no_open } => start_local(&runtime,&recipes,no_open),
         Command::Pair { port } => pair(&port),
         Command::Serve { port, firmware, no_open, libraries } => tokio::runtime::Runtime::new().expect("tokio").block_on(async move {
             // Already running (the background service): open its web app instead (the Start menu
@@ -229,6 +248,30 @@ fn main() {
         eprintln!("knoend: {message}");
         std::process::exit(1);
     }
+}
+
+fn start_local(runtime:&std::path::Path,recipes:&std::path::Path,no_open:bool)->Result<(),String>{
+    if !runtime.is_absolute() || !recipes.is_absolute() || !recipes.is_dir(){return Err("Use absolute runtime and existing recipe directory paths".into())}
+    let runtime=runtime.to_path_buf();
+    for name in ["OneDrive","OneDriveCommercial","OneDriveConsumer"] {
+        if let Some(root)=std::env::var_os(name) {
+            let root=std::path::PathBuf::from(root);
+            if runtime.to_string_lossy().to_ascii_lowercase().starts_with(&format!("{}\\",root.to_string_lossy().trim_end_matches('\\').to_ascii_lowercase())) || runtime==root {
+                return Err("Choose runtime storage outside OneDrive".into());
+            }
+        }
+    }
+    for folder in ["config","temp","logs"]{std::fs::create_dir_all(runtime.join(folder)).map_err(|e|e.to_string())?;}
+    let mut command=std::process::Command::new(std::env::current_exe().map_err(|e|e.to_string())?);
+    command.args(["serve","--no-open"]).current_dir(&runtime)
+        .env("XDG_CONFIG_HOME",runtime.join("config")).env("TEMP",runtime.join("temp")).env("TMP",runtime.join("temp"))
+        .env("KNOEND_BUILTIN",recipes).stdin(std::process::Stdio::null())
+        .stdout(std::fs::OpenOptions::new().create(true).append(true).open(runtime.join("logs/companion.stdout.log")).map_err(|e|e.to_string())?)
+        .stderr(std::fs::OpenOptions::new().create(true).append(true).open(runtime.join("logs/companion.stderr.log")).map_err(|e|e.to_string())?);
+    #[cfg(windows)] {use std::os::windows::process::CommandExt;command.creation_flags(0x08000000);}
+    command.spawn().map_err(|e|e.to_string())?;
+    if !no_open{web::open_in_browser("http://127.0.0.1:7342/");}
+    Ok(())
 }
 
 // ---- pair ----

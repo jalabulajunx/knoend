@@ -1,0 +1,10 @@
+{
+  "id": 20,
+  "type": "knoend.pointer",
+  "body": {
+    "layout": "system.presentation.touchpad",
+    "dx": 128,
+    "dy": 0,
+    "seq": 83
+  }
+}

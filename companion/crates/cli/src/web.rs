@@ -72,6 +72,10 @@ pub async fn serve(shared: Arc<Shared>, port: u16, open: bool) -> Result<(), Str
         .route("/open", post(open_help))
         .route("/typing", get(typing))
         .route("/edit", post(edit))
+        .route("/presentation", get(presentation_settings))
+        .route("/recipes/reload", post(reload_recipes))
+        .route("/pager", get(pager_status).post(pager_notice))
+        .route("/pager/test", post(pager_test))
         .route("/apps", get(installed_apps))
         .route("/apps/draft", post(draft_apps))
         .route("/apps/icon/{id}", get(app_icon))
@@ -185,6 +189,26 @@ async fn state(State(app): State<App>) -> ApiResult {
     let status = app.shared.status.read().await.clone();
     Ok(Json(json!({"status": status, "version": env!("CARGO_PKG_VERSION"), "firmwareSource": app.shared.firmware_source,
                    "os": std::env::consts::OS})))
+}
+
+async fn presentation_settings()->ApiResult{Ok(Json(json!({"settings":crate::powerpoint::notes_settings(),"diagnostics":crate::powerpoint::diagnostics()})))}
+async fn reload_recipes(State(app):State<App>)->ApiResult{let count=app.shared.reload_recipes().await.map_err(|e|fail(StatusCode::BAD_REQUEST,e))?;Ok(Json(json!({"libraries":count})))}
+
+async fn pager_status() -> ApiResult {
+    Ok(Json(crate::pager::diagnostics()))
+}
+
+async fn pager_notice(State(app): State<App>, Json(notice): Json<crate::pager::Notice>) -> ApiResult {
+    notice.validate().map_err(|e| fail(StatusCode::BAD_REQUEST, e))?;
+    app.shared.pager_notice(notice).await.map_err(|e| fail(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    Ok(Json(json!({"queued": true})))
+}
+
+async fn pager_test(State(app): State<App>) -> ApiResult {
+    app.shared.pager_notice(crate::pager::Notice { id: "setup-test".into(), app: "teams".into(), kind: "call".into(),
+        summary: "Test incoming call".into(), body: "Synthetic test only. Open Teams brings its window forward. Start Steno opens the configured recorder. Dismiss restores the app keys.".into() })
+        .await.map_err(|e| fail(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    Ok(Json(json!({"queued": true})))
 }
 
 async fn events(State(app): State<App>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {

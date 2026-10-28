@@ -6,7 +6,17 @@ use serde_json::{json, Value};
 use crate::service::Shared;
 
 /// Recent log lines with anything quoted after "joining" (the Wi-Fi network name) replaced.
-fn redact(line: &str) -> String {
+pub(crate) fn redact(line: &str) -> String {
+    let lower=line.to_ascii_lowercase();
+    if [r":\users\",":/users/","/users/","/home/"].iter().any(|marker|lower.contains(marker)) {
+        return "[local user path omitted from diagnostic log]".into();
+    }
+    // Older presenter logs included the active filename; do not send it to the assistant.
+    if let Some(end)=line.find(" (system.presentation)") {
+        if let Some(start)=line[..end].find("-> ") {
+            return format!("{}-> Presentation{}",&line[..start],&line[end..]);
+        }
+    }
     match line.find("joining \"") {
         Some(start) => {
             let rest = &line[start + 9..];
@@ -136,7 +146,10 @@ fn system_checks(ports: &[knoend_flash::Port]) -> Value {
 }
 
 pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
-    let status = serde_json::to_value(shared.status.read().await.clone()).unwrap_or_default();
+    let mut status = serde_json::to_value(shared.status.read().await.clone()).unwrap_or_default();
+    if status["layout"]["id"].as_str().is_some_and(|id|id.starts_with("system.presentation")) {
+        status["layout"]["name"]=json!("Presentation");
+    }
     let ports = tokio::task::spawn_blocking(knoend_flash::list_ports).await.unwrap_or_default();
     let agent = crate::agent_config().ok();
     json!({
@@ -146,6 +159,7 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
         "service_status": status,
         "usb_serial_ports": ports,
         "system_checks": system_checks(&ports),
+        "windows_pager": crate::pager::diagnostics(),
         "recent_log": shared.recent().iter().map(|l| redact(l)).collect::<Vec<_>>(),
         "firmware_source": shared.firmware_source,
         // The last board identified by USB: known or not, and the evidence (chip, flash, the
@@ -155,7 +169,7 @@ pub async fn snapshot(shared: &Shared, ui_context: Value) -> Value {
         "ai_provider": agent.map(|a| a.describe()),
         "ai_tools_on_this_computer": knoend_agents::cli_tool::tools_on_this_computer().await,
         // What the person can change (a fix may set any of them) and what the assistant may check.
-        "settings": crate::settings::all(shared).await,
+        "settings": crate::settings::for_assistant(shared).await,
         // Every paired board's own look (the settings above show one board's: see its "board").
         "board_looks": crate::display::load().boards,
         // Keys the assistant can have redrafted (a fix's "redraft"): labels in grid order.
@@ -185,5 +199,8 @@ mod tests {
         assert_eq!(redact("Wi-Fi settings stored on the board; joining \"Home 5G\" now"),
                    "Wi-Fi settings stored on the board; joining \"<network>\" now");
         assert_eq!(redact("Key 1 on builtin.vscode"), "Key 1 on builtin.vscode");
+        assert_eq!(redact(r"Libraries loaded from C:\Users\Example\recipes"),"[local user path omitted from diagnostic log]");
+        assert_eq!(redact("  -> Example.pptx (system.presentation) [Slide 2] keys: 1=Prev"),
+                   "  -> Presentation (system.presentation) [Slide 2] keys: 1=Prev");
     }
 }

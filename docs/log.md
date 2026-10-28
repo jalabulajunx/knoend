@@ -2039,8 +2039,8 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
     - Fixed legacy migration in `display.rs` so an empty `boards: {}` object is preserved on page refresh and does not re-resurrect forgotten boards.
     - Added retry with backoff in `SerialLink::open` and `knoend_flash::connect` (6 attempts over ~1.2s) to prevent Windows `ERROR_ACCESS_DENIED` race condition during USB preemption on CH340 boards.
     - Updated `Shared::status` synchronously in `remove_board` to eliminate stale UI state during web app polling.
-- Tested (Windows 11, live CH340 board 80b54edbcdb8 on Wi-Fi/COM5):
-  - Extracted notes from 7-slide test presentation (`Copy of MindStudio Bootcamp.pptx`) in pure Rust; all slide notes, titles, and slide counts verified.
+- Tested (Windows 11, live CH340 board [device ID omitted] on Wi-Fi/COM5):
+  - Extracted notes from 7-slide test presentation (`a private test deck (filename omitted)`) in pure Rust; all slide notes, titles, and slide counts verified.
   - All 135+ unit tests passing across `knoend`, `knoend_agents`, `knoend_core`, `knoend_desktop`, `knoend_flash`, `knoend_focus`, `knoend_input`, `knoend_media`, and `knoend_transport`.
   - Service runs live with board connected over Wi-Fi (`knoend serve` on 127.0.0.1:7342).
 - Decided:
@@ -2063,10 +2063,10 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
     - Added `next_note_page()` and `prev_note_page()` to cycle note pages in memory.
     - In `system.presentation`, when a slide's notes exceed one page, Key 8 displays page status (e.g. `1/3`) with the `description` icon, and the status bar displays `Slide X of Y (p. A/B)`.
     - Tapping Key 8 or swiping left/right (`Event::Page`) turns note pages smoothly without changing slides.
-- Tested (Windows 11, live CH340 board 80b54edbcdb8 over Wi-Fi):
+- Tested (Windows 11, live CH340 board [device ID omitted] over Wi-Fi):
   - Unit tests: `test_paginate_notes`, `test_is_presenting`, `extract_name_from_titles`, and `load_mindstudio_notes` passing.
   - All 136 tests passing across all companion crates (`cargo test`).
-  - Running live service (`knoend serve`) connected to board `80b54edbcdb8` over Wi-Fi.
+  - Running live service (`knoend serve`) connected to board `[device ID omitted]` over Wi-Fi.
 - Decided:
   - Presentation mode is strictly separate from edit mode: edit mode shows standard editing controls, presentation mode shows speaker notes and slide navigation.
   - Long notes are paginated cleanly on word boundaries ($\le 220$ characters) rather than truncated, accessible via key tap or swipe.
@@ -2081,10 +2081,10 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
     - Previously, `get_notes` returned `None` when `load_presentation` failed, preventing presentation mode from activating on unsaved decks.
     - Updated `get_notes` to initialize an in-memory `ActivePresentation` with `total_slides: 0` when presenting an unsaved deck, displaying `"No notes for this slide"` in the detail panel and presentation navigation keys (Prev, Next, First, End, Black, White).
     - Updated slide advance (`next_slide()`) and status text (`Slide 1`, `Slide 2`, etc.) to smoothly advance and count slides even when `total_slides` is unconstrained by disk metadata.
-- Tested (Windows 11, live CH340 board 80b54edbcdb8 over Wi-Fi):
+- Tested (Windows 11, live CH340 board [device ID omitted] over Wi-Fi):
   - Added unit test `test_unsaved_presentation_mode` in `powerpoint.rs` verifying presentation mode activation, empty notes fallback, and slide advance on unsaved decks.
   - All unit tests passing.
-  - Live service restarted and connected to board `80b54edbcdb8`.
+  - Live service restarted and connected to board `[device ID omitted]`.
 - Decided:
   - Presentation controls should always be available whenever a presentation is running, regardless of whether the file has been saved to disk or has speaker notes.
   - Never guess or fallback to recent/downloaded presentations when presenting an unsaved deck or template: presentation notes must only be loaded if the active window title explicitly matches the presentation file.
@@ -2102,7 +2102,7 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   - Spec validation: all 28 valid and 19 invalid examples passing with 0 errors.
 - Tested:
   - All 137 unit and integration tests passing on Windows 11.
-  - Tested on physical CH340 board `80b54edbcdb8` over Wi-Fi and USB serial.
+  - Tested on physical CH340 board `[device ID omitted]` over Wi-Fi and USB serial.
 - Decided:
   - Release v0.2.2 cut and tagged.
 - Open:
@@ -2324,3 +2324,114 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
   assets; manifest version 0.2.3; bootloader, partition table, app image and the five board
   definitions each match their SHA-256; the Linux binary reports `knoend 0.2.3`.
 - Not done: installing a board from v0.2.3 end to end, running the macOS and Windows builds.
+
+## 2026-10-27 - Sundar (Codex) - Windows desktop keys and pager interruptions
+
+- Changed:
+  - Added two-page Windows desktop recipes for ChatGPT/Codex and Microsoft Teams, with confirmed second taps for leaving, answering and declining calls.
+  - Added a bounded transient pager queue, authenticated loopback notification/test routes, a Windows visible-toast/incoming-call accessibility worker, and interruption layouts with Open app, Dismiss, text paging and Start Steno for Teams.
+  - Start Steno invokes one existing local VBS shortcut from local configuration. Recipes cannot supply executable paths or command lines. Opening the shortcut does not start a recording automatically.
+  - Added dashboard settings/test controls, assistant actions, the windows_pager diagnostic check, source/runtime launcher separation and docs/windows-pager.md.
+  - Architecture: docs/decisions/2026-10-27-windows-pager.md. No board protocol, firmware or spec changes.
+- Tested (Windows, ONX2432G028 v0.2.3 over USB):
+  - 145 executable Rust tests passed; five existing tests ignored. Test executables were stripped of debug information before running; Cargo's initial workspace test invocation did not complete its executable launch. Source compiled with the GNU Windows toolchain, with all dependencies/build products outside the source tree.
+  - Spec validator: 28 valid and 19 invalid examples, all board definitions and recipes; zero problems. Web JavaScript syntax check and PowerShell notification-classifier self-test passed.
+  - Live companion: both pages of both recipes sent in edit preview; Teams automatically selected its recipe when focused. Synthetic call and long-message interruptions sent; matching clear event restored Teams keys. No board layout rejection reported. These are transport/state checks, not physical key-press validation.
+  - Loopback API refused an unauthenticated pager read (401) and an unsupported notification source (400).
+  - The first worker launch through multiline PowerShell stdin exited before readiness. Fixed by materialising the embedded worker in the local runtime and launching it with -File. Rebuilt, restarted, and verified watcher_ready=true with no capture error reported. The final launch fix was checked live after the executable test run.
+  - The setup assistant used the new windows_pager check while explaining the initial worker fault. Recorder launcher existence checked; no recording or real call started by testing.
+- Decided:
+  - Capture only visible toasts and identifiable incoming-call windows; suppressed notifications are an explicit coverage gap. Notification bodies stay in memory and on paired boards, outside logs and the assistant snapshot.
+  - Personal recorder paths and pairing/configuration stay outside the public repository. Changes remain on the task branch; no release or remote publication.
+- Open:
+  - Physical button presses, the recorder interface opening from a device tap, real Teams message/call capture, and wireless-away-from-computer operation require live validation. No physical tested entries were added to the new recipes.
+
+## 2026-10-27 - Sundar (Codex) - Teams message-capture correction and scan liveness
+
+- Reported: a Teams desktop message banner appeared without an interruption on the ONX. A synthetic pager test had not established Teams-produced notification capture.
+- Changed:
+  - Exclude normal Teams chat/meeting windows before UI Automation traversal; permit separately identified Teams-owned message popups rather than requiring every Teams-owned window to be an incoming call.
+  - Read app attribution from popup roots and non-Text controls; support additional Windows toast hosts. Explicit attribution to another app takes precedence over mentions of Teams in the body.
+  - Exclude notification history, Explorer folders, shell windows and ordinary small chat windows from notification capture. Added structural classification regressions; these are synthetic fixtures, not a captured live Teams banner.
+  - Add completed-scan heartbeat/counters without notification content. Readiness requires a completed scan in the last 15 seconds, and a scan stalled for 45 seconds is restarted. Dashboard capture health refreshes without overwriting fields being edited.
+- Tested:
+  - Windows companion executable tests: 63 passed, one existing test ignored. PowerShell classifier regressions and one-pass capture completed without errors; JavaScript syntax check passed. Final companion build succeeded.
+  - First corrected live build: completed-scan counter advanced from 75 to 278 with zero capture errors and sub-second last-scan ages; board remained connected. Final packaging also includes the tighter exclusions for ordinary windows.
+  - A bounded, content-free popup structure probe did not catch a Teams banner during its observation window. No messages were sent and no real calls or recordings started as tests.
+- Decided: worker start/readiness, a passing fixture and a synthetic pager alert must never be reported as proof of real Teams notification capture. Teams' own Test notification is the producer-side check when an incoming message cannot be arranged.
+- Open: confirm a Teams-produced Test notification or real message is relayed to the ONX; incoming-call detection and the recorder device tap also remain unverified.
+
+## 2026-10-27 - Sundar (Codex) - Capture unnamed native Teams banners
+
+- Observed: a bounded, content-free Windows event trace captured a TeamsWebView tool window appearing twice for approximately five seconds. It measured 372 by 136 pixels and had TOPMOST plus TOOLWINDOW extended flags, without a notification/test caption. The user did not notice a desktop banner during this attempt.
+- Changed: enumerate visible native windows before UI Automation, recognize that observed Teams popup structure without requiring a caption, and emit a generic Teams interruption before reading optional accessibility text. Repeated visible scans share an ID; a later visibility generation gets a new ID. Normal Teams windows remain excluded.
+- Tested on Windows: classifier self-tests and one-pass capture passed. An observed-shape regression fixture with a deliberately failing accessibility provider emitted two alerts for two visibility generations, deduplicated repeated scans, and retained the generic alert despite provider errors. Final offline companion build succeeded.
+- Deployed: rebuilt local companion restarted successfully; extracted worker SHA256 matches source. Live completed scans reported zero errors and the ONX2432G028 v0.2.3 reconnected over Bluetooth. No board firmware changed; no recordings or calls started.
+- Open: Teams-produced notification delivery on the physical device is awaiting another live test. The native-shape fixture and healthy worker do not establish this result. Incoming-call classification and the recorder device tap also remain unverified.
+
+- Live validation follow-up: after deployment, the user clicked Teams Settings Test notification and explicitly confirmed 'KnoEnd interrupted'. This verifies Teams-generated test-notification capture through to the physical ONX. Real chat messages, incoming calls, and the recorder tap remain separate unverified scenarios.
+
+## 2026-10-27 - Sundar (Codex) - PowerPoint show context and laser controls
+
+- Reported: starting a show left editing keys on the ONX, and Laser/Pen offered no way to move the pointer.
+- Changed: PowerPoint launch shortcuts use companion events even with a Bluetooth HID host; successful firmware HID taps otherwise do not report back. Windows focus detection checks other windows of the same PowerPoint process for a show, including a screenClass window with a caption that lacks the usual show marker. Actual show-window state replaces the manual latch on Windows, and returning to editing clears the presentation panel.
+- Added: a 3x3 show screen with Previous/Next, Black/White, First, Notes, End show, Laser and Arrow. Laser centres the pointer on the show monitor and opens eight direction buttons (40 coordinate units per tap); Controls restores the arrow and returns. Pointer actions require foreground PowerPoint and stay within the visible show window. Keyboard show controls first target that show window to support Presenter View. Notes retains paginated speaker notes and explicitly estimated navigation state.
+- Exposed: powerpoint_context read-only setup-assistant check, content-free panel/keys in board state, input failure reporting, and docs/windows-powerpoint.md plus setup knowledge. The editing recipe now uses Save As in place of the show-only Laser/Pen shortcut.
+- Tested on Windows: final offline build passed; 64 companion executable tests passed, one existing test ignored; four focus executable tests passed. Coverage includes eight-direction mapping, show/editor classification and clearing the laser panel when a show ends. Schema validator checked 28 valid and 19 invalid examples, boards and recipes with zero problems. All dependencies/builds/test output remain outside the source tree.
+- Limits: direction buttons use existing firmware; no drag touchpad, hold-to-repeat or motion sensor added. Speaker-note slide position is still an estimate from device navigation. Physical show switching, navigation and pointer movement await user validation after deploying the local companion. No firmware, protocol/spec or remote publication change.
+
+- Live validation correction: the first deployed presentation change still left editing keys on the device, although the user confirmed the show started. A bounded native trace then captured both screenClass and PodiumParent show windows. The companion's second app/PID focus filter was discarding the native watcher's same-app title transition. Preserve PowerPoint's edit/show discriminator in that filter and add a service-level regression for both transitions; native classification tests alone missed this integration bug. Shortcut injection failures are now reported instead of silently announcing success. Physical operation remains unverified pending deployment and retest of this correction.
+
+- Corrected-filter build passed all 65 companion executable tests (one existing ignored), including same-app editor/show transitions; the four Windows focus tests remain passed. Rebuilt companion deployed with matching staged/active hashes and ONX Bluetooth reconnection. Awaiting final physical retest.
+
+- Final-build runtime follow-up: during the user's Bluetooth test, the live companion log shows system.presentation controls, the laser direction pad, returning to controls, slide navigation and the notes panel. No presentation-input/pointer fault was reported. Visual laser movement and physical-screen behaviour still await the user's explicit confirmation.
+
+## 2026-10-27 - Sundar (Codex) - Drag touchpad and live PowerPoint notes
+
+- User confirmed presentation switching and direction-button laser movement over Bluetooth, then requested finger dragging and reported no displayed notes.
+- Added a capability-gated relative touch surface, knoend.pointer protocol/schema, sequence deduplication and bounded input handling. The UI keeps bottom-row Previous/Controls/Next, never clicks from touchpad taps, and falls back to direction buttons on older firmware. Record: docs/decisions/2026-10-27-touchpad-live-powerpoint.md; protocol changes are a local prototype pending joint review before publication.
+- Changed Windows notes to a read-only PowerPoint running-object worker: actual show slide, live notes body and 220-byte pagination. Fixed bracketed filename parsing for legacy file-based resolution. An unavailable reader is explicitly different from empty notes. The worker restarts if stalled; diagnostics contain freshness, slide count, note presence and board capability, not note text. No presentation was opened, edited or saved by this implementation.
+- Tested so far on Windows: final companion build, 68 companion executable tests (one existing ignored), 23 core tests and four Windows focus tests passed. Schema validation: 29 valid and 20 invalid examples, boards and recipes; zero problems. A read-only extraction fixture attached to the user's existing PowerPoint and read nonempty notes from an explicitly selected slide without printing their content; this is not on-device validation.
+- Hardware preparation: official ESP-IDF v5.4.4 tools installed outside OneDrive; a long-path extraction failure was resolved with a shorter local SDK-tools root. Firmware is building from a disposable local source copy. USB CH340 backup reads at two higher speeds returned incomplete blocks; a 115200 retry stalled opening the port and was cancelled. No firmware has been written. A direct USB reconnection was requested before another backup attempt.
+- Open: two matching backup reads and partition verification, firmware build/install, physical drag and notes validation. Changes remain local and unpushed.
+
+- Hardware/notes follow-up: failed read attempts left the ESP32 in its loader and the screen dark. A normal RTS reset (no flash operation) produced SPI_FAST_FLASH_BOOT, the existing v0.2.3 app, correct board/display/touch initialization and READY; the companion reconnected. The user then confirmed Notes text appears on the device. Future backup attempts use reset cleanup and an explicit display-interruption notice.
+- USB transfer follow-up: two 64 KB probes passed with matching SHA256 at 115200 and one acknowledged READ_FLASH block in flight. Full partitioned-region backup reads are underway before any write.
+- Firmware build follow-up: Windows Xtensa GCC reproducibly crashed in the unmodified SDK RGB display source during IRA. A source-specific Windows -O0 workaround bypassed the upstream-reported compiler bug; the ONX uses the SPI display path. Firmware 0.2.3-touchpad1 built successfully, fits the existing 3 MB application partition, and its build-source copy matches the durable source. Packaged image and hash manifest are in the established artifact folder. No new firmware has yet been written. Upstream compiler report: https://github.com/espressif/esp-idf/issues/12180.
+
+- Backup diagnostic correction: a quiet 115200 read was initially called a stalled port-open because redirected output had not flushed. Process I/O counters later demonstrated active incoming serial data. Monitor real data/progress, not silence in a buffered log; the helper now emits bounded content-free progress. The earlier cancelled attempt was read-only, and the board was restored to the unchanged firmware by a normal reset.
+
+- Completed hardware verification: two complete 4 MB partitioned-region reads had matching SHA256 digests (private recovery evidence retained locally). The actual partition table matched the expected map and a rollback app was extracted. Wrote only the new application at 0x10000; device MD5 checks passed for the image plus protected 0x0..0x10000 and 0x310000..0x400000 regions before normal boot. The new app reported 0.2.3-touchpad1, correct ONX definition and features.touchpad=true, while retaining display settings.
+- User confirmations: Notes text appears; finger dragging works on the new surface; after removing PC USB data and keeping the board powered, dragging also works over Bluetooth. This establishes the requested physical workflow. Incoming Teams calls/recorder tap validation from the earlier pager task remain separate.
+- Final companion input guards also ignore stationary pointer reports and out-of-range sequences; all 68 companion executable tests passed, with one existing ignored. Core/focus checks remain 23 and four passed. The live Notes reader drops child COM references between polls so it does not retain closed PowerPoint documents. No further board flash was made for companion cleanup. Source changes remain local and unpushed; final images, manifests and private recovery files are in the established artifact folder.
+
+- Closeout: final companion build with Notes-reader resource cleanup restarted and reconnected over Bluetooth to 0.2.3-touchpad1. Pager capture remained healthy. The setup assistant ran powerpoint_context and correctly distinguished no active show from empty notes, reported a fresh/available live reader and touchpad-capable board, and explained drag/notes operation without changing settings or moving the pointer. Verified artifacts remain in the established delivery folder; regenerable SDK, build, cache and test files remain in local runtime/task-temp paths.
+
+## 2026-10-27 — Sundar + Codex — Native Windows workers and editable presenter recipes
+
+- Request: remove the PowerShell integration/runtime scripts, retain PPTX notes extraction and move presentation controls into configurable recipes.
+- Replaced PowerPoint COM and notification UI Automation scripts with supervised native Rust children of the companion executable. Added a native local launcher; removed the three development PowerShell scripts and replaced the private startup script with a native shortcut. Kept the separately configured recorder VBS action intact. No board reset or firmware write in this session.
+- PowerPoint's recipe now defines modes, labels, slots, grids, mode transitions, entry shortcuts, app commands, pointer gain, notes source and capability fallback. The controller renders these modes and rejects stale layout events. Reload recipes validates the full catalog before replacing it; invalid input preserves the active catalog. Settings/actions/checks expose reload, notes source, exact file binding and content-free diagnostics to the dashboard and setup assistant.
+- Retained the native ZIP/XML notes extractor and reconnected it on Windows through exact-file selection or the running show's exact path. Live notes remain the default so unsaved edits work. Fixed saved slide order to use presentation relationships, notes mapping to use slide relationships, and XML text decoding. No recent-file guesses or unzip directory.
+- Architecture decision: [native adapters and recipe presentation modes](decisions/2026-10-27-native-recipe-presentations.md). Shared library schema changes remain local pending joint review before publication. Google Slides retains existing shortcuts and still needs a browser presentation adapter.
+- Windows validation: 71 CLI tests passed, one existing ignored; 23 core and four focus tests passed. Added tests cover reordered saved notes, XML entities, mode labels/slots, touchpad fallback, invalid recipe cycles/missing commands, and observed Teams banner attribution. Schema validation passed 29 valid/20 invalid examples plus boards/recipes, zero problems; JavaScript syntax passed.
+- Live native worker probes: attached to the existing PowerPoint application without opening a show; notification scan completed with zero errors. Replacement companion reconnected to the ONX2432G028 running unchanged 0.2.3-touchpad1 over Bluetooth, touchpad supported. Both worker children are the companion executable; no PowerShell worker children. Actual reload API loaded 38 recipes, rejected an invalid temporary file and then reloaded the same 38 after fixture cleanup.
+- Setup assistant ran powerpoint_context/windows_pager and explained native workers, recipe reload and exact-file notes settings from current evidence. It correctly distinguished healthy scans from real Teams delivery. Read-only verification changed no settings or pointer state.
+- Third-party dependency: roxmltree 0.20.0 (https://github.com/RazrFalcon/roxmltree), MIT OR Apache-2.0; used through Cargo, no vendor example code copied.
+- Open physical validation: user asked to check presenter keys/notes/dragging and a Teams-generated Test notification on the new native build. Prior touchpad firmware validation is recorded above; a native migration needs its own user confirmation. Real incoming calls and the physical recorder action remain separate checks. Changes remain local and unpushed.
+
+- Native migration physical closeout: the user confirmed both requested workflows work on the replacement build: PowerPoint controls, Notes and Laser dragging over Bluetooth, and Teams-generated Test notification interruption. Updated the durable native-recipe-validation.json. This completes the migration validation; actual incoming calls/recorder action remain outside this confirmation.
+
+## 2026-10-27 — Sundar + Codex — Public PR preparation and privacy boundaries
+
+- Updated AGENTS.md, branch-status handoff, setup knowledge and the publication checklist. The local CLAUDE.md wrapper is ignored; user-requested Codex continuity memory was written outside the repository.
+- Reviewed the complete proposed change set, including new recipes, native workers, touchpad firmware/protocol, fixtures and documentation. Generic Teams, ChatGPT/Codex and PowerPoint recipes are included. Local recorder/document bindings, credentials, pairings, notification captures and recovery images remain outside Git.
+- Per explicit user instruction, narrowly redacted device identifiers, a private document name and a private backup digest from historical entries; chronological implementation/validation evidence is preserved. Fixtures now use synthetic identifiers and document names. These redactions do not erase earlier published Git history. No real credential was found requiring revocation.
+- Hardened runtime privacy: local path settings remain editable in the authenticated local UI, while assistant snapshots/settings checks expose only configured/existing flags. Private setting confirmations/errors omit path values. Presenter logs use a generic name; assistant presentation metadata and older presenter/user-home log lines are redacted. Prompt guidance explains that a hidden null value must not be treated as unset.
+- Validation on Windows: 72 companion tests and 38 agent tests passed, with five existing ignored tests. Privacy regressions check hidden settings, safe setting labels and presenter/user-home log redaction. Schema validator: 29 valid/20 invalid examples, board definitions and recipes; zero problems. JavaScript syntax and diff-whitespace checks passed. Earlier core/focus and physical Bluetooth/Teams producer-side confirmations remain recorded above; privacy-only changes do not alter firmware or input handling.
+- Privacy audit: scanned all 300 candidate files, including 292 UTF-8 text files, plus manual review of changed/new files. No new or changed binary artifacts. One existing synthetic browser parser fixture contains a user/pw URL; reviewed as synthetic test data. No private Teams content/links, local user paths, real credentials or private keys were found in the proposed publication. Pattern/manual review is bounded and is not a guarantee against every possible secret.
+- PR preparation uses the personal repository only. The connected organisation identity has pull but no push permission; no personal Git account was saved initially. Personal Git authentication is required before pushing. Shared schema/protocol changes require both maintainers' review before merge; no release or merge is authorized by this preparation.
+
+- Final staging/live closeout: the full index contains 301 candidate files (293 UTF-8 text), with 45 changed files and no changed binaries. The only credential-shaped scan match is the reviewed pre-existing synthetic browser fixture; zero unresolved matches. The privacy build restarted and reconnected to the ONX over Bluetooth, with healthy native pager scans. The setup assistant ran settings, powerpoint_context and windows_pager: two private local-file fields, zero exposed path values, recorder correctly configured/existing, and no inferred overwrite of hidden values. No settings, apps, pointer state or alerts were changed by that check. No firmware operation was performed.
+
+- Publication authentication follow-up: verified the personal repository owner's authenticated GitHub identity and repository write permission. An old host-specific Git helper referenced a removed portable CLI; repository-local helper settings now select Git Credential Manager and the personal account, preserving other repositories and the organisation connector. The refreshed main branch is the parent of the prepared feature commit, and no existing open PR or remote task branch was found. This changes only local Git authentication metadata, not product configuration or credentials in source. Preparing a draft PR for both maintainers' protocol/schema review; no merge or release.

@@ -133,6 +133,23 @@ and say in the error which setting. A rebuild is only for our own bugs.
   When you do use third-party code, keep its licence header and note the source and licence in the log.
 - **This repository is public.** No secrets, Wi-Fi credentials, API keys, personal details, or private
   planning notes in commits, logs or comments.
+- **Before a PR:** review the complete staged diff and new files, not only the most recent edit.
+  Keep local configuration, recorder/document paths, notification captures, transcripts, flash
+  backups, pairing data, screenshots and diagnostic exports outside Git. Use synthetic identities
+  and content in tests. Public logs record behaviour and validation, never device identifiers,
+  private backup hashes, user-specific paths or Teams participants/message/call details. If privacy
+  redaction of an old log entry is explicitly requested, make only that redaction and append an
+  explanation; preserve its technical history.
+- **Local and public memory:** `docs/log.md`, `docs/knowledge/setup.md` and `docs/decisions/` contain
+  sanitized project continuity. Machine-specific setup and private recovery evidence stay in local
+  runtime/private artifacts. Codex memory is outside the repository and is updated only on explicit
+  user request. Keep the local `CLAUDE.md` wrapper untracked. Do not copy chat transcripts into Git.
+- **Windows presentation continuity:** read `docs/windows-powerpoint.md`, `docs/windows-pager.md`
+  and `docs/decisions/2026-10-27-native-recipe-presentations.md`. Presentation modes belong in
+  recipes; Windows COM/UIA adapters are native Rust workers, not PowerShell scripts. Local file
+  settings remain editable in the local web UI; AI diagnostics receive only configured/existing
+  status. Notification text stays in memory/on paired boards. Google Slides still needs a browser
+  adapter. A native-worker migration needs real producer-side notification and device validation.
 - **Branches:** one per task, `sundar/...` or `tom/...`. Changes under `spec/` need review by both people.
 - **AI tools are disclosed.** Name the agent in each log entry.
 

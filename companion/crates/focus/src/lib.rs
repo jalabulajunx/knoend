@@ -16,7 +16,12 @@ pub use macos::{bring_to_front, Watcher};
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
-pub use windows::{bring_to_front, process_exe, spawn_on_input_desktop, window_pid, Watcher};
+pub use windows::{bring_to_front, focus_powerpoint_show, powerpoint_pointer, process_exe, spawn_on_input_desktop, window_pid, Watcher};
+
+#[cfg(not(target_os = "windows"))]
+pub fn powerpoint_pointer(_dx: i32, _dy: i32, _center: bool) -> Result<(), String> {
+    Err("Presentation pointer movement is currently supported on Windows".into())
+}
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod unsupported;

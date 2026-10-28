@@ -11,7 +11,7 @@ use knoend_core::focus::{Focus, WebPage};
 use knoend_core::library::{Action, AgentReply, LibraryKey, MediaCommand};
 use knoend_agents::site::Scope;
 use knoend_media::NowPlaying;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use knoend_core::layout;
 use knoend_core::library::Library;
 use knoend_core::protocol::{Grid, LayoutBody, LayoutKey, Packet, Send};
@@ -55,6 +55,7 @@ pub struct BoardStatus {
     pub last_start: Option<String>,
     /// It has a microphone and can listen for notes (identity `features.mic`).
     pub mic: bool,
+    pub touchpad: bool,
     /// Its screen is taller than wide as it usually sits (turn 0): an AMOLED watch, not a
     /// landscape LCD. Names the turns for the person ("Portrait" is turn 0 there).
     pub native_portrait: bool,
@@ -144,6 +145,10 @@ pub struct Shared {
 }
 
 impl Shared {
+    pub async fn pager_notice(&self, notice: crate::pager::Notice) -> Result<(), String> {
+        self.inbox.get().ok_or("service is still starting")?.send(Event::Pager(notice)).await
+            .map_err(|_| "service stopped".into())
+    }
     pub fn new(firmware_source: String) -> Arc<Shared> {
         let (events, _) = broadcast::channel(256);
         Arc::new(Shared { status: RwLock::new(Status::default()), events, serial: Arc::new(tokio::sync::Mutex::new(())),
@@ -153,6 +158,10 @@ impl Shared {
                           media: knoend_media::Players::connect().ok().map(Arc::new),
                           inbox: std::sync::OnceLock::new(), edit: std::sync::Mutex::new(None),
                           viewers: std::sync::atomic::AtomicUsize::new(0) })
+    }
+
+    pub async fn reload_recipes(&self)->Result<usize,String>{
+        let (tx,rx)=tokio::sync::oneshot::channel();self.inbox.get().ok_or("Service not ready")?.send(Event::ReloadRecipes(tx)).await.map_err(|_|"Service stopped")?;rx.await.map_err(|_|"Service stopped".to_string())?
     }
 
     /// Acquires the USB serial lock for a setup job, asking any live USB board session to step aside first.
@@ -296,6 +305,9 @@ pub fn ai_libraries() -> PathBuf {
 }
 
 enum Event {
+    ReloadRecipes(tokio::sync::oneshot::Sender<Result<usize,String>>),
+    PowerPoint,
+    Pager(crate::pager::Notice),
     Focus(Option<Focus>),
     /// The browser's active tab (None: no browser window focused, or the extension went away).
     Tab(Option<WebPage>),
@@ -352,6 +364,11 @@ pub fn load_catalog() -> Catalog {
     catalog
 }
 
+fn reload_catalog(dirs:&[PathBuf])->Result<Catalog,String>{
+    let (mut catalog,rejected)=Catalog::load(dirs);let mut problems:Vec<String>=rejected.into_iter().map(|r|r.reason).collect();problems.extend(load_builtin(&mut catalog));
+    if !problems.is_empty(){return Err(format!("Recipes unchanged: {}",problems.join("; ")))}Ok(catalog)
+}
+
 pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     let _ = EXTRA_LIBRARIES.set(extra_libraries.clone());
     let dirs = library_dirs(extra_libraries);
@@ -389,6 +406,10 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     if let Some(media) = shared.media.clone() {
         spawn_media_watcher(media, events.clone());
     }
+    {
+        let events = events.clone();
+        crate::powerpoint::watch(move || events.blocking_send(Event::PowerPoint).is_ok());
+    }
     spawn_notification_watcher(events.clone());
     {
         let (agents_tx, mut agents_rx) = mpsc::channel(16);
@@ -409,6 +430,8 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
     let mut last_hook: Option<std::time::Instant> = None;
     let mut unexplained: Option<(knoend_desktop::Notification, std::time::Instant)> = None;
     let mut calling: Option<Calling> = None;
+    let pager_events = events.clone();
+    crate::pager::watch(move |n| pager_events.blocking_send(Event::Pager(n)).is_ok());
 
     // What the OS says is focused, and the browser's active tab; `effective` joins them.
     let mut focus: Option<Focus> = None;
@@ -439,6 +462,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     tab = shared.browser.focus_changed(&f.app, &f.instance);
                     focus = Some(f);
                 }
+                Ok(Some(Event::ReloadRecipes(answer)))=>{match reload_catalog(&dirs){Ok(next)=>{catalog=next;let _=answer.send(Ok(catalog.len()));},Err(e)=>{let _=answer.send(Err(e));}}}
                 Ok(Some(Event::Tab(t))) => tab = t,
                 Ok(Some(Event::Players(p))) => players = p,
                 Ok(Some(Event::Edit(command, answer))) => edit_while_away(command, answer, &shared),
@@ -497,6 +521,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         // ping every 10 s and treat 25 s without any packet from a board as its link lost.
         let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
         heartbeat.tick().await;
+        let mut pointer_sequences: HashMap<String, VecDeque<u64>> = HashMap::new();
         let mut second = tokio::time::interval(Duration::from_secs(1));
         if let Some(a) = approvals.front() {
             show_approval(&mut sender, a, &catalog, &mut shown, &shared).await;
@@ -507,6 +532,16 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
             let event = if let Some(id) = sender.failed.pop() { Event::LinkDown(Some(id), "could not send to the board".into()) } else { tokio::select! {
                 event = inbox.recv() => match event { Some(e) => e, None => return },
                 _ = second.tick() => {
+                    if crate::pager::expire() && approvals.is_empty() {
+                        shown = None;
+                        match effective(&focus, &tab) {
+                            Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await,
+                        }
+                    }
+                    if crate::presentation::current().is_some() && approvals.is_empty() && !shared.editing() {
+                        if let Some(f)=effective(&focus,&tab){show(&mut sender,&catalog,&f,&players,&mut shown,&mut shown_actions,&mut paging,calling.as_ref(),&shared).await;}
+                    }
                     // A Claude notification with no hook event near it: offer "Go to Claude".
                     let decided = unexplained.as_ref().is_some_and(|(_, at)| at.elapsed() >= HOOK_GRACE);
                     let expired = calling.as_ref().is_some_and(|c| c.since.elapsed() >= CALLING_FOR);
@@ -574,7 +609,50 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 }
                 event => event,
             };
+            let pager_tap = match &event {
+                Event::Board(p, _) if p.kind == "knoend.key" && p.body["layout"].as_str().is_some_and(|id| id.starts_with(crate::pager::LAYOUT)) =>
+                    Some((p.body["layout"].as_str().unwrap().to_string(), p.body["key"].as_u64().unwrap_or(0))),
+                _ => None,
+            };
+            if let Some((id, slot)) = pager_tap {
+                if !approvals.is_empty() || !shown.as_deref().is_some_and(|s| s.starts_with("pager:")) {
+                    continue;
+                }
+                crate::pager::tap(&id, slot);
+                shown = None;
+                match effective(&focus, &tab) {
+                    Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                    None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await,
+                }
+                continue;
+            }
             match event {
+                Event::ReloadRecipes(answer)=>{
+                    if shared.editing(){let _=answer.send(Err("Finish or stop editing before reloading recipes".into()));continue}
+                    match reload_catalog(&dirs){Ok(next)=>{catalog=next;crate::presentation::reset();shown=None;let count=catalog.len();shared.update(|s|s.libraries=count).await;
+                        if approvals.is_empty(){if let Some(f)=effective(&focus,&tab){show(&mut sender,&catalog,&f,&players,&mut shown,&mut shown_actions,&mut paging,calling.as_ref(),&shared).await;}}
+                        say!("Recipes reloaded: {count} libraries");let _=answer.send(Ok(count));},Err(e)=>{let _=answer.send(Err(e));}}
+                }
+                Event::PowerPoint => {
+                    if approvals.is_empty() && !shared.editing() {
+                        if let Some(f) = effective(&focus,&tab).filter(|f| f.app.to_ascii_lowercase().contains("powerpnt")) {
+                            show(&mut sender,&catalog,&f,&players,&mut shown,&mut shown_actions,&mut paging,calling.as_ref(),&shared).await;
+                        }
+                    }
+                }
+                Event::Pager(n) => {
+                    let app = n.app.clone();
+                    let kind = n.kind.clone();
+                    crate::pager::receive(n);
+                    say!("Pager: {app} {kind} received");
+                    if approvals.is_empty() {
+                        shown = None;
+                        match effective(&focus, &tab) {
+                            Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await,
+                        }
+                    }
+                }
                 Event::Focus(Some(f)) => {
                     // The same app with another program in its terminal tab is not a new visit.
                     let same_app = focus.as_ref().is_some_and(|old| old.app == f.app && old.instance == f.instance);
@@ -841,50 +919,19 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         show_approval(&mut sender, front, &catalog, &mut shown, &shared).await;
                     }
                 }
-                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] == PRESENTATION => {
-                    let key = packet.body["key"].as_u64().unwrap_or(0);
-                    let bottom_start = (paging.grid.cols * (paging.grid.rows - 1)) as u64;
-                    let typist = shared.typist.clone();
-                    let tap = |usage: u8| {
-                        let typist = typist.clone();
-                        tokio::task::spawn_blocking(move || {
-                            let mut slot = typist.lock().map_err(|_| "typist lock".to_string())?;
-                            if slot.is_none() {
-                                *slot = Some(knoend_input::Typist::connect()?);
-                            }
-                            slot.as_ref().expect("connected").tap(0, usage)
-                        })
-                    };
-                    if key == 1 {
-                        let _ = tap(0x50).await; // Left arrow (Prev)
-                        crate::powerpoint::prev_slide();
-                    } else if key == 2 {
-                        let _ = tap(0x29).await; // Escape (End)
-                        crate::powerpoint::set_presenting(false);
-                    } else if key == 3 {
-                        let _ = tap(0x4f).await; // Right arrow (Next)
-                        crate::powerpoint::next_slide();
-                    } else if key == bottom_start + 1 {
-                        let _ = tap(0x4a).await; // Home (First)
-                        crate::powerpoint::first_slide();
-                    } else if key == bottom_start + 2 {
-                        let has_multiple_pages = crate::powerpoint::current_slide_notes().map_or(false, |sn| sn.total_note_pages > 1);
-                        if has_multiple_pages {
-                            crate::powerpoint::next_note_page();
-                        } else {
-                            let _ = tap(0x05).await; // B (Black screen)
-                        }
-                    } else if key == bottom_start + 3 {
-                        let _ = tap(0x1a).await; // W (White screen)
-                    }
-                    if let Some(sn) = crate::powerpoint::current_slide_notes().filter(|sn| sn.is_presenting) {
-                        show_presentation(&mut sender, &sn, paging.grid, &mut shown, &shared).await;
-                    } else {
-                        shown = None;
-                        if let Some(f) = effective(&focus, &tab) {
-                            show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
-                        }
-                    }
+                Event::Board(packet, from) if packet.kind == "knoend.pointer" => {
+                    let Some(rendered)=crate::presentation::current() else{continue};
+                    if packet.body["layout"]!=rendered.layout || !rendered.touchpad || !shown.as_deref().is_some_and(|s|s.starts_with(PRESENTATION_SIGNATURE)) || !approvals.is_empty() || shared.editing(){continue}
+                    let Some((dx,dy,seq))=pointer_report(&packet.body) else{continue};let recent=pointer_sequences.entry(from).or_default();if recent.contains(&seq){continue}recent.push_back(seq);if recent.len()>32{recent.pop_front();}
+                    let (dx,dy)=((dx as f64*rendered.gain).round() as i32,(dy as f64*rendered.gain).round() as i32);
+                    let result=tokio::task::spawn_blocking(move||knoend_focus::powerpoint_pointer(dx,dy,false)).await;
+                    if let Err(e)=result.unwrap_or_else(|e|Err(e.to_string())){problem!("presenter-pointer","{e}");}
+                }
+                Event::Board(packet, _) if packet.kind=="knoend.key" && packet.body["layout"].as_str().is_some_and(|s|s.starts_with(PRESENTATION)) => {
+                    if !shown.as_deref().is_some_and(|s|s.starts_with(PRESENTATION_SIGNATURE)) || !effective(&focus,&tab).is_some_and(|f|f.app.to_ascii_lowercase().contains("powerpnt")){continue}
+                    let Some(action)=crate::presentation::action(packet.body["layout"].as_str().unwrap_or(""),packet.body["key"].as_u64().unwrap_or(0) as u8) else{continue};
+                    if let Err(e)=presentation_action(&shared,action).await{problem!("presenter-action","{e}");}
+                    if let Some(f)=effective(&focus,&tab){show(&mut sender,&catalog,&f,&players,&mut shown,&mut shown_actions,&mut paging,calling.as_ref(),&shared).await;}
                 }
                 Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] == APPROVE => {
                     let key = packet.body["key"].as_u64().unwrap_or(0);
@@ -1206,6 +1253,26 @@ async fn configured_away(target: &Focus, result: Result<(PathBuf, Library), Stri
     }
 }
 
+/// Reject malformed, stale-sized and non-integral pointer reports before any input.
+fn pointer_report(body: &Value) -> Option<(i32,i32,u64)> {
+    let dx = body["dx"].as_i64()?; let dy = body["dy"].as_i64()?;
+    if !(-127..=127).contains(&dx) || !(-127..=127).contains(&dy) || (dx == 0 && dy == 0) { return None; }
+    let seq = body["seq"].as_u64().filter(|s| *s <= u64::from(u32::MAX))?;
+    Some((dx as i32,dy as i32,seq))
+}
+
+/// Most title updates are cosmetic, but PowerPoint's edit/show transition changes
+/// the actions even though app and PID stay the same. Do not discard that state.
+fn same_focus_context(a: &Option<Focus>, b: &Option<Focus>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => a.app == b.app && a.instance == b.instance && a.pid == b.pid && a.terminal == b.terminal
+            && (!a.app.to_ascii_lowercase().contains("powerpnt")
+                || crate::powerpoint::is_presenting(&a.title) == crate::powerpoint::is_presenting(&b.title)),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
 fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
     #[cfg(target_os = "linux")]
     if let Some(note) = crate::diagnostics::desktop_session()["note"].as_str().filter(|n| !n.is_empty()) {
@@ -1220,12 +1287,6 @@ fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
                 return;
             }
         };
-        // What decides the keys: a window title changing (a progress counter, tmux) is not a change.
-        let same = |a: &Option<Focus>, b: &Option<Focus>| match (a, b) {
-            (Some(a), Some(b)) => a.app == b.app && a.instance == b.instance && a.pid == b.pid && a.terminal == b.terminal,
-            (None, None) => true,
-            _ => false,
-        };
         let mut last = with_terminal(watcher.current());
         let _ = events.blocking_send(Event::Focus(last.clone()));
         loop {
@@ -1237,7 +1298,7 @@ fn spawn_focus_watcher(events: mpsc::Sender<Event>, shared: Arc<Shared>) {
             } else {
                 with_terminal(watcher.wait_for_change(last.as_ref()))
             };
-            if same(&now, &last) {
+            if same_focus_context(&now, &last) {
                 continue;
             }
             last = now;
@@ -1316,7 +1377,7 @@ impl BoardSender {
         self.themes.insert(id.to_string(), crate::display::Theme::named(name));
     }
 
-    async fn send(&mut self, kind: &str, body: Value) -> Result<u32, String> {
+    pub(crate) async fn send(&mut self, kind: &str, body: Value) -> Result<u32, String> {
         let mut sent = None;
         let mut error = String::from("no board is connected");
         for (id, link) in self.links.iter_mut() {
@@ -1534,6 +1595,7 @@ fn board_status(id: &str, identity: &Value, address: String) -> BoardStatus {
         fonts: identity["board"].get("fonts").cloned(),
         last_start: identity["lastStart"].as_str().map(str::to_string),
         mic: identity["features"]["mic"] == true,
+        touchpad: identity["features"]["touchpad"] == true,
         native_portrait: native_portrait(identity),
     }
 }
@@ -1657,12 +1719,17 @@ async fn show(sender: &mut BoardSender, catalog: &Catalog, focus: &Focus, player
     if shown.as_deref().is_some_and(|s| s.starts_with(APPROVE_SIGNATURE)) {
         return; // a permission request is on the board; it stays until answered
     }
+    if !shared.editing() && crate::pager::show(sender, shown, shared).await { return; }
     let is_ppt = focus.app.to_ascii_lowercase().contains("powerpnt") || focus.instance.to_ascii_lowercase().contains("powerpnt");
-    if is_ppt {
-        if let Some(sn) = crate::powerpoint::get_notes(focus) {
-            shown_actions.clear();
-            show_presentation(sender, &sn, paging.grid, shown, shared).await;
-            return;
+    if !shared.editing() {
+        if let Some(library)=catalog.layout_for(focus).filter(|l|l.presentation.is_some()) {
+            let spec=library.presentation.as_ref().unwrap();
+            if spec.provider=="powerpoint" {
+                if let Some(sn)=crate::powerpoint::get_notes_with_source(focus,&spec.notes_source) {
+                    crate::presentation::configure(library);shown_actions.clear();paging.grid=paging.board;
+                    show_presentation(sender,&sn,paging.grid,shown,shared).await;return;
+                }
+            }
         }
     }
     if shown.as_deref().is_some_and(|s| s.starts_with(PRESENTATION_SIGNATURE)) {
@@ -1694,6 +1761,11 @@ async fn show(sender: &mut BoardSender, catalog: &Catalog, focus: &Focus, player
                 for &(i, slot) in &placed {
                     let key = &library.keys[i];
                     actions.insert(slot, KeyRef { label: key.label.clone(), action: key.action.clone() });
+                    // Launch through the companion even with Bluetooth HID connected:
+                    // successful board HID taps otherwise never report back to this process.
+                    if is_ppt && matches!(&key.action, Action::Shortcut { keys } if keys == "F5" || keys == "Shift+F5") {
+                        if let Some(k) = body.keys.iter_mut().find(|k| k.key == slot) { k.send = Send::Event(true); }
+                    }
                 }
                 if let Some(player) = player {
                     for &(i, slot) in &placed {
@@ -1858,6 +1930,7 @@ async fn show_launcher(sender: &mut BoardSender, usage: &crate::launcher::Usage,
                        targets: &mut HashMap<u8, crate::launcher::Target>, paging: &mut Paging, shown: &mut Option<String>,
                        calling: Option<&Calling>, shared: &Shared) {
     targets.clear();
+    if !shared.editing() && crate::pager::show(sender, shown, shared).await { return; }
     if show_edit(sender, paging, shown, shared).await {
         return;
     }
@@ -2515,6 +2588,35 @@ async fn show_approval(sender: &mut BoardSender, approval: &Approval, catalog: &
     }
 }
 
+async fn presentation_tap(shared:&Shared,modifiers:u8,usage:u8)->Result<(),String>{
+ let typist=shared.typist.clone();tokio::task::spawn_blocking(move||{
+  #[cfg(windows)] knoend_focus::focus_powerpoint_show()?;
+  let mut slot=typist.lock().map_err(|_|"typist lock".to_string())?;if slot.is_none(){*slot=Some(knoend_input::Typist::connect()?);}
+  slot.as_ref().unwrap().tap(modifiers,usage)
+ }).await.unwrap_or_else(|e|Err(e.to_string()))
+}
+async fn presentation_shortcut(shared:&Shared,keys:&str)->Result<(),String>{let chord=knoend_core::keys::parse_shortcut(keys,knoend_core::focus::Os::current()).map_err(|e|e.to_string())?;presentation_tap(shared,chord.modifiers,chord.usage).await}
+async fn presentation_action(shared:&Shared,action:Action)->Result<(),String>{
+ use knoend_core::library::PresentationAction as P;
+ match action {
+  Action::Shortcut{keys}=>presentation_shortcut(shared,&keys).await,
+  Action::Sequence{keys}=>{for keys in keys{presentation_shortcut(shared,&keys).await?;}Ok(())},
+  Action::Presentation{action}=>{
+   match action {
+    P::Mode{mode}=>{let target=crate::presentation::target(&mode).ok_or("Unknown recipe mode")?;for keys in &target.enter{presentation_shortcut(shared,keys).await?;}
+     if target.center_pointer{tokio::task::spawn_blocking(||knoend_focus::powerpoint_pointer(0,0,true)).await.map_err(|e|e.to_string())??;}
+     crate::presentation::set_mode(&mode)?;return Ok(())},
+    P::Move{dx,dy}=>{return tokio::task::spawn_blocking(move||knoend_focus::powerpoint_pointer(dx,dy,false)).await.map_err(|e|e.to_string())?},
+    P::NotesNext=>{crate::powerpoint::next_note_page();return Ok(())},P::NotesPrevious=>{crate::powerpoint::prev_note_page();return Ok(())},
+    _=>{}
+   }
+   let command=match action{P::Next=>"next",P::Previous=>"previous",P::First=>"first",P::End=>"end",P::Black=>"black",P::White=>"white",P::Arrow=>"arrow",_=>unreachable!()};
+   let shortcut=crate::presentation::shortcut(command).ok_or_else(||format!("Recipe has no shortcut for {command}"))?;presentation_shortcut(shared,&shortcut).await?;
+   match action{P::Next=>{crate::powerpoint::next_slide();},P::Previous=>{crate::powerpoint::prev_slide();},P::First=>{crate::powerpoint::first_slide();},P::End=>crate::powerpoint::set_presenting(false),_=>{}}Ok(())
+  },_=>Err("Unsupported presenter action".into())
+ }
+}
+
 /// Shows active presentation speaker notes and controls on the board in a dedicated layout,
 /// using the exact same detail panel structure as Claude questions (middle rows left empty).
 async fn show_presentation(sender: &mut BoardSender, sn: &crate::powerpoint::SlideNotes, grid: Grid, shown: &mut Option<String>, shared: &Shared) {
@@ -2525,40 +2627,8 @@ async fn show_presentation(sender: &mut BoardSender, sn: &crate::powerpoint::Sli
         clean(&sn.notes)
     };
 
-    let mut keys = vec![
-        LayoutKey { key: 1, label: "Prev".into(), speak: Some("Previous slide".into()), icon: Some("chevron_left".into()), confirm: false, send: Send::Event(true) },
-        LayoutKey { key: 2, label: "End".into(), speak: Some("End presentation".into()), icon: Some("stop".into()), confirm: false, send: Send::Event(true) },
-        LayoutKey { key: 3, label: "Next".into(), speak: Some("Next slide".into()), icon: Some("chevron_right".into()), confirm: false, send: Send::Event(true) },
-    ];
-    if grid.rows >= 3 {
-        let bottom_start = grid.cols * (grid.rows - 1);
-        let more_or_black = if sn.total_note_pages > 1 {
-            LayoutKey {
-                key: bottom_start + 2,
-                label: format!("{}/{}", sn.note_page + 1, sn.total_note_pages),
-                speak: Some("Next note page".into()),
-                icon: Some("description".into()),
-                confirm: false,
-                send: Send::Event(true),
-            }
-        } else {
-            LayoutKey {
-                key: bottom_start + 2,
-                label: "Black".into(),
-                speak: Some("Black screen".into()),
-                icon: Some("dark_mode".into()),
-                confirm: false,
-                send: Send::Event(true),
-            }
-        };
-        keys.extend([
-            LayoutKey { key: bottom_start + 1, label: "First".into(), speak: Some("First slide".into()), icon: Some("first_page".into()), confirm: false, send: Send::Event(true) },
-            more_or_black,
-            LayoutKey { key: bottom_start + 3, label: "White".into(), speak: Some("White screen".into()), icon: Some("light_mode".into()), confirm: false, send: Send::Event(true) },
-        ]);
-    }
-    keys.sort_by_key(|k| k.key);
-
+    let capable={let s=shared.status.read().await;!s.boards.is_empty()&&s.boards.iter().all(|b|b.touchpad)};
+    let mut body=match crate::presentation::screen(grid,capable,&note_text){Ok(body)=>body,Err(e)=>{problem!("presentation-recipe","{e}");return;}};
     let status_text = if sn.total_slides > 0 {
         if sn.total_note_pages > 1 {
             format!("Slide {} of {} (p. {}/{})", sn.slide_index, sn.total_slides, sn.note_page + 1, sn.total_note_pages)
@@ -2572,26 +2642,18 @@ async fn show_presentation(sender: &mut BoardSender, sn: &crate::powerpoint::Sli
     };
 
     let title = if sn.file_name.is_empty() { "PowerPoint" } else { &sn.file_name };
-    let body = LayoutBody {
-        layout: PRESENTATION.into(),
-        name: board_text(title, 128),
-        source: "builtin".into(),
-        reviewed: true,
-        keys,
-        detail: Some(note_text),
-        grid: Some(grid),
-        ..LayoutBody::default()
-    };
+    body.name=board_text(title,128);
     let signature = format!("{PRESENTATION_SIGNATURE}{}|{}", serde_json::to_string(&body).unwrap_or_default(), status_text);
     if shown.as_deref() == Some(signature.as_str()) {
         return;
     }
-    say!("  -> {} ({}) [{}] keys: {}", body.name, PRESENTATION, status_text,
+    say!("  -> Presentation ({}) [{}] keys: {}", PRESENTATION, status_text,
          body.keys.iter().map(|k| format!("{}={}", k.key, k.label)).collect::<Vec<_>>().join(", "));
     if sender.send("knoend.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
         let _ = sender.send("knoend.status", json!({"text": status_text, "level": "info"})).await;
         *shown = Some(signature);
-        shared.update(|s| s.layout = Some(json!({"id": PRESENTATION, "name": title, "summary": status_text}))).await;
+        shared.update(|s| s.layout = Some(json!({"id": body.layout, "touchpad":body.touchpad, "name": title, "summary": status_text,
+            "mode": crate::presentation::mode(), "grid": body.grid, "keys": body.keys.iter().map(|k| json!({"key":k.key,"label":k.label})).collect::<Vec<_>>()}))).await;
     }
 }
 
@@ -2797,14 +2859,19 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                 if let Action::Shortcut { keys } = &acting_key.action {
                     if let Ok(chord) = knoend_core::keys::parse_shortcut(keys, f.os) {
                         let (typist, label, shared, keys_str) = (shared.typist.clone(), acting_key.label.clone(), shared.clone(), keys.clone());
-                        let _ = tokio::task::spawn_blocking(move || {
+                        let result = tokio::task::spawn_blocking(move || {
                             let mut slot = typist.lock().map_err(|_| "typist lock".to_string())?;
                             if slot.is_none() {
                                 *slot = Some(knoend_input::Typist::connect()?);
                             }
                             slot.as_ref().expect("connected").tap(chord.modifiers, chord.usage)?;
                             Ok::<(), String>(())
-                        }).await;
+                        }).await.unwrap_or_else(|e| Err(e.to_string()));
+                        if let Err(e) = result {
+                            problem!("typing", "Could not type {keys_str}: {e}");
+                            return None;
+                        }
+                        say!("  typed {keys_str} on this computer");
                         shared.emit("typed", json!({"text": format!("  {label}: typed {keys_str} on this computer")}));
                     }
                     if f.app.to_ascii_lowercase().contains("powerpnt") || f.instance.to_ascii_lowercase().contains("powerpnt") {
@@ -2812,6 +2879,12 @@ async fn on_board_packet(packet: &Packet, focus: Option<&Focus>, shown_actions: 
                     }
                     return None;
                 }
+            }
+            if acting.is_some_and(|k| matches!(&k.action, Action::Command { name } if name == "start-steno")) {
+                if let Err(e) = crate::pager::start_steno() {
+                    problem!("pager", "Could not open Steno: {e}");
+                }
+                return None;
             }
             if let Some(library_key) = acting.filter(|k| matches!(k.action, Action::Listen)) {
                 let on = !crate::midi::listening();
@@ -2970,11 +3043,52 @@ mod tests {
     use super::*;
     use crate::agent_hooks::Decision;
 
+    #[test]
+    fn pointer_reports_are_bounded_integral_and_sequenced() {
+        assert_eq!(pointer_report(&json!({"dx":-127,"dy":127,"seq":1})), Some((-127,127,1)));
+        assert!(pointer_report(&json!({"dx":128,"dy":0,"seq":1})).is_none());
+        assert!(pointer_report(&json!({"dx":0.5,"dy":0,"seq":1})).is_none());
+        assert!(pointer_report(&json!({"dx":0,"dy":0})).is_none());
+        assert!(pointer_report(&json!({"dx":0,"dy":0,"seq":1})).is_none(), "a stationary touch must not recenter the PC pointer");
+        assert!(pointer_report(&json!({"dx":1,"dy":0,"seq":4294967296u64})).is_none());
+    }
+
+    #[test]
+    fn powerpoint_context_changes_inside_the_same_app_are_not_discarded() {
+        let mut f = Focus { os: knoend_core::focus::Os::Windows, app: "POWERPNT.EXE".into(), instance: "powerpnt".into(),
+            title: "Deck - PowerPoint".into(), pid: None, terminal: None, web: None };
+        let editing = Some(f.clone());
+        f.title = "PowerPoint Slide Show - [Deck]".into();
+        let presenting = Some(f.clone());
+        assert!(!same_focus_context(&editing, &presenting));
+        assert!(!same_focus_context(&presenting, &editing));
+        f.title = "PowerPoint Presenter View".into();
+        assert!(same_focus_context(&presenting, &Some(f.clone())));
+        f.app = "other.exe".into();
+        let other = Some(f.clone());
+        f.title = "An ordinary progress counter changed".into();
+        assert!(same_focus_context(&other, &Some(f)));
+    }
+
     fn recipes() -> Catalog {
         let mut catalog = Catalog::default();
         let problems = load_builtin(&mut catalog);
         assert!(problems.is_empty(), "every recipe loads: {problems:?}");
         catalog
+    }
+
+    #[test]
+    fn windows_desktop_recipes_match_real_executable_names() {
+        let catalog = recipes();
+        for (app, id) in [("ChatGPT.exe", "builtin.chatgpt-codex"), ("ChatGPT", "builtin.chatgpt-codex"),
+                           ("ms-teams", "builtin.teams"), ("Teams.exe", "builtin.teams")] {
+            let focus = Focus { os: knoend_core::focus::Os::Windows, app: app.into(), instance: app.into(),
+                title: String::new(), web: None, pid: None, terminal: None };
+            assert_eq!(catalog.find(&focus).map(|l| l.pack.id.as_str()), Some(id));
+        }
+        let teams = catalog.get("builtin.teams").unwrap();
+        assert!(teams.keys.iter().any(|k| matches!(&k.action, Action::Command { name } if name == "start-steno")));
+        assert!(teams.keys.iter().find(|k| k.label == "Leave call").unwrap().confirm);
     }
 
     fn request(tool_input: Value, tool: &str, suggestions: bool) -> (Approval, tokio::sync::oneshot::Receiver<Decision>) {

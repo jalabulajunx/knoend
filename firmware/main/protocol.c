@@ -39,7 +39,7 @@ static const char *const incoming_types[] = {
 static const char *const outgoing_types[] = {
     "identity", "key", "page", "layout.ack", "pair.ack",
     "wifi.ack", "wifi.networks", "ping", "error", "image.ack", "display.ack", "font.ack",
-    "listen.ack", "note",
+    "listen.ack", "note", "pointer",
 };
 static const char *const transports[] = { "ble-hid", "ble-data", "serial", "wifi" };
 
@@ -208,6 +208,7 @@ static void send_identity(int64_t re, transport_t to)
     cJSON_AddBoolToObject(features, "battery", false);
     cJSON_AddBoolToObject(features, "nativeUsb", board->has_native_usb);
     cJSON_AddBoolToObject(features, "mic", board->has_mic);
+    cJSON_AddBoolToObject(features, "touchpad", true);
     cJSON_AddItemToObject(features, "transports",
                           string_array(transports, sizeof(transports) / sizeof(transports[0])));
 
@@ -226,6 +227,17 @@ void protocol_send_key(int slot, const char *layout_id, int page, uint32_t seq)
     cJSON_AddNumberToObject(body, "page", page);
     cJSON_AddNumberToObject(body, "seq", seq);
     send_packet("key", body, -1, TRANSPORT_ALL);
+}
+
+void protocol_send_pointer(const char *layout_id, int dx, int dy, uint32_t seq)
+{
+    if (!dx && !dy) return;
+    cJSON *body = cJSON_CreateObject();
+    cJSON_AddStringToObject(body, "layout", layout_id);
+    cJSON_AddNumberToObject(body, "dx", dx);
+    cJSON_AddNumberToObject(body, "dy", dy);
+    cJSON_AddNumberToObject(body, "seq", seq);
+    send_packet("pointer", body, -1, TRANSPORT_ALL);
 }
 
 void protocol_send_keystroke(int slot, const char *layout_id, int page, uint32_t seq, uint8_t modifiers, uint8_t usage)
@@ -304,6 +316,8 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
 
     if (id == NULL || name == NULL || !cJSON_IsArray(keys)) {
         snprintf(error, sizeof(error), "layout, name and keys are required");
+    } else if (cJSON_HasObjectItem(body, "touchpad") && !cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(body, "touchpad"))) {
+        snprintf(error, sizeof(error), "touchpad must be boolean");
     } else if (grid != NULL && !(get_int(grid, "cols", 1, max_cols, &cols) && get_int(grid, "rows", 1, max_rows, &rows))) {
         snprintf(error, sizeof(error), "grid must be within %dx%d", max_cols, max_rows);
     } else if ((cJSON_HasObjectItem(body, "pages") && !get_int(body, "pages", 1, 64, &pages)) ||
@@ -315,6 +329,7 @@ static void handle_layout(const cJSON *body, int64_t re, transport_t from)
         strcpy(layout->id, id);
         strcpy(layout->name, name);
         layout->reviewed = !cJSON_IsFalse(reviewed);
+        layout->touchpad = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "touchpad"));
         layout->cols = (uint8_t)cols;
         layout->rows = (uint8_t)rows;
         layout->page = (uint8_t)page;
