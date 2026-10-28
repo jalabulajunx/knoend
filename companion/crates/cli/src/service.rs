@@ -509,7 +509,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
         publish_boards(&boards, &shared).await;
         let mut shown: Option<String> = None;
         if focus.is_none() {
-            show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
+            show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
         }
         if let Some(f) = effective(&focus, &tab) {
             show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await;
@@ -536,7 +536,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         shown = None;
                         match effective(&focus, &tab) {
                             Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await,
                         }
                     }
                     if crate::presentation::current().is_some() && approvals.is_empty() && !shared.editing() {
@@ -560,7 +560,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         if approvals.is_empty() {
                             match effective(&focus, &tab) {
                                 Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             }
                         }
@@ -575,7 +575,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                             None => match effective(&focus, &tab) {
                                 Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             },
                         }
@@ -622,7 +622,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                 shown = None;
                 match effective(&focus, &tab) {
                     Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                    None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await,
+                    None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await,
                 }
                 continue;
             }
@@ -649,7 +649,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         shown = None;
                         match effective(&focus, &tab) {
                             Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await,
+                            None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await,
                         }
                     }
                 }
@@ -707,7 +707,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     usage.focused(None);
                     shared.update(|s| s.app = None).await;
                     if approvals.is_empty() {
-                        show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
+                        show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging, &mut shown, calling.as_ref(), &shared).await;
                     }
                 }
                 Event::Favicon(host, pixels) => {
@@ -735,7 +735,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         say!("  page {}/{} of {}", paging.page + 1, paging.pages, paging.layout);
                         match effective(&focus, &tab) {
                             Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                            None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                   &mut shown, calling.as_ref(), &shared).await,
                         }
                         if shared.editing() {
@@ -743,7 +743,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         }
                     }
                 }
-                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE && shared.editing() => {
+                Event::Board(packet, _) if packet.kind == "knoend.key" && !packet.body["layout"].as_str().is_some_and(|id|id.starts_with(APPROVE)) && shared.editing() => {
                     // Edit mode: a tap selects the key in the web app; nothing runs.
                     shared.emit("edit.tap", json!({"page": paging.page, "slot": packet.body["key"]}));
                 }
@@ -824,7 +824,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     if approvals.is_empty() {
                         match effective(&focus, &tab) {
                             Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                            None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                   &mut shown, calling.as_ref(), &shared).await,
                         }
                     }
@@ -839,7 +839,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         if approvals.is_empty() {
                             match effective(&focus, &tab) {
                                 Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             }
                         }
@@ -853,7 +853,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         let _ = answer.send(result);
                     }
                 }
-                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] != APPROVE
+                Event::Board(packet, _) if packet.kind == "knoend.key" && !packet.body["layout"].as_str().is_some_and(|id|id.starts_with(APPROVE))
                                         && calling.as_ref().and_then(|c| c.key(paging.grid)).is_some_and(|k| packet.body["key"] == k.key) => {
                     let c = calling.take().expect("calling");
                     let names = c.names.clone();
@@ -867,7 +867,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                     match effective(&focus, &tab) {
                         Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                        None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                        None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                               &mut shown, calling.as_ref(), &shared).await,
                     }
                 }
@@ -933,10 +933,11 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     if let Err(e)=presentation_action(&shared,action).await{problem!("presenter-action","{e}");}
                     if let Some(f)=effective(&focus,&tab){show(&mut sender,&catalog,&f,&players,&mut shown,&mut shown_actions,&mut paging,calling.as_ref(),&shared).await;}
                 }
-                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"] == APPROVE => {
+                Event::Board(packet, _) if packet.kind == "knoend.key" && packet.body["layout"].as_str().is_some_and(|id|id.starts_with("system.approve.")) => {
                     let key = packet.body["key"].as_u64().unwrap_or(0);
                     let decision = match approvals.front_mut() {
                         Some(front) => {
+                            if packet.body["layout"]!=approval_layout(front){continue;}
                             let screen = front.screen(&catalog);
                             let tapped = agent_keys(&screen, front).into_iter().find(|k| u64::from(k.slot) == key).map(|k| (k.reply, k.option));
                             match tapped.and_then(|(reply, option)| front.tap(reply, option)) {
@@ -954,14 +955,14 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     };
                     // Only a tap that answers takes the request off the queue.
                     if let Some((decision, front)) = decision.and_then(|d| approvals.pop_front().map(|f| (d, f))) {
-                        say!("  answered on the board: {decision:?} ({})", front.summary);
+                        say!("  {} request answered on the board",crate::agent_hooks::label(&front.request));
                         let _ = front.answer.send(decision);
                         shown = None;
                         match approvals.front() {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                             None => match effective(&focus, &tab) {
                                 Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             },
                         }
@@ -989,7 +990,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     if approvals.is_empty() {
                         match effective(&focus, &tab) {
                             Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                            None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                   &mut shown, calling.as_ref(), &shared).await,
                         }
                     }
@@ -1007,11 +1008,9 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::Agent(crate::agent_hooks::AgentEvent::Permission { request, answer }) => {
+                    if crate::agent_hooks::is_codex(&request){crate::codex_hooks::observed(&request);if !crate::codex_hooks::enabled(){continue;}}
                     let summary = crate::agent_hooks::summary(&request);
-                    match request["knoend_tty"].as_str() {
-                        Some(tty) => say!("Permission request from the session in tab {tty}: {summary}"),
-                        None => say!("Permission request: {summary}"),
-                    }
+                    say!("Agent permission request: {}",crate::agent_hooks::label(&request));
                     approvals.push_back(Approval { request: request.clone(), summary, detail: crate::agent_hooks::detail(&request), destructive: crate::agent_hooks::destructive(&request),
                                                    can_remember: request["permission_suggestions"].as_array().is_some_and(|s| !s.is_empty()),
                                                    questions: crate::agent_hooks::questions(&request), step: 0, answers: Vec::new(), ticked: Vec::new(), elsewhere: false, here: false,
@@ -1044,10 +1043,17 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                             Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                             None => match effective(&focus, &tab) {
                                 Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                                None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                                None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                       &mut shown, calling.as_ref(), &shared).await,
                             },
                         }
+                    }
+                    if crate::agent_hooks::is_codex(&n) {
+                        crate::codex_hooks::observed(&n);
+                        if ["UserPromptSubmit","Interrupt"].contains(&n["hook_event_name"].as_str().unwrap_or("")){if let Some(session)=n["session_id"].as_str(){crate::pager::clear_codex_session(session);}}
+                        if let Some(notice)=crate::codex_hooks::completion(&n){crate::pager::receive(notice);}
+                        if approvals.is_empty(){match effective(&focus,&tab){Some(f)=>show(&mut sender,&catalog,&f,&players,&mut shown,&mut shown_actions,&mut paging,calling.as_ref(),&shared).await,None=>show_launcher(&mut sender,&catalog,&usage,&apps,&favicons,&mut sent_images,&mut launcher_targets,&mut paging,&mut shown,calling.as_ref(),&shared).await}}
+                        continue;
                     }
                     if n["hook_event_name"] != "Notification" {
                         continue;
@@ -1056,7 +1062,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     // Permission prompts arrive as PermissionRequest already.
                     if !matches!(kind, "permission_prompt" | "auth_success" | "elicitation_complete" | "elicitation_response") {
                         let message = n["message"].as_str().unwrap_or("needs your attention");
-                        say!("Agent notification ({kind}): {message}");
+                        say!("Agent notification ({kind})");
                         let text = board_text(&format!("Claude: {message}"), 80);
                         if approvals.is_empty() {
                             let _ = sender.send("knoend.status", json!({"text": text, "level": "alert", "ttl": 60})).await;
@@ -1064,7 +1070,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                     }
                 }
                 Event::Notified(n) => {
-                    say!("Notification from {}: {}", n.app, n.summary);
+                    say!("Notification from {}", n.app);
                     if n.from_any(&["claude"]) {
                         unexplained = Some((n.clone(), std::time::Instant::now()));
                     }
@@ -1191,7 +1197,7 @@ pub async fn run(shared: Arc<Shared>, extra_libraries: Vec<PathBuf>) {
                         Some(a) => show_approval(&mut sender, a, &catalog, &mut shown, &shared).await,
                         None => match effective(&focus, &tab) {
                             Some(f) => show(&mut sender, &catalog, &f, &players, &mut shown, &mut shown_actions, &mut paging, calling.as_ref(), &shared).await,
-                            None => show_launcher(&mut sender, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
+                            None => show_launcher(&mut sender, &catalog, &usage, &apps, &favicons, &mut sent_images, &mut launcher_targets, &mut paging,
                                                   &mut shown, calling.as_ref(), &shared).await,
                         },
                     }
@@ -1719,7 +1725,7 @@ async fn show(sender: &mut BoardSender, catalog: &Catalog, focus: &Focus, player
     if shown.as_deref().is_some_and(|s| s.starts_with(APPROVE_SIGNATURE)) {
         return; // a permission request is on the board; it stays until answered
     }
-    if !shared.editing() && crate::pager::show(sender, shown, shared).await { return; }
+    if !shared.editing() && crate::pager::show(sender, shown, shared,catalog).await { return; }
     let is_ppt = focus.app.to_ascii_lowercase().contains("powerpnt") || focus.instance.to_ascii_lowercase().contains("powerpnt");
     if !shared.editing() {
         if let Some(library)=catalog.layout_for(focus).filter(|l|l.presentation.is_some()) {
@@ -1925,12 +1931,12 @@ const LAUNCHER: &str = "system.launcher";
 /// The launcher: the most used and recent apps and sites, with their own icons (sent to the board
 /// first, once per connection), or a hint while there is no history yet.
 #[allow(clippy::too_many_arguments)]
-async fn show_launcher(sender: &mut BoardSender, usage: &crate::launcher::Usage, apps: &[crate::launcher::AppInfo],
+async fn show_launcher(sender: &mut BoardSender, catalog:&Catalog, usage: &crate::launcher::Usage, apps: &[crate::launcher::AppInfo],
                        favicons: &HashMap<String, Vec<u8>>, sent_images: &mut HashSet<String>,
                        targets: &mut HashMap<u8, crate::launcher::Target>, paging: &mut Paging, shown: &mut Option<String>,
                        calling: Option<&Calling>, shared: &Shared) {
     targets.clear();
-    if !shared.editing() && crate::pager::show(sender, shown, shared).await { return; }
+    if !shared.editing() && crate::pager::show(sender, shown, shared,catalog).await { return; }
     if show_edit(sender, paging, shown, shared).await {
         return;
     }
@@ -2452,8 +2458,9 @@ const AGENT: &str = "claude-code";
 
 /// The recipe for one screen of the agent; the compiled-in one when the catalog has none (e.g.
 /// `KNOEND_BUILTIN` points at a folder without agent recipes).
-fn agent_screen(catalog: &Catalog, state: &str) -> Library {
-    let name = format!("{AGENT}/{state}");
+fn agent_screen(catalog: &Catalog, state: &str) -> Library { agent_screen_for(catalog,AGENT,state) }
+pub(crate) fn agent_screen_for(catalog:&Catalog,agent:&str,state:&str)->Library{
+    let name = format!("{agent}/{state}");
     catalog.agent(&name).cloned().unwrap_or_else(|| {
         builtin::BUILTIN.iter().filter_map(|(_, text)| Library::parse(text).ok())
             .find(|l| l.matches.agent.iter().any(|a| a.eq_ignore_ascii_case(&name)))
@@ -2479,6 +2486,7 @@ fn agent_keys<'a>(screen: &'a Library, approval: &Approval) -> Vec<AgentKey<'a>>
     let mut out = Vec::new();
     for (key, slot) in screen.keys.iter().zip(screen.placed().into_iter().map(|(_, slot)| slot)) {
         let Action::Agent { reply } = key.action else { continue };
+        if reply==AgentReply::Allow && approval.request["knoend_allow"]==false {continue;}
         let option = match reply {
             AgentReply::Option => {
                 next_option += 1;
@@ -2501,6 +2509,11 @@ fn board_key(key: &LibraryKey, slot: u8, option_label: Option<&str>) -> LayoutKe
     let label = option_label.unwrap_or(&key.label);
     LayoutKey { key: slot, label: board_text(label, 24), speak: Some(board_text(option_label.or(key.speak.as_deref()).unwrap_or(label), 80)),
                 icon: key.icon.clone(), confirm: key.confirm, send: Send::Event(true) }
+}
+
+fn approval_layout(approval:&Approval)->String{
+ use std::hash::{Hash,Hasher};let mut h=std::collections::hash_map::DefaultHasher::new();
+ approval.request.to_string().hash(&mut h);approval.step.hash(&mut h);format!("{APPROVE}.{:x}",h.finish())
 }
 
 impl Approval {
@@ -2535,7 +2548,7 @@ impl Approval {
 
     /// The recipe for what is on the board for this request now.
     fn screen(&self, catalog: &Catalog) -> Library {
-        agent_screen(catalog, if self.questions.is_empty() { "permission" } else { "question" })
+        agent_screen_for(catalog,crate::agent_hooks::agent(&self.request), if self.questions.is_empty() { "permission" } else { "question" })
     }
 }
 
@@ -2570,21 +2583,21 @@ async fn show_approval(sender: &mut BoardSender, approval: &Approval, catalog: &
                 }
             }
             let title = if q.header.is_empty() { screen.pack.name.clone() } else { format!("{}: {}", screen.pack.name, q.header) };
-            say!("  -> question on the board [{}]", q.question);
+            say!("  -> agent question on the board");
             (title, clean(&detail), format!("{}: {}", screen.pack.name, q.question), "attention")
         }
         None => {
-            say!("  -> permission request on the board [{}]", approval.summary);
-            (screen.pack.name.clone(), clean(&approval.detail), approval.summary.clone(), if approval.destructive { "alert" } else { "attention" })
+            say!("  -> {} permission request on the board",crate::agent_hooks::label(&approval.request));
+            (screen.pack.name.clone(), clean(if crate::agent_hooks::is_codex(&approval.request)&&approval.request["knoend_allow"]==false {"Review this request in Codex. It cannot be fully shown here, so Allow is unavailable. Deny rejects this request."}else{&approval.detail}), approval.summary.clone(), if approval.destructive { "alert" } else { "attention" })
         }
     };
-    let body = LayoutBody { layout: APPROVE.into(), name: board_text(&title, 128), source: "builtin".into(), reviewed: true, keys, detail: Some(detail),
+    let body = LayoutBody { layout: approval_layout(approval), name: board_text(&title, 128), source: "builtin".into(), reviewed: true, keys, detail: Some(detail),
                             grid: Some(screen.grid(1)), ..LayoutBody::default() };
     let signature = format!("{APPROVE_SIGNATURE}{}", serde_json::to_string(&body).unwrap_or_default());
     if sender.send("knoend.layout", serde_json::to_value(&body).expect("serialisable")).await.is_ok() {
         let _ = sender.send("knoend.status", json!({"text": board_text(&status, 80), "level": level})).await;
         *shown = Some(signature);
-        shared.update(|s| s.layout = Some(json!({"id": APPROVE, "name": title, "summary": status}))).await;
+        shared.update(|s| s.layout = Some(json!({"id": body.layout, "name": title, "summary": status}))).await;
     }
 }
 
@@ -3100,6 +3113,18 @@ mod tests {
         (Approval { questions: crate::agent_hooks::questions(&request), destructive: crate::agent_hooks::destructive(&request),
                     request, summary: String::new(), detail: String::new(), can_remember: suggestions,
                     step: 0, answers: Vec::new(), ticked: Vec::new(), elsewhere: false, here: false, answer }, rx)
+    }
+
+    #[test]
+    fn codex_recipe_and_layout_identity_follow_the_request(){
+        let mut catalog=Catalog::default();assert!(load_builtin(&mut catalog).is_empty());
+        let (mut a,_)=request(json!({"command":"echo synthetic"}),"Bash",false);
+        a.request["knoend_agent"]=json!("codex");a.request["turn_id"]=json!("t1");
+        assert_eq!(a.screen(&catalog).pack.name,"Codex needs you");
+        let labels=shown(&a,&catalog);assert_eq!(labels.iter().map(|k|k.1.as_str()).collect::<Vec<_>>(),vec!["Allow once","Deny"]);
+        let id=approval_layout(&a);a.request["turn_id"]=json!("t2");assert_ne!(id,approval_layout(&a));
+        a.request["knoend_allow"]=json!(false);assert_eq!(shown(&a,&catalog).len(),1);
+        assert!(tap(&mut a,&catalog,1).is_none());assert_eq!(tap(&mut a,&catalog,3),Some(Decision::Deny));
     }
 
     fn asking(questions: Value) -> (Approval, tokio::sync::oneshot::Receiver<Decision>) {

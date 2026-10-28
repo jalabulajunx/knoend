@@ -16,6 +16,7 @@
 mod journal;
 mod pager;
 mod agent_hooks;
+mod codex_hooks;
 mod app_facts;
 mod app_setup;
 mod background;
@@ -139,6 +140,10 @@ enum Command {
     },
     /// Run by a coding agent's hook (reads the event on stdin): `permission` or `notification`.
     Hook { kind: String },
+    /// Install or remove native Codex lifecycle hooks (review/trust in Codex afterwards).
+    CodexHooks { #[command(subcommand)] action:HooksAction },
+    /// Run by a Codex hook; reads a bounded lifecycle event on stdin.
+    CodexHook { kind:String, #[arg(long)] endpoint_file:Option<PathBuf> },
 }
 
 #[derive(Subcommand)]
@@ -228,6 +233,8 @@ fn main() {
         }
         Command::Browser { action: BrowserAction::Host } => browser::run_host(),
         Command::Hook { kind } => agent_hooks::run_hook(&kind),
+        Command::CodexHook {kind,endpoint_file}=>codex_hooks::run(&kind,endpoint_file.as_deref()),
+        Command::CodexHooks {action}=>match action {HooksAction::Install=>codex_hooks::install().map(|s|println!("{s}")),HooksAction::Uninstall=>codex_hooks::uninstall().map(|s|println!("{s}"))},
         Command::ClaudeHooks { action } => match action {
             HooksAction::Install => agent_hooks::install(),
             HooksAction::Uninstall => agent_hooks::uninstall(),

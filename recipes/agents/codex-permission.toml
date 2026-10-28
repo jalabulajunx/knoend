@@ -1,0 +1,22 @@
+[pack]
+id = "builtin.agent-codex-permission"
+name = "Codex needs you"
+version = "0.1.0"
+source = "builtin"
+grid = "3x3"
+description = "Allow or deny one supported local Codex approval request. Long requests stay in Codex."
+
+[match]
+agent = ["codex/permission"]
+
+[[key]]
+slot = 1
+label = "Allow once"
+icon = "check"
+action = { kind = "agent", reply = "allow" }
+
+[[key]]
+slot = 3
+label = "Deny"
+icon = "close"
+action = { kind = "agent", reply = "deny" }

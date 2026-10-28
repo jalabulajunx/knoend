@@ -118,3 +118,22 @@ Real incoming-call detection and the recorder device tap remain unverified; Goog
 still needs a browser presentation adapter. Shared schema/protocol changes need both
 maintainers' review before merge. See docs/windows-powerpoint.md, docs/windows-pager.md and
 [the architecture decision](decisions/2026-10-27-native-recipe-presentations.md).
+
+## Branch preview: Codex interruptions
+
+On `sundar/codex-interruptions`, native lifecycle hooks and provider-specific permission/completion
+recipes support local Codex desktop and CLI sessions. The dashboard prepares/removes hooks,
+controls enablement, offers a synthetic screen and exposes content-free `codex_agent` checks.
+Prepare hooks, review/trust them in Codex, then test a fresh session in each interface. The
+setup preserved existing config/notify bytes and used no new PowerShell script or firmware write.
+
+On Windows/ONX, actual CLI and desktop completion alerts were physically confirmed, including
+CLI Dismiss restoring normal keys. Completion survives normal process exit for five minutes;
+new work or an interrupt clears only that session's alert. The synthetic approval test returned
+Deny without tool execution. Real policy-driven approvals, ordinary question-card replies and
+cloud orchestration are not established by these tests; ordinary questions stay in Codex.
+
+The Codex branch depends on draft PR #90 and is reviewed separately from it. See the
+[main setup steps](setup.md#codex-interruptions-local-desktop-and-cli),
+[detailed guide](codex-interruptions.md) and
+[implementation decision](decisions/2026-10-27-codex-interruptions.md).

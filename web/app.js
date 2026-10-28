@@ -1895,6 +1895,7 @@ $("ai-form").addEventListener("submit", async (e) => {
 // ---- setup assistant ----
 
 const ACTIONS = {
+  codex_settings:["Codex interruptions",()=>{show("dashboard");$("codex-settings").open=true;$("codex-install").focus();}],
   presentation_settings: ["Presentation settings",()=>{show("dashboard");$("presentation-source").closest("details").open=true;$("presentation-source").focus();}],
   recipes_reload: ["Reload recipes",()=>$("recipes-reload").click()],
   pager_settings: ["Pager settings", () => { show("dashboard"); $("pager-enabled").focus(); }],
@@ -2541,3 +2542,11 @@ async function loadPresentationSettings(){try{const d=await api("/presentation")
 $("presentation-save").addEventListener("click",async()=>{try{await api("/settings",{changes:{presentation_notes_source:$("presentation-source").value,presentation_pptx_file:$("presentation-file").value.trim()}});$("presentation-status").textContent="Notes settings saved.";}catch(e){$("presentation-status").textContent=e.message;}});
 $("recipes-reload").addEventListener("click",async()=>{try{const d=await api("/recipes/reload",{});$("presentation-status").textContent=`Reloaded ${d.libraries} recipes.`;}catch(e){$("presentation-status").textContent=e.message;}});
 loadPresentationSettings();
+
+async function codexHooks(action){try{const d=action?await api("/codex-hooks",{action}):await api("/codex-hooks");$("codex-enabled").checked=(d.diagnostics||d).enabled;$("codex-status").textContent=d.message||`Hooks ${d.installed?"prepared":"not prepared"}; trust must be reviewed in Codex /hooks. Events received: ${d.events_received?"yes":"no"}.`;}catch(e){$("codex-status").textContent=e.message;}}
+$("codex-install").addEventListener("click",()=>codexHooks("install"));
+$("codex-remove").addEventListener("click",()=>codexHooks("uninstall"));
+$("codex-test").addEventListener("click",()=>codexHooks("test_completion"));
+codexHooks();
+
+$("codex-enabled").addEventListener("change",async()=>{try{await api("/settings",{changes:{codex_interruptions_enabled:$("codex-enabled").checked}});await codexHooks();}catch(e){$("codex-status").textContent=e.message;}});

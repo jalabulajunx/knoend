@@ -15,6 +15,7 @@ const KNOWLEDGE: &str = include_str!("../../../../docs/knowledge/setup.md");
 /// Buttons the web app can offer, and what each does: the prompt is written from this list, so a
 /// button added here (and in the web app's ACTIONS) is one the assistant knows.
 pub const ACTIONS: &[(&str, &str)] = &[
+    ("codex_settings","open Codex native hook installation, review/trust instructions and synthetic completion test"),
     ("presentation_settings","open recipe notes-source and exact saved PPTX binding settings"),
     ("recipes_reload","validate and reload recipes from disk without a rebuild; invalid recipes leave the current catalog unchanged"),
     ("pager_settings", "open Windows pager settings: enable interruptions or set the existing local recorder .vbs shortcut"),

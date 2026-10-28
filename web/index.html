@@ -125,6 +125,12 @@
             <div class="actions left"><button type="button" id="presentation-save" class="secondary">Save notes settings</button><button type="button" id="recipes-reload" class="secondary">Reload recipes</button></div>
             <p id="presentation-status" class="muted"></p>
           </details>
+          <details id="codex-settings"><summary>Codex interruptions</summary>
+            <label class="inline"><input type="checkbox" id="codex-enabled"> Enable Codex interruptions</label>
+            <p class="muted">Native hooks for local Codex desktop and terminal sessions. After preparing hooks, open /hooks in Codex to review and trust them. Full-access sessions may never request approval. Ordinary questions stay in Codex.</p>
+            <div class="actions left"><button type="button" id="codex-install" class="secondary">Prepare hooks</button><button type="button" id="codex-remove" class="secondary">Remove hooks</button><button type="button" id="codex-test" class="secondary">Test completion screen</button></div>
+            <p id="codex-status" class="note" role="status"></p>
+          </details>
           <label class="inline"><input type="checkbox" id="pager-enabled"> Interrupt for notifications</label>
           <label>Recorder launcher (.vbs)<input id="pager-recorder" type="text" placeholder="Choose an existing local .vbs shortcut"></label>
           <p class="muted">Start Steno opens the recorder. Start recording through its existing controls.</p>

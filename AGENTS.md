@@ -150,6 +150,20 @@ and say in the error which setting. A rebuild is only for our own bugs.
   settings remain editable in the local web UI; AI diagnostics receive only configured/existing
   status. Notification text stays in memory/on paired boards. Google Slides still needs a browser
   adapter. A native-worker migration needs real producer-side notification and device validation.
+- **Codex interruptions:** start with the Codex section in `docs/setup.md`, then
+  `docs/codex-interruptions.md` and the matching decision. Native hooks are prepared from the
+  dashboard, reviewed/trusted by the user in the app or CLI `/hooks`, and tested separately in
+  fresh local desktop and CLI sessions. Preserve other handlers, config and notify callbacks;
+  never bypass trust, change approval policy, or overwrite a callback to make a test pass.
+  Check the empty-first-install case and a custom endpoint/runtime, not only an existing file.
+  A bundled CLI can be absent from normal PATH; folder changes do not repair that. Use a resolved
+  installed executable, never a public recipe containing a personal/versioned executable path.
+  Completion remains for five minutes and survives normal SessionEnd; new prompts/interrupts
+  clear only that session's alerts. A synthetic permission response is not a real policy-driven
+  approval. Ordinary questions and cloud orchestration are outside this local integration.
+  Record producer-side callbacks and physical confirmation independently; do not infer them
+  from file presence, healthy watchers or the synthetic completion button. Both actual completion
+  paths and CLI Dismiss were confirmed on Windows/ONX; real approval requests remain unverified.
 - **Branches:** one per task, `sundar/...` or `tom/...`. Changes under `spec/` need review by both people.
 - **AI tools are disclosed.** Name the agent in each log entry.
 
