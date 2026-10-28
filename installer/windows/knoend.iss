@@ -1,6 +1,6 @@
 ; KnoEnd for Windows: a per-user installer (no administrator rights), built by Inno Setup in the
 ; release workflow:
-;   iscc /DVersion=0.2.3 /DExe=path\to\knoend.exe installer\windows\knoend.iss
+;   iscc /DVersion=0.3.0 /DExe=path\to\knoend.exe installer\windows\knoend.iss
 ; It installs knoend.exe, adds "KnoEnd" to the Start menu (opens the web app; starts the service
 ; first when it is not running), and, if the person keeps the boxes ticked, runs KnoEnd in the
 ; background from login (`knoend service install`) and lets the browser extension reach it

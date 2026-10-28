@@ -17,7 +17,7 @@ Wi-Fi or Bluetooth it becomes a pager: carry it around the house, see status fro
 answer a prompt (approve a coding agent's command, answer its questions) from another room. With a
 microphone it listens: sing or play a note and it reaches a music app as MIDI.
 
-> **Status: early development, released as v0.2.3.** Setting up, the keys, the Wi-Fi and
+> **Status: early development, released as v0.3.0.** Setting up, the keys, the Wi-Fi and
 > Bluetooth links, AI-drafted layouts and flashing work on Linux (X11), macOS and Windows. See
 > [What works today](#what-works-today). **To set one up, follow [docs/setup.md](docs/setup.md).**
 >

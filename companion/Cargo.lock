@@ -2037,7 +2037,7 @@ dependencies = [
 
 [[package]]
 name = "knoend"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2066,7 +2066,7 @@ dependencies = [
 
 [[package]]
 name = "knoend-agents"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "knoend-core",
  "reqwest",
@@ -2078,7 +2078,7 @@ dependencies = [
 
 [[package]]
 name = "knoend-core"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "jsonschema",
  "serde",
@@ -2089,7 +2089,7 @@ dependencies = [
 
 [[package]]
 name = "knoend-desktop"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "image",
  "resvg",
@@ -2099,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "knoend-flash"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "espflash",
  "hex",
@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "knoend-focus"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "knoend-core",
  "objc2",
@@ -2124,7 +2124,7 @@ dependencies = [
 
 [[package]]
 name = "knoend-input"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "core-graphics",
  "x11rb",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "knoend-media"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "serde",
  "zbus",
@@ -2140,7 +2140,7 @@ dependencies = [
 
 [[package]]
 name = "knoend-transport"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "btleplug",
  "futures-util",

@@ -2460,3 +2460,28 @@ Merged as PR (sundar/board-display) on Sundar's call, including spec changes Tom
 - PR #90 is still an open draft based on main. Prepare a separate Codex draft based on its feature branch so reviewers see only the Codex delta. After #90 merges, retarget the Codex PR to main. Use the verified personal identity; no merge or release.
 
 - Publication closeout: created and read back draft PR #91 (https://github.com/jalabulajunx/knoend/pull/91) using the verified personal repository owner. It is based on sundar/windows-teams-codex-keys (#90), shows the 23-file Codex delta, and should be retargeted to main after #90 merges. Documentation validation checked 39 local links with zero broken links, zero privacy findings and clean whitespace. No changes were pushed to #90's branch; no merge or release.
+
+## 2026-10-27 - Sundar (Claude Code, Opus 5.5) - Release v0.3.0
+
+- Changed: version 0.3.0 in `companion/Cargo.toml` (and `Cargo.lock`; the internal crates'
+  `version = "0.2.1"` requirements raised to 0.3.0 so they resolve), `extension/manifest.json`,
+  `installer/windows/knoend.iss`, README, `docs/status.md` and the project page. Minor bump rather
+  than patch because the protocol and library schema gained features. What v0.3.0 brings over
+  v0.2.3: the Windows pager (Teams and notification interruptions through native UI Automation
+  workers), recipe-driven PowerPoint controls with notes and a touchpad drag surface, Teams and
+  ChatGPT/Codex keys (#90, Sundar + Codex); native Codex completion and permission hooks for the
+  desktop app and CLI (#91, Sundar + Codex). Firmware: the `knoend.pointer` report and the
+  touchpad layout (`ui.c`, `protocol.c`), and a Windows-only compiler workaround in
+  `firmware/CMakeLists.txt`.
+- Decided: Sundar chose to release now although `spec/protocol.md` marks the `knoend.pointer`
+  extension as a draft that needs both maintainers' review before publication. Tom has not reviewed
+  it yet; older firmware and companions ignore the new fields. `docs/status.md` says so.
+- Reviewed before merging #90 and #91 (2026-10-27): the diffs had no credentials, keys, emails,
+  user paths or device identifiers; the historical log redactions in #90 were requested by Sundar and
+  explained in its own entry.
+- Tested (Arch Linux): `cargo test --locked` (163 passed, 5 ignored), spec validator 0 problems,
+  `knoend --version` reports 0.3.0. Firmware takes its version from the tag (`git describe`), so the
+  release image reports 0.3.0; the ONX tests in #90 used the local build 0.2.3-touchpad1. Release
+  check results in the next entry or the PR.
+- Open: real Teams incoming-call detection, the recorder device tap and policy-driven Codex approvals
+  remain unverified (see #90 and #91 entries).
