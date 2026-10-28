@@ -133,3 +133,8 @@ CLI validation follow-up: actual Codex CLI turn completion, persistence after no
 and physical Dismiss were confirmed on Windows/ONX. Desktop completion remains awaiting a
 separate producer-side check; ordinary question replies and real approval-policy prompts have
 not been validated by the synthetic Deny test.
+
+Desktop validation follow-up: a fresh local Codex desktop chat's completion also interrupted the
+ONX. Both local interfaces are now physically confirmed for completion alerts; CLI Dismiss
+restores the ordinary layout. Real policy-driven approval requests remain distinct from the
+successful synthetic Deny check. The branch is still local and no new PR has been opened.
